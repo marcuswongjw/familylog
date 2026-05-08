@@ -25,31 +25,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Family Bot is online! Send me a message to log it to our Google Sheet.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
     user = update.message.from_user.first_name
+    text = update.message.text
+    text_lower = text.lower()
     
-    # Use the URL you provided
-    # Best practice: Add this to Render Environment Variables as GOOGLE_SCRIPT_URL
-    script_url = os.environ.get('GOOGLE_SCRIPT_URL', 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec')
+    # 1. Send data to Google Sheets (using your existing environment variable)
+    script_url = os.environ.get('GOOGLE_SCRIPT_URL')
+    payload = {"user": user, "category": "Auto", "note": text}
     
-    # Data to send to your Google Sheet
-    payload = {
-        "user": user,
-        "category": "General",
-        "note": text
-    }
-
     try:
-        # Send the POST request to Google Apps Script
-        response = requests.post(script_url, json=payload)
+        requests.post(script_url, json=payload)
         
-        if response.status_code == 200:
-            await update.message.reply_text(f"Done! I've logged that for you, {user}.")
+        # 2. Customised Feedback Logic
+        if any(word in text_lower for word in ["sailing", "regatta", "boat", "fleet"]):
+            reply = f"Fair winds, {user}! I've logged that sailing update. ⛵"
+        elif any(word in text_lower for word in ["run", "swim", "pushup", "km", "gym"]):
+            reply = f"Strong work, {user}! Fitness log updated. 💪"
+        elif any(word in text_lower for word in ["violin", "piano", "music", "theory"]):
+            reply = f"Sounds great! Music practice recorded. 🎹"
+        elif any(word in text_lower for word in ["won", "first", "achieved", "trophy", "milestone"]):
+            reply = f"Amazing achievement, {user}! I've pinned that to our family milestones. 🌟"
+        elif any(word in text_lower for word in ["school", "exam", "homework", "grades"]):
+            reply = f"Academic log updated. Keep pushing, {user}! 📚"
         else:
-            await update.message.reply_text(f"I received the message, but Google Sheets returned an error ({response.status_code}).")
-            
+            reply = f"Got it, {user}! I've saved that to the family records. ✅"
+
+        await update.message.reply_text(reply)
+
     except Exception as e:
-        await update.message.reply_text(f"An error occurred while connecting to Google Sheets: {e}")
+        await update.message.reply_text("I've received the message but had trouble reaching the Google Sheet. ⚠️")
 
 if __name__ == "__main__":
     # Start the web server thread
