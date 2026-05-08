@@ -11,22 +11,23 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is alive"
+    return "Family Bot is active and running!"
 
 def run():
-    # Render requires the app to listen on 0.0.0.0
+    # Render provides a PORT environment variable automatically
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run)
-    t.daemon = True # Ensures the thread closes when the main script does
+    t.daemon = True 
     t.start()
 
-# 2. Utility for Google Sheets
+# 2. Function to send data to Google Apps Script
 def log_to_google(user, category, note, file_data=None, file_name=None):
     script_url = os.environ.get('GOOGLE_SCRIPT_URL')
     if not script_url:
+        print("Error: GOOGLE_SCRIPT_URL not found in environment variables.")
         return False
     
     payload = {
@@ -35,6 +36,7 @@ def log_to_google(user, category, note, file_data=None, file_name=None):
         "note": note
     }
     
+    # If there is image data, add it to the payload
     if file_data:
         payload.update({
             "fileData": file_data,
@@ -43,19 +45,22 @@ def log_to_google(user, category, note, file_data=None, file_name=None):
         })
 
     try:
-        requests.post(script_url, json=payload, timeout=30)
-        return True
+        # Increase timeout to 30s to allow for image processing
+        response = requests.post(script_url, json=payload, timeout=30)
+        return response.status_code == 200
     except Exception as e:
         print(f"Logging error: {e}")
         return False
 
-# 3. Handlers
+# 3. Bot Command Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Family Bot is online! Send a message or photo.")
+    await update.message.reply_text("Family Bot is online! Send a message (e.g., 'Run 5km') or a photo to log it.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     text = update.message.text
+    
+    # Send as "Auto" so the Google Script can use its keyword logic
     log_to_google(user, "Auto", text)
     await update.message.reply_text(f"Logged for you, {user}! ✅")
 
@@ -63,33 +68,46 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     caption = update.message.caption if update.message.caption else "Photo Log"
     
-    await update.message.reply_text("Processing photo... ⏳")
+    await update.message.reply_text("Uploading photo to Google Drive... ⏳")
     
     try:
-        # Get a smaller version of the photo to avoid memory crashes (Index 1)
+        # Get a medium-sized version [1] to avoid memory limits on free tiers
         photo_file = await update.message.photo[1].get_file()
         image_bytes = await photo_file.download_as_bytearray()
+        
+        # Convert image to Base64 string
         encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-        
         file_name = f"{user}_{update.message.date.strftime('%Y%m%d_%H%M')}.jpg"
-        log_to_google(user, "Media", caption, encoded_image, file_name)
         
-        await update.message.reply_text(f"Photo saved to Drive, {user}! 📁")
+        # Send to Google
+        success = log_to_google(user, "Media", caption, encoded_image, file_name)
+        
+        if success:
+            await update.message.reply_text(f"Photo saved to Google Drive, {user}! 📁")
+        else:
+            await update.message.reply_text("The sheet received the log, but couldn't save the image file. ⚠️")
+            
     except Exception as e:
-        await update.message.reply_text("Failed to upload photo. It might be too large. ⚠️")
+        print(f"Photo error: {e}")
+        await update.message.reply_text("Failed to process photo. It might be too large or technical. ⚠️")
 
+# 4. Main Entry Point
 if __name__ == "__main__":
-    # Start web server first
+    # Start the Flask server in the background
     keep_alive()
     
     TOKEN = os.environ.get('TELEGRAM_TOKEN')
+    
     if not TOKEN:
-        print("No Token found!")
+        print("CRITICAL ERROR: TELEGRAM_TOKEN environment variable is missing.")
     else:
+        # Build the Telegram Application
         application = Application.builder().token(TOKEN).build()
+        
+        # Register handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         
-        print("Bot is starting...")
+        print("Bot started. Polling for messages...")
         application.run_polling()
