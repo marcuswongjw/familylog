@@ -5,7 +5,7 @@ from threading import Thread
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# 1. Web server for Render
+# 1. Web server for Render health checks
 app = Flask('')
 @app.route('/')
 def home(): return "Family Bot is active!"
@@ -14,17 +14,22 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# 2. Function to send data to Google Sheets
+# 2. Utility function for Google Sheets
 def log_to_google(user, category, note):
     script_url = os.environ.get('GOOGLE_SCRIPT_URL')
+    if not script_url:
+        return False
     payload = {"user": user, "category": category, "note": note}
     try:
-        requests.post(script_url, json=payload)
+        requests.post(script_url, json=payload, timeout=10)
         return True
     except:
         return False
 
-# 3. Handle Text Messages
+# 3. Command Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Family Bot is online! Send me a message or a photo to log it.")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     text = update.message.text
@@ -32,7 +37,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     log_to_google(user, "Auto", text)
     
-    # Custom feedback logic
     if any(word in text_lower for word in ["sailing", "regatta", "boat"]):
         reply = f"Fair winds, {user}! Sailing log updated. ⛵"
     elif any(word in text_lower for word in ["run", "swim", "pushup", "km"]):
@@ -44,21 +48,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(reply)
 
-# 4. Handle Photo Messages
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
-    # Get the highest resolution photo
-    photo_file = await update.message.photo[-1].get_file()
-    # Telegram provides a temporary link to the file
-    photo_url = photo_file.file_path 
-    
-    # Get the caption if there is one
     caption = update.message.caption if update.message.caption else "Photo Log"
     
-    # Log the URL to the Google Sheet
-    log_to_google(user, "Media", f"{caption} (Link: {photo_url})")
+    # We log that a photo was received. 
+    # Note: Accessing direct file paths requires an extra API call which can be slow.
+    log_to_google(user, "Media", f"[Photo] {caption}")
     
-    await update.message.reply_text(f"Beautiful! I've saved that photo to the family archive, {user}. 📸")
+    await update.message.reply_text(f"Beautiful! I've logged that photo for you, {user}. 📸")
 
 if __name__ == "__main__":
     keep_alive()
@@ -66,12 +64,10 @@ if __name__ == "__main__":
     
     if TOKEN:
         application = Application.builder().token(TOKEN).build()
+        
+        # Add all handlers
         application.add_handler(CommandHandler("start", start))
-        
-        # Handler for text
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        
-        # Handler for photos
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         
         print("Bot is starting...")
