@@ -12,14 +12,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     caption = update.message.caption if update.message.caption else "New Photo"
     
-    # 1. Get the photo from Telegram
-    photo_file = await update.message.photo[-1].get_file()
+    # PICKING A SMALLER PHOTO: 
+    # Index [0] is the smallest thumbnail, [-1] is the original. 
+    # Let's try [1] or [0] to see if it's a size issue.
+    photo_file = await update.message.photo[1].get_file() 
     image_bytes = await photo_file.download_as_bytearray()
     
-    # 2. Encode to Base64 to send to Google
     encoded_image = base64.b64encode(image_bytes).decode('utf-8')
     
-    # 3. Prepare the payload
     script_url = os.environ.get('GOOGLE_SCRIPT_URL')
     payload = {
         "user": user,
@@ -31,9 +31,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     
     try:
-        requests.post(script_url, json=payload)
-        await update.message.reply_text(f"Photo saved to Google Drive, {user}! 📁")
+        requests.post(script_url, json=payload, timeout=30)
+        await update.message.reply_text(f"Logged to Drive, {user}! 📁")
     except Exception as e:
-        await update.message.reply_text("Logged locally, but failed to upload to Drive. ⚠️")
+        await update.message.reply_text("The file might be too large to upload. ⚠️")
 
 # ... (Keep the rest of your main script) ...
