@@ -5,7 +5,42 @@ from flask import Flask
 from threading import Thread
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
 
+# 1. the home screen function
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [
+            InlineKeyboardButton("📝 log activity", callback_data='log_activity'),
+            InlineKeyboardButton("🛒 grocery list", callback_data='view_groceries')
+        ],
+        [
+            InlineKeyboardButton("📸 add grocery photo", callback_data='add_grocery'),
+            InlineKeyboardButton("📊 view dashboard", url="YOUR_GOOGLE_SHEET_URL")
+        ],
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?",
+        reply_markup=reply_markup
+    )
+
+# 2. handling the button clicks
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'log_activity':
+        await query.edit_message_text(text="simply type your activity (e.g., 'run 5km') and I'll log it!")
+    elif query.data == 'view_groceries':
+        # this will trigger your 'what to buy' logic in the google script
+        await query.edit_message_text(text="to see the list, type 'what to buy'.")
+    elif query.data == 'add_grocery':
+        await query.edit_message_text(text="send me a photo with the caption: \n+Item | Price | Stock")
+        
 # 1. Flask setup for Render health checks
 app = Flask('')
 
