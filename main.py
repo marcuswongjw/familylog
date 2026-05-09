@@ -71,8 +71,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Uploading photo to Google Drive... ⏳")
     
     try:
-        # Get a medium-sized version [1] to avoid memory limits on free tiers
-        photo_file = await update.message.photo[1].get_file()
+        # Get a medium/large version, about 800x800 px [2] to avoid memory limits on free tiers
+        photo_file = await update.message.photo[2].get_file()
         image_bytes = await photo_file.download_as_bytearray()
         
         # Convert image to Base64 string
