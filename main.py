@@ -38,24 +38,42 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # all if/elif statements must be inside this function and properly indented
     if query.data == 'log_activity':
         await query.edit_message_text(text="simply type your activity (e.g., 'run 5km') and I'll log it!")
     
     elif query.data == 'view_groceries':
-        await query.edit_message_text(text="to see the list, type 'what to buy'.\nto add items with a photo, just send the photo with a caption starting with +")
+        await query.edit_message_text(text="to see the list, type 'what to buy'.")
     
     elif query.data == 'check_fridge':
-        # this sends a request to your google script to get the summary text
         payload = {"user": query.from_user.first_name, "note": "check fridge"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text(text=response.text)
-        except Exception:
-            await query.edit_message_text(text="couldn't reach the fridge right now. 🧊")
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(text=response.text)
             
     elif query.data == 'eat_fruit':
-        await query.edit_message_text(text="type what you ate: \n-fruits [Name] [Qty]\nExample: -fruits Apple 1")
+        # 1. Request the list of current fruits from Google Sheets
+        payload = {"user": query.from_user.first_name, "note": "get_fruit_list"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        fruits = response.text.split(",") # Expecting "Apple,Banana,Orange"
+        
+        if not fruits or fruits[0] == "":
+            await query.edit_message_text(text="the fridge is empty! 🧊")
+            return
+
+        # 2. Build buttons for each fruit
+        keyboard = []
+        for fruit in fruits:
+            # We use a special prefix 'eat:' so the bot knows this is a fruit selection
+            keyboard.append([InlineKeyboardButton(fruit, callback_data=f"select_fruit:{fruit}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="what did you eat? 🍎", reply_markup=reply_markup)
+
+    # 3. Handle when a specific fruit button is clicked
+    elif query.data.startswith('select_fruit:'):
+        fruit_name = query.data.split(":")[1]
+        # Store the fruit name in user_data so the bot remembers it for the next message
+        context.user_data['selected_fruit'] = fruit_name
+        await query.edit_message_text(text=f"how many {fruit_name}s did you have? (just type the number)")
 
 # --- 4. PHOTO HANDLER ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,8 +102,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- 5. TEXT HANDLER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
-    text = update.message.text
+    text = update.message.text.strip()
     
+    # Check if we are waiting for a quantity for a fruit
+    if 'selected_fruit' in context.user_data:
+        fruit = context.user_data.pop('selected_fruit') # Get and remove from memory
+        if text.isdigit():
+            # Automatically format the command for the Google Script
+            payload = {"user": user, "note": f"-fruits {fruit} {text}"}
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text("please send a valid number.")
+        return
+
+    # Regular logging (original logic)
     payload = {"user": user, "note": text}
     
     try:
