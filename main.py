@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, CommandHan
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
 # replace this with your actual Google Sheet link for the button
-SHEET_URL = "https://docs.google.com/spreadsheets/d/your-id-here"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
 
 # --- 2. HOME SCREEN (START) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
