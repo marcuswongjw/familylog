@@ -18,7 +18,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🛒 grocery list", callback_data='view_groceries')
         ],
         [
-            InlineKeyboardButton("📸 add grocery photo", callback_data='add_grocery'),
+            InlineKeyboardButton("🍎 check fridge", callback_data='check_fridge'),
+            InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')
+        ],
+        [
             InlineKeyboardButton("📊 view dashboard", url=SHEET_URL)
         ],
     ]
@@ -41,6 +44,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text="to see the list, type 'what to buy'.")
     elif query.data == 'add_grocery':
         await query.edit_message_text(text="send me a photo with the caption: \n+Item | Price | Stock")
+
+if query.data == 'check_fridge':
+        # You can actually make the bot send the text 'check fridge' automatically
+        payload = {"user": query.from_user.first_name, "note": "check fridge"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(text=response.text)
+    elif query.data == 'eat_fruit':
+        await query.edit_message_text(text="type what you ate: \n-fruits [Name] [Qty]\nExample: -fruits Apple 1")
 
 # --- 4. PHOTO HANDLER ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
