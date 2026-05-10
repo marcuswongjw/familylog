@@ -1,6 +1,5 @@
 from flask import Flask
 from threading import Thread
-
 import os
 import requests
 import base64
@@ -31,10 +30,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?",
-        reply_markup=reply_markup
-    )
+    # We check if it's a message or a callback to send/edit appropriately
+    text = "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    else:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
 # --- 3. BUTTON CLICK HANDLER ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,18 +49,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": query.from_user.first_name, "note": "get_checklist"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            items = response.text.split(",")
+            items = response.text.split(",") if response.text else []
             
             if not items or items[0] == "":
                 await query.edit_message_text(text="nothing to buy right now! 🛒")
                 return
 
-            keyboard = []
-            for item in items:
-                if item.strip():
-                    # We use a 'check:' prefix to toggle the item
-                    keyboard.append([InlineKeyboardButton(f"✅ {item}", callback_data=f"check_item:{item}")])
-            
+            keyboard = [[InlineKeyboardButton(f"✅ {i}", callback_data=f"check_item:{i}")] for i in items if i.strip()]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(text="tap an item to mark it as bought:", reply_markup=reply_markup)
         except:
@@ -68,78 +64,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith('check_item:'):
         item_name = query.data.split(":")[1]
         payload = {"user": query.from_user.first_name, "note": f"bought {item_name}"}
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
-        await query.answer(f"marked {item_name} as bought!")
-        # refresh the list
-        await start(update, context)
-    
-    
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.answer(f"marked {item_name} as bought!")
+            # Refresh the home screen after checking off
+            await start(update, context)
+        except:
+            await query.answer("failed to update sheet.")
+
     elif query.data == 'check_fridge':
-        try:
-            payload = {"user": query.from_user.first_name, "note": "check fridge"}
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text(text=response.text)
-        except:
-            await query.edit_message_text(text="error connecting to the fridge data.")
+        payload = {"user": query.from_user.first_name, "note": "check fridge"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(text=response.text)
             
-    elif query.data == 'clear_groceries':
-        payload = {"user": query.from_user.first_name, "note": "clear grocery list"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text(text=response.text)
-        except:
-            await query.edit_message_text(text="failed to clear the list. ❌")
-    
     elif query.data == 'eat_fruit':
         payload = {"user": query.from_user.first_name, "note": "get_fruit_list"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            fruits = response.text.split(",")
-            
-            keyboard = []
-            for fruit in fruits:
-                if fruit.strip():
-                    keyboard.append([InlineKeyboardButton(fruit, callback_data=f"select_fruit:{fruit}")])
+            fruits = response.text.split(",") if response.text else []
+            keyboard = [[InlineKeyboardButton(f, callback_data=f"select_fruit:{f}")] for f in fruits if f.strip()]
             
             if not keyboard:
-                await query.edit_message_text(text="the fridge is empty! 🧊")
-                return
+                await query.edit_message_text(text="the fridge is empty of fruit! 🧊")
+            else:
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(text="what did you eat? 🍎", reply_markup=reply_markup)
+        except:
+            await query.edit_message_text(text="error connecting to fridge data.")
 
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text="What did you eat? 🍎", reply_markup=reply_markup)
-            
-        except Exception as e:
-            await query.edit_message_text(text="Error connecting to the fridge data.")
-
-    # FIX: This block is now correctly indented inside button_handler
     elif query.data.startswith('select_fruit:'):
         fruit_name = query.data.split(":")[1]
         context.user_data['selected_fruit'] = fruit_name
-        await query.edit_message_text(text=f"how many {fruit_name}s did you have? (just type the number)")
+        await query.edit_message_text(text=f"how many {fruit_name}s did you have? (type the number)")
 
-# --- 4. PHOTO HANDLER ---
+    elif query.data == 'clear_groceries':
+        payload = {"user": query.from_user.first_name, "note": "clear grocery list"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(text=response.text)
+
+# --- 4. PHOTO & TEXT HANDLERS ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
-    caption = update.message.caption or ""
     photo_file = await update.message.photo[2].get_file()
     image_bytes = await photo_file.download_as_bytearray()
-    
     image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
     payload = {
         "user": user,
-        "note": caption,
+        "note": update.message.caption or "",
         "fileData": image_base64,
         "fileName": f"{user}_{photo_file.file_id}.jpg"
     }
+    response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+    await update.message.reply_text(response.text)
 
-    try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
-        await update.message.reply_text(response.text)
-    except Exception as e:
-        await update.message.reply_text(f"photo upload failed: {str(e)}")
-
-# --- 5. TEXT HANDLER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     text = update.message.text.strip()
@@ -155,44 +133,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     payload = {"user": user, "note": text}
-    try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-        await update.message.reply_text(response.text)
-    except Exception as e:
-        await update.message.reply_text("logged, but couldn't get confirmation.")
+    response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+    await update.message.reply_text(response.text)
 
-# --- 6. MAIN APPLICATION ---
+# --- 5. RENDER KEEP-ALIVE ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "I am alive!"
+def home(): return "I am alive!"
 
 def run():
-    # Render uses the 'PORT' environment variable
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-    
 def main():
-    if not TOKEN or not GOOGLE_SCRIPT_URL:
-        print("error: TELEGRAM_TOKEN or GOOGLE_SCRIPT_URL missing.")
-        return
-
+    if not TOKEN: return
     application = ApplicationBuilder().token(TOKEN).build()
-
+    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-    # Add this line right before application.run_polling()
-    keep_alive()
     
-    print("bot is live and waiting for messages...")
+    Thread(target=run).start()
     application.run_polling()
 
 if __name__ == "__main__":
