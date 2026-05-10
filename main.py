@@ -24,7 +24,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')
         ],
         [
-            InlineKeyboardButton("📊 view dashboard", url=SHEET_URL)
+            InlineKeyboardButton("📊 view dashboard", url=SHEET_URL),
+            InlineKeyboardButton("🗑️ clear groceries", callback_data='clear_groceries')
         ],
     ]
     
@@ -60,6 +61,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await query.edit_message_text(text="error connecting to the fridge data.")
             
+    elif query.data == 'clear_groceries':
+        payload = {"user": query.from_user.first_name, "note": "clear grocery list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text(text=response.text)
+        except:
+            await query.edit_message_text(text="failed to clear the list. ❌")
+    
     elif query.data == 'eat_fruit':
         payload = {"user": query.from_user.first_name, "note": "get_fruit_list"}
         try:
