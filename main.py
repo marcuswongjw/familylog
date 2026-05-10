@@ -45,13 +45,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text="simply type your activity (e.g., 'run 5km') and I'll log it!")
     
     elif query.data == 'view_groceries':
-        # instead of just text, let's actually fetch the list
-        payload = {"user": query.from_user.first_name, "note": "what to buy"}
+        payload = {"user": query.from_user.first_name, "note": "get_checklist"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text(text=f"🛒 *current grocery list:*\n\n{response.text}")
+            items = response.text.split(",")
+            
+            if not items or items[0] == "":
+                await query.edit_message_text(text="nothing to buy right now! 🛒")
+                return
+
+            keyboard = []
+            for item in items:
+                if item.strip():
+                    # We use a 'check:' prefix to toggle the item
+                    keyboard.append([InlineKeyboardButton(f"✅ {item}", callback_data=f"check_item:{item}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text="tap an item to mark it as bought:", reply_markup=reply_markup)
         except:
-            await query.edit_message_text(text="couldn't fetch the grocery list right now.")
+            await query.edit_message_text(text="couldn't fetch the checklist.")
+
+    elif query.data.startswith('check_item:'):
+        item_name = query.data.split(":")[1]
+        payload = {"user": query.from_user.first_name, "note": f"bought {item_name}"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.answer(f"marked {item_name} as bought!")
+        # refresh the list
+        await start(update, context)
+    
     
     elif query.data == 'check_fridge':
         try:
