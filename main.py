@@ -1,3 +1,6 @@
+from flask import Flask
+from threading import Thread
+
 import os
 import requests
 import base64
@@ -123,6 +126,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("logged, but couldn't get confirmation.")
 
 # --- 6. MAIN APPLICATION ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I am alive!"
+
+def run():
+    # Render uses the 'PORT' environment variable
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+    
 def main():
     if not TOKEN or not GOOGLE_SCRIPT_URL:
         print("error: TELEGRAM_TOKEN or GOOGLE_SCRIPT_URL missing.")
@@ -135,6 +153,9 @@ def main():
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
+    # Add this line right before application.run_polling()
+    keep_alive()
+    
     print("bot is live and waiting for messages...")
     application.run_polling()
 
