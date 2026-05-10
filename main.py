@@ -44,7 +44,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text="simply type your activity (e.g., 'run 5km') and I'll log it!")
     
     elif query.data == 'view_groceries':
-        await query.edit_message_text(text="to see the list, type 'what to buy'.")
+        # instead of just text, let's actually fetch the list
+        payload = {"user": query.from_user.first_name, "note": "what to buy"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text(text=f"🛒 *current grocery list:*\n\n{response.text}")
+        except:
+            await query.edit_message_text(text="couldn't fetch the grocery list right now.")
     
     elif query.data == 'check_fridge':
         try:
