@@ -24,7 +24,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("📊 view dashboard", url=SHEET_URL),
-            InlineKeyboardButton("🗑️ clear groceries", callback_data='clear_groceries')
         ],
     ]
     
@@ -97,10 +96,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['selected_fruit'] = fruit_name
         await query.edit_message_text(text=f"how many {fruit_name}s did you have? (type the number)")
 
-    elif query.data == 'clear_groceries':
-        payload = {"user": query.from_user.first_name, "note": "clear grocery list"}
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
-        await query.edit_message_text(text=response.text)
 
 # --- 4. PHOTO & TEXT HANDLERS ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
