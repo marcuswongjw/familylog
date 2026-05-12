@@ -11,8 +11,23 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
 SHEET_URL = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
 
-# Expense categories
-EXPENSE_CATEGORIES = ["🛒 Groceries", "🍽 Dining", "🏠 Household", "🚗 Transport", "📚 Education", "🎉 Fun", "💊 Health", "📦 Other"]
+# Grouped Categories for easier navigation
+EXPENSE_GROUPS = {
+    "👶 Children": ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
+    "👕 Clothing": ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
+    "🍽 Eating Out": ["Eating Out - Beverages", "Eating Out - Breakfast", "Eating Out - Dinner", "Eating Out - Lunch", "Eating Out - Snacks"],
+    "📚 Education": ["Education - Books", "Education - Courses & Enrichment", "Education - Subscription"],
+    "🎭 Entertainment": ["Entertainment - Experiences", "Entertainment - Massage", "Entertainment - Subscriptions", "Entertainment - Objects (toys, etc)"],
+    "🎁 Gifts/Giving": ["Gifts & Treats - CNY", "Gifts & Treats - Family", "Gifts & Treats - Friends", "Gifts & Treats - Wedding", "Giving - Church", "Giving - Charity", "Giving - Parents"],
+    "🏥 Health": ["Health & Fitness - Dental + Medical", "Health & Fitness - Events + Subscription", "Health & Fitness - Equipment + Supplements"],
+    "🏠 Household": ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet", "Utilities - Mobile"],
+    "🐾 Pets": ["Pets - Pet Food", "Pets - Grooming", "Pets - Pet Misc"],
+    "🚗 Transport": ["Transportation - Bus/MRT", "Transportation - Taxi/Grab", "Transportation - Auto: Service", "Transportation - Auto: Loan", "Transportation - Auto: Gas"],
+    "📈 Finance/Tax": ["Business", "Electronics", "Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
+    "🌍 Others": ["Holiday", "Misc", "Missions"]
+}
+
+ACCOUNT_TYPES = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
 
 # --- 2. HOME SCREEN (START) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,19 +157,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'add_expense':
         context.user_data['awaiting'] = 'expense_amount'
-        await query.edit_message_text(
-            text="💰 *add an expense*\n\nhow much did you spend?\n(e.g. '24.50')",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(text="💰 *add an expense*\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
 
+    # Handler for Group Selection
+    elif query.data.startswith('exp_group:'):
+        group_name = query.data.split(":")[1]
+        categories = EXPENSE_GROUPS[group_name]
+        keyboard = [[InlineKeyboardButton(cat, callback_data=f"expense_cat:{cat}")] for cat in categories]
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="show_groups")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text=f"📂 *{group_name}*\npick a specific category:", reply_markup=reply_markup, parse_mode='Markdown')
+
+    # Handler for Category Selection (Now triggers Account Type)
     elif query.data.startswith('expense_cat:'):
         category = query.data.split(":")[1]
         context.user_data['expense_category'] = category
+        keyboard = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text=f"category: *{category}*\n\nwhich account?", reply_markup=reply_markup, parse_mode='Markdown')
+
+    elif query.data.startswith('exp_acc:'):
+        account = query.data.split(":")[1]
+        context.user_data['expense_account'] = account
         context.user_data['awaiting'] = 'expense_description'
-        await query.edit_message_text(
-            text=f"category: *{category}*\n\nnow give it a short description:\n(e.g. 'lunch at foodcourt')",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(text=f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
 
     elif query.data == 'home':
         await start(update, context)
@@ -231,16 +257,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['expense_amount'] = amount
             context.user_data.pop('awaiting', None)
 
-            # Show category picker
-            keyboard = [
-                [InlineKeyboardButton(EXPENSE_CATEGORIES[i], callback_data=f"expense_cat:{EXPENSE_CATEGORIES[i]}"),
-                 InlineKeyboardButton(EXPENSE_CATEGORIES[i+1], callback_data=f"expense_cat:{EXPENSE_CATEGORIES[i+1]}")]
-                for i in range(0, len(EXPENSE_CATEGORIES) - 1, 2)
-            ]
+            # Show Group Picker
+            keyboard = []
+            group_keys = list(EXPENSE_GROUPS.keys())
+            for i in range(0, len(group_keys), 2):
+                row = [InlineKeyboardButton(group_keys[i], callback_data=f"exp_group:{group_keys[i]}")]
+                if i+1 < len(group_keys):
+                    row.append(InlineKeyboardButton(group_keys[i+1], callback_data=f"exp_group:{group_keys[i+1]}"))
+                keyboard.append(row)
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text("pick a category:", reply_markup=reply_markup)
+            await update.message.reply_text("select a category group:", reply_markup=reply_markup)
         except ValueError:
-            await update.message.reply_text("please enter a valid amount (e.g. '24.50')")
+            await update.message.reply_text("please enter a valid number.")
         return
 
     if awaiting == 'expense_description':
