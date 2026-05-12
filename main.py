@@ -276,6 +276,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = text
         amount = context.user_data.pop('expense_amount', 0)
         category = context.user_data.pop('expense_category', 'Other')
+        # make sure this key name matches the google script exactly
+        account = context.user_data.pop('expense_account', 'Family') 
         context.user_data.pop('awaiting', None)
 
         payload = {
@@ -283,9 +285,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "note": "add_expense",
             "expense_amount": amount,
             "expense_category": category,
+            "expense_account": account,  # <--- check this key
             "expense_description": description,
             "expense_paid_by": user
         }
+
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             await update.message.reply_text(
