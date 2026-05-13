@@ -114,4 +114,8 @@ async def webhook():
     return "Forbidden", 403
 
 if __name__ == "__main__":
-    app.run(port=int(os.environ.get("PORT", 10000)))
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080))
+    )
+
