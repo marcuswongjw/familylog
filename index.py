@@ -76,11 +76,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user.first_name
     await query.answer()
 
+    # HOME
     if query.data == 'home':
         context.user_data.clear()
         await start(update, context)
         return
 
+    # EXPENSES
     if query.data == 'view_expenses':
         payload = {"user": user, "note": "get_expenses"}
         response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -88,7 +90,118 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("➕ add expense", callback_data='add_expense')],
             [InlineKeyboardButton("🏠 home", callback_data='home')]
         ]
-        await query.edit_message_text(text=response.text or "no expenses", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(
+            text=response.text or "no expenses",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    # FERTILITY
+    if query.data == 'view_fertility':
+        keyboard = [
+            [InlineKeyboardButton(symptom, callback_data=f"fert:{symptom}")]
+            for symptom in FERTILITY_SYMPTOMS
+        ]
+        keyboard.append([InlineKeyboardButton("🏠 home", callback_data='home')])
+        await query.edit_message_text(
+            text="how are you feeling today? 🌸",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith("fert:"):
+        symptom = query.data.split("fert:")[1]
+        payload = {"user": user, "note": f"fertility:{symptom}"}
+        requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text=f"logged fertility symptom: {symptom}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # GROCERY LIST
+    if query.data == 'view_groceries':
+        payload = {"user": user, "note": "get_groceries"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text=response.text or "your grocery list is empty 🛒",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ add item", callback_data='add_grocery')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # FRIDGE CHECK
+    if query.data == 'check_fridge':
+        payload = {"user": user, "note": "check_fridge"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text=response.text or "fridge is empty ❄️",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # FRUIT LOGGING
+    if query.data == 'eat_fruit':
+        payload = {"user": user, "note": "ate_fruit"}
+        requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text="nice! logged your fruit intake 🍎",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # TO‑DO LIST
+    if query.data == 'view_todos':
+        payload = {"user": user, "note": "get_todos"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text=response.text or "no tasks yet! 📝",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ add task", callback_data='add_todo')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # ACTIVITY LOG
+    if query.data == 'log_activity':
+        await query.edit_message_text(
+            text="what activity did you do? 🏃‍♂️",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        context.user_data["awaiting_activity"] = True
+        return
+
+    # CALENDAR
+    if query.data == 'view_calendar':
+        payload = {"user": user, "note": "get_calendar"}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
+        await query.edit_message_text(
+            text=response.text or "no events found 📅",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ])
+        )
+        return
+
+    # FALLBACK
+    await query.edit_message_text(
+        text=f"'{query.data}' is not implemented yet.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏠 home", callback_data='home')]
+        ])
+    )
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
