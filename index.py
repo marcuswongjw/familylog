@@ -22,8 +22,8 @@ SHEET_URL         = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarv
 
 # Notification recipients — add more chat IDs here later (e.g. husband's)
 NOTIFY_CHAT_IDS = [
-    486455062,   # wife
-    # 987654321, # husband — uncomment and add ID when ready
+    486455062,   # husbang
+    # 987654321, # wife — uncomment and add ID when ready
 ]
 
 EXPENSE_GROUPS = {
