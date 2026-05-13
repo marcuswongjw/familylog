@@ -11,7 +11,7 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
 SHEET_URL = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
 
-# Grouped Categories for easier navigation
+# Grouped Categories
 EXPENSE_GROUPS = {
     "👶 Children": ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
     "👕 Clothing": ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
@@ -28,6 +28,19 @@ EXPENSE_GROUPS = {
 }
 
 ACCOUNT_TYPES = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
+
+
+# --- HELPER: build group picker keyboard ---
+def build_group_keyboard():
+    keyboard = []
+    group_keys = list(EXPENSE_GROUPS.keys())
+    for i in range(0, len(group_keys), 2):
+        row = [InlineKeyboardButton(group_keys[i], callback_data=f"exp_group:{group_keys[i]}")]
+        if i + 1 < len(group_keys):
+            row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"exp_group:{group_keys[i + 1]}"))
+        keyboard.append(row)
+    return keyboard
+
 
 # --- 2. HOME SCREEN (START) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,7 +61,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("📊 view dashboard", url=SHEET_URL),
         ],
     ]
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
@@ -157,32 +169,52 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'add_expense':
         context.user_data['awaiting'] = 'expense_amount'
-        await query.edit_message_text(text="💰 *add an expense*\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
+        await query.edit_message_text(
+            text="💰 *add an expense*\nhow much did you spend? (e.g. 24.50)",
+            parse_mode='Markdown'
+        )
 
-    # Handler for Group Selection
+    # FIX 1: show_groups back button handler
+    elif query.data == 'show_groups':
+        keyboard = build_group_keyboard()
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="select a category group:", reply_markup=reply_markup)
+
     elif query.data.startswith('exp_group:'):
-        group_name = query.data.split(":")[1]
-        categories = EXPENSE_GROUPS[group_name]
+        group_name = query.data.split(":", 1)[1]
+        categories = EXPENSE_GROUPS.get(group_name, [])
         keyboard = [[InlineKeyboardButton(cat, callback_data=f"expense_cat:{cat}")] for cat in categories]
         keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="show_groups")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text=f"📂 *{group_name}*\npick a specific category:", reply_markup=reply_markup, parse_mode='Markdown')
+        await query.edit_message_text(
+            text=f"📂 *{group_name}*\npick a specific category:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-    # Handler for Category Selection (Now triggers Account Type)
     elif query.data.startswith('expense_cat:'):
-        category = query.data.split(":")[1]
+        category = query.data.split(":", 1)[1]
         context.user_data['expense_category'] = category
         keyboard = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text=f"category: *{category}*\n\nwhich account?", reply_markup=reply_markup, parse_mode='Markdown')
+        await query.edit_message_text(
+            text=f"category: *{category}*\n\nwhich account?",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
     elif query.data.startswith('exp_acc:'):
-        account = query.data.split(":")[1]
+        account = query.data.split(":", 1)[1]
         context.user_data['expense_account'] = account
         context.user_data['awaiting'] = 'expense_description'
-        await query.edit_message_text(text=f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
+        await query.edit_message_text(
+            text=f"account: *{account}*\n\nshort description? (e.g. 'starbucks')",
+            parse_mode='Markdown'
+        )
 
+    # FIX 4: clear user_data on home to avoid stale state
     elif query.data == 'home':
+        context.user_data.clear()
         await start(update, context)
 
 
@@ -245,7 +277,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(), parse_mode='Markdown')
+            await update.message.reply_text(
+                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(),
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the event. please try again.")
         return
@@ -257,19 +292,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['expense_amount'] = amount
             context.user_data.pop('awaiting', None)
 
-            # Show Group Picker
-            keyboard = []
-            group_keys = list(EXPENSE_GROUPS.keys())
-            for i in range(0, len(group_keys), 2):
-                row = [InlineKeyboardButton(group_keys[i], callback_data=f"exp_group:{group_keys[i]}")]
-                if i+1 < len(group_keys):
-                    row.append(InlineKeyboardButton(group_keys[i+1], callback_data=f"exp_group:{group_keys[i+1]}"))
-                keyboard.append(row)
-            
+            # Show group picker (reuse helper)
+            keyboard = build_group_keyboard()
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("select a category group:", reply_markup=reply_markup)
         except ValueError:
-            await update.message.reply_text("please enter a valid number.")
+            await update.message.reply_text("please enter a valid amount (e.g. '24.50')")
         return
 
     if awaiting == 'expense_description':
@@ -284,18 +312,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "note": "add_expense",
             "expense_amount": amount,
             "expense_category": category,
-            "expense_account": account,
+            "expense_account": account,       # FIX 3: account now sent to Apps Script
             "expense_description": description,
             "expense_paid_by": user
         }
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            # update the message here to include the account line
             await update.message.reply_text(
                 f"✅ expense logged!\n\n"
                 f"💰 *${amount:.2f}*\n"
                 f"🏷 {category}\n"
-                f"🏦 {account}\n"  # <--- added this line
+                f"🏦 {account}\n"
                 f"📝 {description}\n"
                 f"👤 paid by {user}",
                 parse_mode='Markdown'
