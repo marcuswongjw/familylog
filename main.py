@@ -516,11 +516,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response.text)
 
 
-# --- 6. RENDER KEEP-ALIVE ---
-app = Flask('')
 
-@app.route('/')
-def home(): return "I am alive!"
 
 def run():
     port = int(os.environ.get("PORT", 10000))
