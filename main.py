@@ -11,7 +11,7 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
 SHEET_URL = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
 
-# Grouped Categories
+# Grouped Expense Categories
 EXPENSE_GROUPS = {
     "👶 Children": ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
     "👕 Clothing": ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
@@ -28,6 +28,8 @@ EXPENSE_GROUPS = {
 }
 
 ACCOUNT_TYPES = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
+
+FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
 
 
 # --- HELPER: build group picker keyboard ---
@@ -56,6 +58,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("📅 family calendar", callback_data='view_calendar'),
             InlineKeyboardButton("💰 expenses", callback_data='view_expenses')
+        ],
+        [
+            InlineKeyboardButton("✅ to-do list", callback_data='view_todos'),
+            InlineKeyboardButton("🌸 fertility", callback_data='view_fertility')
         ],
         [
             InlineKeyboardButton("📊 view dashboard", url=SHEET_URL),
@@ -93,7 +99,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text="couldn't fetch the checklist.")
 
     elif query.data.startswith('check_item:'):
-        item_name = query.data.split(":")[1]
+        item_name = query.data.split(":", 1)[1]
         payload = {"user": query.from_user.first_name, "note": f"bought {item_name}"}
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -122,12 +128,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text="error connecting to fridge data.")
 
     elif query.data.startswith('select_fruit:'):
-        fruit_name = query.data.split(":")[1]
+        fruit_name = query.data.split(":", 1)[1]
         context.user_data['selected_fruit'] = fruit_name
         await query.edit_message_text(text=f"how many {fruit_name}s did you have? (type the number)")
 
     # ------------------------------------------------------------------ CALENDAR
-
     elif query.data == 'view_calendar':
         payload = {"user": query.from_user.first_name, "note": "get_events"}
         try:
@@ -151,7 +156,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # ------------------------------------------------------------------ EXPENSES
-
     elif query.data == 'view_expenses':
         payload = {"user": query.from_user.first_name, "note": "get_expenses"}
         try:
@@ -174,7 +178,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-    # FIX 1: show_groups back button handler
     elif query.data == 'show_groups':
         keyboard = build_group_keyboard()
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -212,7 +215,137 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-    # FIX 4: clear user_data on home to avoid stale state
+    # ------------------------------------------------------------------ TO-DO LIST
+    elif query.data == 'view_todos':
+        payload = {"user": query.from_user.first_name, "note": "get_todos"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("➕ add shared task", callback_data='add_todo_shared'),
+                 InlineKeyboardButton("➕ add my task", callback_data='add_todo_personal')],
+                [InlineKeyboardButton("✅ complete a task", callback_data='complete_todo')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            display = text if text and text != "no_todos" else "no tasks yet! add one below ✅"
+            await query.edit_message_text(text=display, reply_markup=reply_markup)
+        except:
+            await query.edit_message_text(text="couldn't load to-do list. try again.")
+
+    elif query.data == 'add_todo_shared':
+        context.user_data['awaiting'] = 'todo_task'
+        context.user_data['todo_type'] = 'Shared'
+        await query.edit_message_text(text="✅ *add a shared task*\n\nwhat needs to be done?", parse_mode='Markdown')
+
+    elif query.data == 'add_todo_personal':
+        context.user_data['awaiting'] = 'todo_task'
+        context.user_data['todo_type'] = 'Personal'
+        await query.edit_message_text(text="✅ *add a personal task*\n\nwhat do you need to do?", parse_mode='Markdown')
+
+    elif query.data == 'complete_todo':
+        payload = {"user": query.from_user.first_name, "note": "get_todo_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw = response.text.strip()
+            if not raw or raw == "no_todos":
+                await query.edit_message_text(text="no open tasks to complete! 🎉")
+                return
+            # Format: "id|task|owner" comma separated
+            items = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    tid, task, owner = parts[0], parts[1], parts[2]
+                    label = f"✅ {task} ({owner})"
+                    keyboard.append([InlineKeyboardButton(label, callback_data=f"done_todo:{tid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text="tap a task to mark it done:", reply_markup=reply_markup)
+        except:
+            await query.edit_message_text(text="couldn't load tasks.")
+
+    elif query.data.startswith('done_todo:'):
+        tid = query.data.split(":", 1)[1]
+        payload = {"user": query.from_user.first_name, "note": "complete_todo", "todo_id": tid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.answer("task marked done! 🎉")
+            await start(update, context)
+        except:
+            await query.answer("couldn't update task.")
+
+    # ------------------------------------------------------------------ FERTILITY
+    elif query.data == 'view_fertility':
+        payload = {"user": query.from_user.first_name, "note": "get_fertility"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("🩸 log period start", callback_data='log_period_start'),
+                 InlineKeyboardButton("⏹ log period end", callback_data='log_period_end')],
+                [InlineKeyboardButton("🥚 log ovulation", callback_data='log_ovulation'),
+                 InlineKeyboardButton("🌡 log symptoms", callback_data='log_symptoms')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            display = text if text and text != "no_fertility" else "no fertility data yet. start logging below 🌸"
+            await query.edit_message_text(text=display, reply_markup=reply_markup)
+        except:
+            await query.edit_message_text(text="couldn't load fertility data. try again.")
+
+    elif query.data == 'log_period_start':
+        context.user_data['awaiting'] = 'fertility_date'
+        context.user_data['fertility_type'] = 'Period Start'
+        await query.edit_message_text(
+            text="🩸 *log period start*\n\nwhat date did your period start?\n(e.g. '13 May' or '13/05/2026')",
+            parse_mode='Markdown'
+        )
+
+    elif query.data == 'log_period_end':
+        context.user_data['awaiting'] = 'fertility_date'
+        context.user_data['fertility_type'] = 'Period End'
+        await query.edit_message_text(
+            text="⏹ *log period end*\n\nwhat date did your period end?\n(e.g. '13 May' or '13/05/2026')",
+            parse_mode='Markdown'
+        )
+
+    elif query.data == 'log_ovulation':
+        context.user_data['awaiting'] = 'fertility_date'
+        context.user_data['fertility_type'] = 'Ovulation'
+        await query.edit_message_text(
+            text="🥚 *log ovulation*\n\nwhat date did you notice ovulation signs?\n(e.g. '13 May' or '13/05/2026')",
+            parse_mode='Markdown'
+        )
+
+    elif query.data == 'log_symptoms':
+        keyboard = [
+            [InlineKeyboardButton(s, callback_data=f"fertility_symptom:{s}")] for s in FERTILITY_SYMPTOMS
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_fertility")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="🌡 *what are you experiencing today?*", reply_markup=reply_markup, parse_mode='Markdown')
+
+    elif query.data.startswith('fertility_symptom:'):
+        symptom = query.data.split(":", 1)[1]
+        payload = {
+            "user": query.from_user.first_name,
+            "note": "add_fertility",
+            "fertility_type": "Symptom",
+            "fertility_date": "",
+            "fertility_notes": symptom
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text(
+                text=f"✅ symptom logged: *{symptom}*",
+                parse_mode='Markdown'
+            )
+        except:
+            await query.edit_message_text(text="couldn't save symptom.")
+
+    # ------------------------------------------------------------------ HOME
     elif query.data == 'home':
         context.user_data.clear()
         await start(update, context)
@@ -224,7 +357,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     awaiting = context.user_data.get('awaiting')
 
-    # ------------------------------------------------------------------ FRUIT (existing)
+    # ------------------------------------------------------------------ FRUIT
     if 'selected_fruit' in context.user_data:
         fruit = context.user_data.pop('selected_fruit')
         if text.isdigit():
@@ -239,25 +372,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'event_title':
         context.user_data['event_title'] = text
         context.user_data['awaiting'] = 'event_date'
-        await update.message.reply_text(
-            "📆 what date is the event?\n(e.g. '15 Jun' or '15/06/2025')"
-        )
+        await update.message.reply_text("📆 what date is the event?\n(e.g. '15 Jun' or '15/06/2025')")
         return
 
     if awaiting == 'event_date':
         context.user_data['event_date'] = text
         context.user_data['awaiting'] = 'event_time'
-        await update.message.reply_text(
-            "🕐 what time? (e.g. '3pm' or '15:00')\ntype 'skip' if no specific time"
-        )
+        await update.message.reply_text("🕐 what time? (e.g. '3pm' or '15:00')\ntype 'skip' if no specific time")
         return
 
     if awaiting == 'event_time':
         context.user_data['event_time'] = text if text.lower() != 'skip' else ''
         context.user_data['awaiting'] = 'event_notes'
-        await update.message.reply_text(
-            "📝 any notes? (e.g. 'bring IC', 'meet at lobby')\ntype 'skip' to leave blank"
-        )
+        await update.message.reply_text("📝 any notes?\ntype 'skip' to leave blank")
         return
 
     if awaiting == 'event_notes':
@@ -266,17 +393,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date = context.user_data.pop('event_date', '')
         time = context.user_data.pop('event_time', '')
         context.user_data.pop('awaiting', None)
-
         payload = {
-            "user": user,
-            "note": "add_event",
-            "event_title": title,
-            "event_date": date,
-            "event_time": time,
-            "event_notes": notes
+            "user": user, "note": "add_event",
+            "event_title": title, "event_date": date,
+            "event_time": time, "event_notes": notes
         }
         try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             await update.message.reply_text(
                 f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(),
                 parse_mode='Markdown'
@@ -291,8 +414,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount = float(text.replace('$', '').replace(',', ''))
             context.user_data['expense_amount'] = amount
             context.user_data.pop('awaiting', None)
-
-            # Show group picker (reuse helper)
             keyboard = build_group_keyboard()
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("select a category group:", reply_markup=reply_markup)
@@ -301,54 +422,95 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if awaiting == 'expense_description':
-        description = text
         amount = context.user_data.pop('expense_amount', 0)
         category = context.user_data.pop('expense_category', 'Other')
         account = context.user_data.pop('expense_account', 'Family')
         context.user_data.pop('awaiting', None)
-
         payload = {
-            "user": user,
-            "note": "add_expense",
-            "expense_amount": amount,
-            "expense_category": category,
-            "expense_account": account,       # FIX 3: account now sent to Apps Script
-            "expense_description": description,
+            "user": user, "note": "add_expense",
+            "expense_amount": amount, "expense_category": category,
+            "expense_account": account, "expense_description": text,
             "expense_paid_by": user
         }
         try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             await update.message.reply_text(
-                f"✅ expense logged!\n\n"
-                f"💰 *${amount:.2f}*\n"
-                f"🏷 {category}\n"
-                f"🏦 {account}\n"
-                f"📝 {description}\n"
-                f"👤 paid by {user}",
+                f"✅ expense logged!\n\n💰 *${amount:.2f}*\n🏷 {category}\n🏦 {account}\n📝 {text}\n👤 paid by {user}",
                 parse_mode='Markdown'
             )
         except:
             await update.message.reply_text("couldn't save the expense. please try again.")
         return
 
-    # ------------------------------------------------------------------ DEFAULT (existing)
+    # ------------------------------------------------------------------ TO-DO FLOW
+    if awaiting == 'todo_task':
+        todo_type = context.user_data.pop('todo_type', 'Shared')
+        context.user_data['todo_task'] = text
+        context.user_data['awaiting'] = 'todo_due'
+        await update.message.reply_text(
+            f"📋 task: *{text}*\n\nany due date? (e.g. '20 May')\ntype 'skip' for no due date",
+            parse_mode='Markdown'
+        )
+        context.user_data['todo_type'] = todo_type
+        return
+
+    if awaiting == 'todo_due':
+        due = text if text.lower() != 'skip' else ''
+        task = context.user_data.pop('todo_task', '')
+        todo_type = context.user_data.pop('todo_type', 'Shared')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user": user, "note": "add_todo",
+            "todo_task": task, "todo_type": todo_type,
+            "todo_due": due, "todo_owner": user
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            due_text = f"\n📅 due: {due}" if due else ""
+            await update.message.reply_text(
+                f"✅ task added!\n\n📋 *{task}*\n👤 {todo_type} · added by {user}{due_text}",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save the task. please try again.")
+        return
+
+    # ------------------------------------------------------------------ FERTILITY FLOW
+    if awaiting == 'fertility_date':
+        fertility_type = context.user_data.pop('fertility_type', '')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user": user, "note": "add_fertility",
+            "fertility_type": fertility_type,
+            "fertility_date": text,
+            "fertility_notes": ""
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            emoji = "🩸" if "Period" in fertility_type else "🥚"
+            await update.message.reply_text(
+                f"✅ logged!\n\n{emoji} *{fertility_type}*\n📆 {text}",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save. please try again.")
+        return
+
+    # ------------------------------------------------------------------ DEFAULT
     payload = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
     await update.message.reply_text(response.text)
 
 
-# --- 5. PHOTO HANDLER (unchanged) ---
+# --- 5. PHOTO HANDLER ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user.first_name
     photo_file = await update.message.photo[2].get_file()
     image_bytes = await photo_file.download_as_bytearray()
     image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-
     payload = {
-        "user": user,
-        "note": update.message.caption or "",
-        "fileData": image_base64,
-        "fileName": f"{user}_{photo_file.file_id}.jpg"
+        "user": user, "note": update.message.caption or "",
+        "fileData": image_base64, "fileName": f"{user}_{photo_file.file_id}.jpg"
     }
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload)
     await update.message.reply_text(response.text)
@@ -367,12 +529,10 @@ def run():
 def main():
     if not TOKEN: return
     application = ApplicationBuilder().token(TOKEN).build()
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
     Thread(target=run).start()
     application.run_polling()
 
