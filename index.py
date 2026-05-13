@@ -125,10 +125,26 @@ async def process_update():
 @app.route('/', methods=['GET'])
 def healthcheck():
     return "ok", 200
-    
+
+
 @app.route('/', methods=['POST'])
 def webhook():
-    return asyncio.run(process_update())
+    try:
+        data = request.get_json(silent=True)
+
+        # Log raw update for debugging
+        print("RAW UPDATE:", data)
+
+        if not data:
+            print("ERROR: Empty or invalid JSON from Telegram")
+            return "ignored", 200
+
+        return asyncio.run(process_update_safe(data))
+
+    except Exception as e:
+        print("WEBHOOK ERROR:", e)
+        return "error", 200   # never return 500
+
 
 # --- RUN FLASK (RAILWAY) ---
 if __name__ == "__main__":
