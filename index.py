@@ -115,12 +115,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application = ApplicationBuilder().token(TOKEN).build()
 
 async def init_app():
-    await application.initialize()   # async init
-    await application.start()        # start PTB
+    await application.initialize()
+    await application.start()
     print("Telegram bot initialized")
 
-# Kick off async initialization once at startup
-asyncio.get_event_loop().run_until_complete(init_app())
+# Create a new event loop explicitly (Python 3.11+ safe)
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(init_app())
 
 # Register handlers AFTER initialization
 application.add_handler(CommandHandler("start", start))
