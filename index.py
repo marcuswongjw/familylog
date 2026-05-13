@@ -111,6 +111,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BUILD APPLICATION ONCE ---
 application = ApplicationBuilder().token(TOKEN).build()
+application.initialize()   # REQUIRED FOR WEBHOOK MODE
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
