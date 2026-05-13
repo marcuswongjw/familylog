@@ -113,12 +113,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BUILD APPLICATION ---
 application = ApplicationBuilder().token(TOKEN).build()
-application.initialize()  # REQUIRED FOR WEBHOOK MODE
 
+async def init_app():
+    await application.initialize()   # async init
+    await application.start()        # start PTB
+    print("Telegram bot initialized")
+
+# Kick off async initialization once at startup
+asyncio.get_event_loop().run_until_complete(init_app())
+
+# Register handlers AFTER initialization
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+
 
 # --- SAFE UPDATE PROCESSOR ---
 async def process_update_safe(data):
