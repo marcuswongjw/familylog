@@ -53,10 +53,13 @@ def build_group_keyboard():
 # --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📝 log activity", callback_data='log_activity'),
-         InlineKeyboardButton("🛒 grocery list", callback_data='view_groceries')],
-        [InlineKeyboardButton("🍎 check fridge", callback_data='check_fridge'),
-         InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
-        [InlineKeyboardButton("📅 family calendar", callback_data='view_calendar'),
-         InlineKeyboardButton("💰 expenses", callback_data='view_expenses')],
-        [InlineKeyboardButton("✅ to-do list", callback_data
+    [InlineKeyboardButton("📝 log activity", callback_data='log_activity'),
+     InlineKeyboardButton("🛒 grocery list", callback_data='view_groceries')],
+    [InlineKeyboardButton("🍎 check fridge", callback_data='check_fridge'),
+     InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
+    [InlineKeyboardButton("📅 family calendar", callback_data='view_calendar'),
+     InlineKeyboardButton("💰 expenses", callback_data='view_expenses')],
+    [InlineKeyboardButton("✅ to-do list", callback_data='view_todos'),
+     InlineKeyboardButton("🌸 fertility", callback_data='view_fertility')],
+    [InlineKeyboardButton("📊 view dashboard", url=SHEET_URL)]
+]
