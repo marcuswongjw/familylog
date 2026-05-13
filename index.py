@@ -102,16 +102,17 @@ async def setup_application():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     return application
 
+async def process_update():
+    application = await setup_application()
+    await application.initialize()
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    await application.process_update(update)
+    await application.shutdown()
+    return "ok", 200
+
 @app.route('/', methods=['POST'])
-async def webhook():
-    if request.method == "POST":
-        application = await setup_application()
-        await application.initialize()
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
-        await application.shutdown()
-        return "ok", 200
-    return "Forbidden", 403
+def webhook():
+    return asyncio.run(process_update())
 
 if __name__ == "__main__":
     app.run(
