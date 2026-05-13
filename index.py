@@ -122,6 +122,10 @@ async def process_update():
     await application.process_update(update)
     return "ok", 200
 
+@app.route('/', methods=['GET'])
+def healthcheck():
+    return "ok", 200
+    
 @app.route('/', methods=['POST'])
 def webhook():
     return asyncio.run(process_update())
