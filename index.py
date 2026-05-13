@@ -116,6 +116,24 @@ application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
+
+async def process_update_safe(data):
+    try:
+        update = Update.de_json(data, application.bot)
+
+        if not update:
+            print("ERROR: Update.de_json returned None")
+            return "ignored", 200
+
+        await application.process_update(update)
+        return "ok", 200
+
+    except Exception as e:
+        print("PROCESS_UPDATE ERROR:", e)
+        return "ok", 200
+
+
+
 # --- WEBHOOK PROCESSOR ---
 async def process_update():
     update = Update.de_json(request.get_json(force=True), application.bot)
@@ -125,7 +143,6 @@ async def process_update():
 @app.route('/', methods=['GET'])
 def healthcheck():
     return "ok", 200
-
 
 @app.route('/', methods=['POST'])
 def webhook():
