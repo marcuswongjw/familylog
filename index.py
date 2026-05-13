@@ -3,6 +3,7 @@ import asyncio
 import threading
 import requests
 import base64
+import time
 from flask import Flask, request
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -15,9 +16,15 @@ from telegram.ext import (
 )
 
 # --- CONFIGURATION ---
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
+TOKEN             = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
-SHEET_URL = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
+SHEET_URL         = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
+
+# Notification recipients — add more chat IDs here later (e.g. husband's)
+NOTIFY_CHAT_IDS = [
+    486455062,   # wife
+    # 987654321, # husband — uncomment and add ID when ready
+]
 
 EXPENSE_GROUPS = {
     "👶 Children": ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
@@ -34,13 +41,13 @@ EXPENSE_GROUPS = {
     "🌍 Others": ["Holiday", "Misc", "Missions"]
 }
 
-ACCOUNT_TYPES = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
+ACCOUNT_TYPES      = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
 
 
 # --- HELPERS ---
 def build_group_keyboard():
-    keyboard = []
+    keyboard  = []
     group_keys = list(EXPENSE_GROUPS.keys())
     for i in range(0, len(group_keys), 2):
         row = [InlineKeyboardButton(group_keys[i], callback_data=f"exp_group:{group_keys[i]}")]
@@ -51,6 +58,14 @@ def build_group_keyboard():
 
 def home_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 home", callback_data='home')]])
+
+async def send_to_all(text):
+    """Send a message to all configured notification recipients."""
+    for chat_id in NOTIFY_CHAT_IDS:
+        try:
+            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode='Markdown')
+        except Exception as e:
+            print(f"Failed to send to {chat_id}: {e}")
 
 
 # --- HOME ---
@@ -66,11 +81,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
         [InlineKeyboardButton("📊 view dashboard",   url=SHEET_URL)]
     ]
-    text = "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?"
+    text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     else:
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 
 # --- BUTTON HANDLER ---
@@ -79,7 +94,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user  = query.from_user.first_name
     await query.answer()
 
-    # HOME
     if query.data == 'home':
         context.user_data.clear()
         await start(update, context)
@@ -103,7 +117,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data.startswith('check_item:'):
         item_name = query.data.split(":", 1)[1]
-        payload = {"user": user, "note": f"bought {item_name}"}
+        payload   = {"user": user, "note": f"bought {item_name}"}
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             await query.answer(f"marked {item_name} as bought!")
@@ -127,7 +141,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_fruit_list"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            fruits = [f.strip() for f in response.text.split(",") if f.strip()]
+            fruits   = [f.strip() for f in response.text.split(",") if f.strip()]
             if not fruits:
                 await query.edit_message_text("the fridge is empty of fruit! 🧊", reply_markup=home_keyboard())
                 return
@@ -141,7 +155,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data.startswith('select_fruit:'):
         fruit_name = query.data.split(":", 1)[1]
         context.user_data['selected_fruit'] = fruit_name
-        context.user_data['awaiting'] = 'fruit_qty'
+        context.user_data['awaiting']       = 'fruit_qty'
         await query.edit_message_text(f"how many {fruit_name}s did you have? (type the number)")
         return
 
@@ -156,7 +170,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_events"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text = response.text.strip()
+            text     = response.text.strip()
             keyboard = [
                 [InlineKeyboardButton("➕ add event", callback_data='add_event')],
                 [InlineKeyboardButton("🏠 home",      callback_data='home')]
@@ -180,7 +194,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_expenses"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text = response.text.strip()
+            text     = response.text.strip()
             keyboard = [
                 [InlineKeyboardButton("➕ add expense", callback_data='add_expense')],
                 [InlineKeyboardButton("🏠 home",        callback_data='home')]
@@ -229,7 +243,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data.startswith('exp_acc:'):
         account = query.data.split(":", 1)[1]
         context.user_data['expense_account'] = account
-        context.user_data['awaiting'] = 'expense_description'
+        context.user_data['awaiting']        = 'expense_description'
         await query.edit_message_text(
             f"account: *{account}*\n\nshort description? (e.g. 'starbucks')",
             parse_mode='Markdown'
@@ -241,7 +255,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_todos"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text = response.text.strip()
+            text     = response.text.strip()
             keyboard = [
                 [InlineKeyboardButton("➕ add shared task",  callback_data='add_todo_shared'),
                  InlineKeyboardButton("➕ add my task",      callback_data='add_todo_personal')],
@@ -270,7 +284,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_todo_list"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            raw = response.text.strip()
+            raw      = response.text.strip()
             if not raw or raw == "no_todos":
                 await query.edit_message_text("no open tasks to complete! 🎉", reply_markup=home_keyboard())
                 return
@@ -303,7 +317,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "get_fertility"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text = response.text.strip()
+            text     = response.text.strip()
             keyboard = [
                 [InlineKeyboardButton("🩸 log period start", callback_data='log_period_start'),
                  InlineKeyboardButton("⏹ log period end",   callback_data='log_period_end')],
@@ -364,7 +378,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text(f"✅ symptom logged: *{symptom}*", parse_mode='Markdown', reply_markup=home_keyboard())
+            await query.edit_message_text(
+                f"✅ symptom logged: *{symptom}*",
+                parse_mode='Markdown',
+                reply_markup=home_keyboard()
+            )
         except:
             await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
         return
@@ -441,7 +459,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount = float(text.replace('$', '').replace(',', ''))
             context.user_data['expense_amount'] = amount
             context.user_data.pop('awaiting', None)
-            await update.message.reply_text("select a category group:", reply_markup=InlineKeyboardMarkup(build_group_keyboard()))
+            await update.message.reply_text(
+                "select a category group:",
+                reply_markup=InlineKeyboardMarkup(build_group_keyboard())
+            )
         except ValueError:
             await update.message.reply_text("please enter a valid amount (e.g. '24.50')")
         return
@@ -538,6 +559,53 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response.text)
 
 
+# --- NOTIFICATION HANDLERS ---
+async def handle_notify(notify_type: str, data: dict):
+    """Central handler for all scheduled notifications."""
+
+    # ---- EXPENSE SUMMARY (last day of month) ----
+    if notify_type == "expense_summary":
+        msg = data.get("message", "")
+        if msg:
+            await send_to_all(f"💰 *Wong Family — Monthly Expense Summary*\n\n{msg}")
+
+    # ---- EXPENSE REPORT (1st of month) ----
+    elif notify_type == "expense_report":
+        msg = data.get("message", "")
+        if msg:
+            await send_to_all(f"📊 *Wong Family — Last Month's Full Report*\n\n{msg}")
+
+    # ---- FERTILE WINDOW — 3 DAYS BEFORE ----
+    elif notify_type == "fertile_soon":
+        fertile_start = data.get("fertile_start", "")
+        fertile_end   = data.get("fertile_end", "")
+        await send_to_all(
+            f"🌸 *Fertile Window in 3 Days*\n\n"
+            f"The fertile window is coming up!\n"
+            f"🗓 *{fertile_start} – {fertile_end}*\n\n"
+            f"Plan accordingly 💕"
+        )
+
+    # ---- FERTILE WINDOW — 1 DAY BEFORE ----
+    elif notify_type == "fertile_tomorrow":
+        fertile_start = data.get("fertile_start", "")
+        fertile_end   = data.get("fertile_end", "")
+        await send_to_all(
+            f"🌸 *Fertile Window Starts Tomorrow!*\n\n"
+            f"🗓 *{fertile_start} – {fertile_end}*\n\n"
+            f"You've got this! 💕"
+        )
+
+    # ---- PERIOD DUE SOON ----
+    elif notify_type == "period_due":
+        next_period = data.get("next_period", "")
+        await send_to_all(
+            f"🩸 *Period Due Soon*\n\n"
+            f"Estimated next period: *{next_period}*\n"
+            f"Make sure you're prepared! 🌺"
+        )
+
+
 # --- BUILD APPLICATION ---
 application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
@@ -545,23 +613,20 @@ application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-# KEY FIX: run the event loop in a dedicated background thread
-# Flask runs in the main thread; the bot loop runs separately — no conflicts
+# Run event loop in a dedicated background thread
 loop = asyncio.new_event_loop()
 
 def start_bot_loop():
     asyncio.set_event_loop(loop)
     loop.run_until_complete(application.initialize())
     loop.run_until_complete(application.start())
-    print("✅ Telegram bot initialized")
+    print("✅ Wong Family bot initialized")
     loop.run_forever()
 
 bot_thread = threading.Thread(target=start_bot_loop, daemon=True)
 bot_thread.start()
+time.sleep(2)  # wait for loop to be ready before Flask starts
 
-# Wait for the loop to be fully running before Flask starts accepting requests
-import time
-time.sleep(2)
 
 # --- FLASK APP ---
 app = Flask(__name__)
@@ -576,7 +641,6 @@ def webhook():
         data = request.get_json(silent=True)
         if not data:
             return "ignored", 200
-        # Submit to the dedicated bot event loop and wait for result
         future = asyncio.run_coroutine_threadsafe(
             application.process_update(Update.de_json(data, application.bot)),
             loop
@@ -586,6 +650,22 @@ def webhook():
     except Exception as e:
         print(f"WEBHOOK ERROR: {e}")
         return "ok", 200
+
+@app.route('/notify', methods=['POST'])
+def notify():
+    """Called by Google Apps Script on a timed trigger."""
+    try:
+        data        = request.get_json(silent=True)
+        notify_type = data.get("type", "")
+        future      = asyncio.run_coroutine_threadsafe(
+            handle_notify(notify_type, data),
+            loop
+        )
+        future.result(timeout=30)
+        return "ok", 200
+    except Exception as e:
+        print(f"NOTIFY ERROR: {e}")
+        return "error", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
