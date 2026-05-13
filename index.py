@@ -63,7 +63,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🌸 fertility", callback_data='view_fertility')],
         [InlineKeyboardButton("📊 view dashboard", url=SHEET_URL)]
     ]
+
     text = "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?"
+
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
@@ -109,15 +111,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     requests.post(GOOGLE_SCRIPT_URL, json=payload)
     await update.message.reply_text("photo logged! 📸")
 
-# --- BUILD APPLICATION ONCE ---
+# --- BUILD APPLICATION ---
 application = ApplicationBuilder().token(TOKEN).build()
-application.initialize()   # REQUIRED FOR WEBHOOK MODE
+application.initialize()  # REQUIRED FOR WEBHOOK MODE
+
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-
+# --- SAFE UPDATE PROCESSOR ---
 async def process_update_safe(data):
     try:
         update = Update.de_json(data, application.bot)
@@ -133,14 +136,7 @@ async def process_update_safe(data):
         print("PROCESS_UPDATE ERROR:", e)
         return "ok", 200
 
-
-
-# --- WEBHOOK PROCESSOR ---
-async def process_update():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
-    return "ok", 200
-
+# --- WEBHOOK ROUTES ---
 @app.route('/', methods=['GET'])
 def healthcheck():
     return "ok", 200
@@ -149,8 +145,6 @@ def healthcheck():
 def webhook():
     try:
         data = request.get_json(silent=True)
-
-        # Log raw update for debugging
         print("RAW UPDATE:", data)
 
         if not data:
@@ -161,8 +155,7 @@ def webhook():
 
     except Exception as e:
         print("WEBHOOK ERROR:", e)
-        return "error", 200   # never return 500
-
+        return "error", 200
 
 # --- RUN FLASK (RAILWAY) ---
 if __name__ == "__main__":
