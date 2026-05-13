@@ -1,8 +1,8 @@
 import os
-import json
+import asyncio
+import threading
 import requests
 import base64
-import asyncio
 from flask import Flask, request
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -56,15 +56,15 @@ def home_keyboard():
 # --- HOME ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📝 log activity",    callback_data='log_activity'),
-         InlineKeyboardButton("🛒 grocery list",    callback_data='view_groceries')],
-        [InlineKeyboardButton("🍎 check fridge",    callback_data='check_fridge'),
+        [InlineKeyboardButton("📝 log activity",     callback_data='log_activity'),
+         InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries')],
+        [InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge'),
          InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
-        [InlineKeyboardButton("📅 family calendar", callback_data='view_calendar'),
-         InlineKeyboardButton("💰 expenses",        callback_data='view_expenses')],
-        [InlineKeyboardButton("✅ to-do list",       callback_data='view_todos'),
-         InlineKeyboardButton("🌸 fertility",       callback_data='view_fertility')],
-        [InlineKeyboardButton("📊 view dashboard",  url=SHEET_URL)]
+        [InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar'),
+         InlineKeyboardButton("💰 expenses",         callback_data='view_expenses')],
+        [InlineKeyboardButton("✅ to-do list",        callback_data='view_todos'),
+         InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
+        [InlineKeyboardButton("📊 view dashboard",   url=SHEET_URL)]
     ]
     text = "welcome to the m.generations dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
@@ -87,7 +87,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ------------------------------------------------------------------ GROCERY
     if query.data == 'view_groceries':
-        payload = {"user": user, "note": "get_checklist"}          # FIX: was "get_groceries"
+        payload = {"user": user, "note": "get_checklist"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             items = [i.strip() for i in response.text.split(",") if i.strip()]
@@ -114,7 +114,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ------------------------------------------------------------------ FRIDGE
     if query.data == 'check_fridge':
-        payload = {"user": user, "note": "check fridge"}           # FIX: was "check_fridge"
+        payload = {"user": user, "note": "check fridge"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             await query.edit_message_text(response.text or "fridge is empty ❄️", reply_markup=home_keyboard())
@@ -124,7 +124,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ------------------------------------------------------------------ FRUIT
     if query.data == 'eat_fruit':
-        # FIX: was sending "ate_fruit" and skipping picker entirely
         payload = {"user": user, "note": "get_fruit_list"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -154,7 +153,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ------------------------------------------------------------------ CALENDAR
     if query.data == 'view_calendar':
-        payload = {"user": user, "note": "get_events"}             # FIX: was "get_calendar"
+        payload = {"user": user, "note": "get_events"}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text = response.text.strip()
@@ -244,10 +243,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text = response.text.strip()
             keyboard = [
-                [InlineKeyboardButton("➕ add shared task",   callback_data='add_todo_shared'),
-                 InlineKeyboardButton("➕ add my task",       callback_data='add_todo_personal')],
-                [InlineKeyboardButton("✅ complete a task",   callback_data='complete_todo')],
-                [InlineKeyboardButton("🏠 home",              callback_data='home')]
+                [InlineKeyboardButton("➕ add shared task",  callback_data='add_todo_shared'),
+                 InlineKeyboardButton("➕ add my task",      callback_data='add_todo_personal')],
+                [InlineKeyboardButton("✅ complete a task",  callback_data='complete_todo')],
+                [InlineKeyboardButton("🏠 home",             callback_data='home')]
             ]
             display = text if text and text != "no_todos" else "no tasks yet! add one below ✅"
             await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -256,14 +255,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == 'add_todo_shared':
-        context.user_data['awaiting']   = 'todo_task'
-        context.user_data['todo_type']  = 'Shared'
+        context.user_data['awaiting']  = 'todo_task'
+        context.user_data['todo_type'] = 'Shared'
         await query.edit_message_text("✅ *add a shared task*\n\nwhat needs to be done?", parse_mode='Markdown')
         return
 
     if query.data == 'add_todo_personal':
-        context.user_data['awaiting']   = 'todo_task'
-        context.user_data['todo_type']  = 'Personal'
+        context.user_data['awaiting']  = 'todo_task'
+        context.user_data['todo_type'] = 'Personal'
         await query.edit_message_text("✅ *add a personal task*\n\nwhat do you need to do?", parse_mode='Markdown')
         return
 
@@ -340,7 +339,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['awaiting']       = 'fertility_date'
         context.user_data['fertility_type'] = 'Ovulation'
         await query.edit_message_text(
-            "🥚 *log ovulation*\n\nwhat date did you notice ovulation signs?\n(e.g. '13 May' or '13/05/2026')",
+            "🥚 *log ovulation*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')",
             parse_mode='Markdown'
         )
         return
@@ -371,19 +370,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # FALLBACK
-    await query.edit_message_text(
-        f"'{query.data}' is not set up yet.",
-        reply_markup=home_keyboard()
-    )
+    await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
 
 
-# --- MESSAGE HANDLER (multi-step flows) ---
+# --- MESSAGE HANDLER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user     = update.message.from_user.first_name
     text     = update.message.text.strip()
     awaiting = context.user_data.get('awaiting')
 
-    # FRUIT QTY
     if awaiting == 'fruit_qty':
         fruit = context.user_data.pop('selected_fruit', '')
         context.user_data.pop('awaiting', None)
@@ -395,7 +390,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("please send a valid number.")
         return
 
-    # ACTIVITY
     if awaiting == 'activity':
         context.user_data.pop('awaiting', None)
         payload  = {"user": user, "note": text}
@@ -403,7 +397,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response.text)
         return
 
-    # CALENDAR FLOW
     if awaiting == 'event_title':
         context.user_data['event_title'] = text
         context.user_data['awaiting']    = 'event_date'
@@ -443,7 +436,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save the event.")
         return
 
-    # EXPENSE FLOW
     if awaiting == 'expense_amount':
         try:
             amount = float(text.replace('$', '').replace(',', ''))
@@ -475,9 +467,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save the expense.")
         return
 
-    # TO-DO FLOW
     if awaiting == 'todo_task':
-        todo_type = context.user_data.get('todo_type', 'Shared')
         context.user_data['todo_task'] = text
         context.user_data['awaiting']  = 'todo_due'
         await update.message.reply_text(
@@ -507,7 +497,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save the task.")
         return
 
-    # FERTILITY DATE FLOW
     if awaiting == 'fertility_date':
         fertility_type = context.user_data.pop('fertility_type', '')
         context.user_data.pop('awaiting', None)
@@ -528,7 +517,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save. please try again.")
         return
 
-    # DEFAULT — forward to Apps Script
+    # DEFAULT
     payload  = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
     await update.message.reply_text(response.text)
@@ -550,18 +539,29 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # --- BUILD APPLICATION ---
-# FIX: register handlers BEFORE initialize(), use a single shared event loop
 application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_handler))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
+# KEY FIX: run the event loop in a dedicated background thread
+# Flask runs in the main thread; the bot loop runs separately — no conflicts
 loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(application.initialize())
-loop.run_until_complete(application.start())
-print("✅ Telegram bot initialized")
+
+def start_bot_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.start())
+    print("✅ Telegram bot initialized")
+    loop.run_forever()
+
+bot_thread = threading.Thread(target=start_bot_loop, daemon=True)
+bot_thread.start()
+
+# Wait for the loop to be fully running before Flask starts accepting requests
+import time
+time.sleep(2)
 
 # --- FLASK APP ---
 app = Flask(__name__)
@@ -576,7 +576,7 @@ def webhook():
         data = request.get_json(silent=True)
         if not data:
             return "ignored", 200
-        # FIX: use the existing loop instead of asyncio.run() which creates a new one
+        # Submit to the dedicated bot event loop and wait for result
         future = asyncio.run_coroutine_threadsafe(
             application.process_update(Update.de_json(data, application.bot)),
             loop
@@ -584,7 +584,7 @@ def webhook():
         future.result(timeout=30)
         return "ok", 200
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
+        print(f"WEBHOOK ERROR: {e}")
         return "ok", 200
 
 if __name__ == "__main__":
