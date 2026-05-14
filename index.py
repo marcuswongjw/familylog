@@ -84,7 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ to-do list",        callback_data='view_todos'),
          InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
         [InlineKeyboardButton("👧 kids tracker",     callback_data='view_kids')],
-        [InlineKeyboardButton("📊 view dashboard",   url=SHEET_URL)]
+        [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
     ]
     text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
@@ -702,18 +702,6 @@ time.sleep(2)
 
 # --- FLASK ---
 app = Flask(__name__)
-
-# ============================================================
-# ADD THESE TO index.py
-# 1. Add this import at the top (if not already there):
-#    from flask import Flask, request, jsonify, send_file
-#
-# 2. Place the dashboard HTML file at: templates/dashboard.html
-#    (create a templates/ folder in your repo root)
-#
-# 3. Paste the two routes below into your Flask app section,
-#    alongside your existing / routes
-# ============================================================
 
 # Serve the dashboard HTML
 @app.route('/dashboard', methods=['GET'])
