@@ -740,7 +740,11 @@ def dashboard_data():
                         try: expenses['by_person'][parts[0].strip()] = float(parts[1].replace('$','').strip())
                         except: pass
                 if in_recent and line.startswith('  '):
-                    parts = [p.strip() for p in line.strip().split('·')]
+                    # Try splitting on Unicode middle dot · (U+00B7)
+                    parts = [p.strip() for p in line.strip().split('\u00b7')]
+                    if len(parts) < 3:
+                        # Fallback: try regular dot-space
+                        parts = [p.strip() for p in line.strip().split(' · ')]
                     if len(parts) >= 3:
                         try:
                             expenses['recent'].append({
@@ -752,6 +756,7 @@ def dashboard_data():
                             })
                             expenses['entry_count'] += 1
                         except: pass        
+    
 
 
         # ---- CALENDAR ----
