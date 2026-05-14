@@ -4,7 +4,7 @@ import threading
 import requests
 import base64
 import time
-from flask import Flask, request
+from flask import Flask, request, jsonify, send_file
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
