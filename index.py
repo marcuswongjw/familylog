@@ -713,50 +713,21 @@ def dashboard():
 def dashboard_data():
     try:
         # ---- EXPENSES ----
-        exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses"}, timeout=15)
-        exp_raw = exp_res.text.strip()
-
-        expenses = {"month_total": 0, "entry_count": 0, "by_category": {}, "by_person": {}, "recent": []}
-        if exp_raw and exp_raw != "no_expenses":
-            lines = exp_raw.split('\n')
-            in_category = False; in_person = False; in_recent = False
-            for line in lines:
-                line = line.strip()
-                if 'total:' in line.lower():
-                    try:
-                        expenses['month_total'] = float(line.replace('*','').split('$')[1].strip())
-                    except: pass
-                if '*by category:*' in line: in_category=True; in_person=False; in_recent=False; continue
-                if '*by person:*'   in line: in_person=True; in_category=False; in_recent=False; continue
-                if '*recent entries:*' in line: in_recent=True; in_category=False; in_person=False; continue
-                if in_category and line.startswith('  '):
-                    parts = line.strip().rsplit('$', 1)
-                    if len(parts) == 2:
-                        try: expenses['by_category'][parts[0].strip()] = float(parts[1].strip())
-                        except: pass
-                if in_person and line.startswith('  '):
-                    parts = line.strip().split(':')
-                    if len(parts) == 2:
-                        try: expenses['by_person'][parts[0].strip()] = float(parts[1].replace('$','').strip())
-                        except: pass
-                if in_recent and line.startswith('  '):
-                    # Try splitting on Unicode middle dot · (U+00B7)
-                    parts = [p.strip() for p in line.strip().split('\u00b7')]
-                    if len(parts) < 3:
-                        # Fallback: try regular dot-space
-                        parts = [p.strip() for p in line.strip().split(' · ')]
-                    if len(parts) >= 3:
-                        try:
-                            expenses['recent'].append({
-                                "date":     parts[0],
-                                "amount":   parts[1].replace('$','').strip(),
-                                "category": parts[2],
-                                "desc":     parts[3] if len(parts) > 3 else '—',
-                                "paid_by":  parts[4] if len(parts) > 4 else '—'
-                            })
-                            expenses['entry_count'] += 1
-                        except: pass        
-    
+        # ---- EXPENSES ----
+        exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses_raw"}, timeout=15)
+        try:
+            rows = exp_res.json()
+        except:
+            rows = []
+        
+        expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
+        for r in rows:
+            expenses['month_total'] += r.get('amount', 0)
+            cat = r.get('category', 'Other')
+            person = r.get('paid_by', 'unknown')
+            expenses['by_category'][cat] = expenses['by_category'].get(cat, 0) + r.get('amount', 0)
+            expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
+        
 
 
         # ---- CALENDAR ----
