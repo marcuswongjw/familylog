@@ -752,19 +752,19 @@ def dashboard_data():
                         try: expenses['by_person'][parts[0].strip()] = float(parts[1].replace('$','').strip())
                         except: pass
                 if in_recent and line.startswith('  '):
-                    # format: dd MMM · $amount · category · desc
                     parts = [p.strip() for p in line.strip().split('·')]
-                    if len(parts) >= 4:
+                    if len(parts) >= 3:
                         try:
                             expenses['recent'].append({
                                 "date":     parts[0],
                                 "amount":   parts[1].replace('$','').strip(),
                                 "category": parts[2],
-                                "desc":     parts[3],
+                                "desc":     parts[3] if len(parts) > 3 else '—',
                                 "paid_by":  parts[4] if len(parts) > 4 else '—'
                             })
                             expenses['entry_count'] += 1
-                        except: pass
+                        except: pass        
+
 
         # ---- CALENDAR ----
         cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
