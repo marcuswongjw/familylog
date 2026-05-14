@@ -703,6 +703,174 @@ time.sleep(2)
 # --- FLASK ---
 app = Flask(__name__)
 
+# ============================================================
+# ADD THESE TO index.py
+# 1. Add this import at the top (if not already there):
+#    from flask import Flask, request, jsonify, send_file
+#
+# 2. Place the dashboard HTML file at: templates/dashboard.html
+#    (create a templates/ folder in your repo root)
+#
+# 3. Paste the two routes below into your Flask app section,
+#    alongside your existing / routes
+# ============================================================
+
+# Serve the dashboard HTML
+@app.route('/dashboard', methods=['GET'])
+def dashboard():
+    return send_file('templates/dashboard.html')
+
+# API endpoint — fetches all data from Apps Script and returns JSON
+@app.route('/dashboard-data', methods=['GET'])
+def dashboard_data():
+    try:
+        # ---- EXPENSES ----
+        exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses"}, timeout=15)
+        exp_raw = exp_res.text.strip()
+
+        expenses = {"month_total": 0, "entry_count": 0, "by_category": {}, "by_person": {}, "recent": []}
+        if exp_raw and exp_raw != "no_expenses":
+            lines = exp_raw.split('\n')
+            in_category = False; in_person = False; in_recent = False
+            for line in lines:
+                line = line.strip()
+                if 'total:' in line.lower():
+                    try:
+                        expenses['month_total'] = float(line.replace('*','').split('$')[1].strip())
+                    except: pass
+                if '*by category:*' in line: in_category=True; in_person=False; in_recent=False; continue
+                if '*by person:*'   in line: in_person=True; in_category=False; in_recent=False; continue
+                if '*recent entries:*' in line: in_recent=True; in_category=False; in_person=False; continue
+                if in_category and line.startswith('  '):
+                    parts = line.strip().rsplit('$', 1)
+                    if len(parts) == 2:
+                        try: expenses['by_category'][parts[0].strip()] = float(parts[1].strip())
+                        except: pass
+                if in_person and line.startswith('  '):
+                    parts = line.strip().split(':')
+                    if len(parts) == 2:
+                        try: expenses['by_person'][parts[0].strip()] = float(parts[1].replace('$','').strip())
+                        except: pass
+                if in_recent and line.startswith('  '):
+                    # format: dd MMM · $amount · category · desc
+                    parts = [p.strip() for p in line.strip().split('·')]
+                    if len(parts) >= 4:
+                        try:
+                            expenses['recent'].append({
+                                "date":     parts[0],
+                                "amount":   parts[1].replace('$','').strip(),
+                                "category": parts[2],
+                                "desc":     parts[3],
+                                "paid_by":  parts[4] if len(parts) > 4 else '—'
+                            })
+                            expenses['entry_count'] += 1
+                        except: pass
+
+        # ---- CALENDAR ----
+        cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
+        cal_raw = cal_res.text.strip()
+        events  = []
+        if cal_raw and cal_raw != "no_events":
+            blocks = cal_raw.split('\n\n')
+            for block in blocks:
+                lines = block.strip().split('\n')
+                if len(lines) >= 2:
+                    title    = lines[0].replace('📅','').replace('*','').strip()
+                    detail   = lines[1].strip() if len(lines) > 1 else ''
+                    parts    = detail.split('·')
+                    date_str = parts[0].strip() if len(parts) > 0 else '—'
+                    time_str = parts[1].strip() if len(parts) > 1 else '—'
+                    if title and '📅' not in title and 'upcoming' not in title.lower():
+                        events.append({"title": title, "date": date_str, "time": time_str})
+
+        # ---- TO-DO ----
+        todo_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_todos"}, timeout=15)
+        todo_raw = todo_res.text.strip()
+        todos    = []
+        if todo_raw and todo_raw != "no_todos":
+            for line in todo_raw.split('\n'):
+                line = line.strip()
+                if line.startswith('•'):
+                    # format: • task · due dd MMM (owner)
+                    content = line[1:].strip()
+                    owner   = ''
+                    if '(' in content and content.endswith(')'):
+                        owner   = content[content.rfind('(')+1:-1]
+                        content = content[:content.rfind('(')].strip()
+                    due = ''
+                    if '· due' in content:
+                        parts   = content.split('· due')
+                        content = parts[0].strip()
+                        due     = parts[1].strip() if len(parts) > 1 else ''
+                    # determine type from section
+                    todos.append({"task": content, "type": "Shared", "due": due, "owner": owner, "status": "Open"})
+
+        # ---- GROCERY ----
+        groc_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
+        groc_raw = groc_res.text.strip()
+        groceries = []
+        if groc_raw:
+            for item in groc_raw.split(','):
+                item = item.strip()
+                if item:
+                    groceries.append({"name": item, "added_by": "—"})
+
+        # ---- FERTILITY ----
+        fert_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
+        fert_raw = fert_res.text.strip()
+        fertility = {}
+        if fert_raw and fert_raw != "no_fertility":
+            for line in fert_raw.split('\n'):
+                line = line.strip().replace('*','')
+                if 'last period start:' in line.lower():
+                    fertility['last_period_start'] = line.split(':',1)[1].strip()
+                elif 'next period' in line.lower():
+                    fertility['next_period'] = line.split(':',1)[1].strip()
+                elif 'fertile window' in line.lower():
+                    fertility['fertile_window'] = line.split(':',1)[1].strip()
+                elif 'last ovulation' in line.lower():
+                    fertility['last_ovulation'] = line.split(':',1)[1].strip()
+                elif 'duration' in line.lower():
+                    fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
+
+        # ---- KIDS ----
+        kids = {}
+        for kid in ['Mikaela', 'Meaghan']:
+            kid_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_full", "kid_name": kid}, timeout=15)
+            kid_raw = kid_res.text.strip()
+            entries = []
+            if kid_raw and 'no entries' not in kid_raw.lower():
+                for line in kid_raw.split('\n'):
+                    line = line.strip()
+                    if line.startswith('•'):
+                        content = line[1:].strip()
+                        # format: type · title · score (date)
+                        date_part = ''
+                        if '(' in content and content.endswith(')'):
+                            date_part = content[content.rfind('(')+1:-1]
+                            content   = content[:content.rfind('(')].strip()
+                        parts = [p.strip() for p in content.split('·')]
+                        entries.append({
+                            "type":  parts[0] if len(parts) > 0 else '—',
+                            "title": parts[1] if len(parts) > 1 else '—',
+                            "score": parts[2] if len(parts) > 2 else '',
+                            "date":  date_part
+                        })
+            kids[kid] = entries
+
+        return jsonify({
+            "expenses":  expenses,
+            "events":    events,
+            "todos":     todos,
+            "groceries": groceries,
+            "fertility": fertility,
+            "kids":      kids
+        })
+
+    except Exception as e:
+        print(f"DASHBOARD ERROR: {e}")
+        return jsonify({"error": str(e)}), 500
+        
 @app.route('/', methods=['GET'])
 def healthcheck():
     return "ok", 200
