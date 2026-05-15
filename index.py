@@ -33,14 +33,16 @@ EXPENSE_GROUPS = {
     "👕 Clothing": ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
     "🍽 Eating Out": ["Eating Out - Beverages", "Eating Out - Breakfast", "Eating Out - Dinner", "Eating Out - Lunch", "Eating Out - Snacks"],
     "📚 Education": ["Education - Books", "Education - Courses & Enrichment", "Education - Subscription"],
-    "🎭 Entertainment": ["Entertainment - Experiences", "Entertainment - Massage", "Entertainment - Subscriptions", "Entertainment - Objects (toys, etc)"],
+    "🎭 Entertainment": ["Entertainment - Experiences", "Entertainment - Subscriptions", "Entertainment - Objects (toys, etc)"],
     "🎁 Gifts/Giving": ["Gifts & Treats - CNY", "Gifts & Treats - Family", "Gifts & Treats - Friends", "Gifts & Treats - Wedding", "Giving - Church", "Giving - Charity", "Giving - Parents"],
     "🏥 Health": ["Health & Fitness - Dental + Medical", "Health & Fitness - Events + Subscription", "Health & Fitness - Equipment + Supplements"],
-    "🏠 Household": ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet", "Utilities - Mobile"],
+    "🏠 Household": ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet"],
     "🐾 Pets": ["Pets - Pet Food", "Pets - Grooming", "Pets - Pet Misc"],
+    "💆 Self Care": ["Self Care - Massage", "Self Care - Personal Care", "Utilities - Mobile"],
+    "✈️ Travel": ["Travel - Hotels", "Travel - Transport", "Travel - Expenses"],
     "🚗 Transport": ["Transportation - Bus/MRT", "Transportation - Taxi/Grab", "Transportation - Auto: Service", "Transportation - Auto: Loan", "Transportation - Auto: Gas"],
-    "📈 Finance/Tax": ["Business", "Electronics", "Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
-    "🌍 Others": ["Holiday", "Misc", "Missions"]
+    "📈 Finance": ["Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
+    "🌍 Others": ["Electronics", "Misc", "Missions"]
 }
 
 ACCOUNT_TYPES      = ["👤 Personal Account", "👨‍👩‍👧‍👦 Family"]
