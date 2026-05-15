@@ -173,6 +173,7 @@
   .table-card:nth-child(6) { animation-delay: 0.35s; }
   .table-card:nth-child(7) { animation-delay: 0.40s; }
   .table-card:nth-child(8) { animation-delay: 0.45s; }
+  .table-card:nth-child(9) { animation-delay: 0.50s; }
 
   .table-header {
     padding: 18px 24px; border-bottom: 1px solid rgba(92,61,46,0.08);
@@ -199,6 +200,13 @@
 
   .empty-state { padding: 28px 24px; text-align: center; color: var(--text-soft); font-size: 14px; }
   .empty-state .empty-icon { font-size: 28px; margin-bottom: 8px; }
+
+  /* ---- OVERFLOW NOTE ---- */
+  .overflow-note {
+    padding: 10px 24px; font-size: 12px; color: var(--text-soft);
+    background: rgba(92,61,46,0.03); border-top: 1px solid rgba(92,61,46,0.06);
+    text-align: center; font-style: italic;
+  }
 
   /* ---- FERTILITY ---- */
   .fertility-card {
@@ -234,20 +242,14 @@
   .expense-account-col .label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-soft); margin-bottom: 4px; }
   .expense-account-col .value { font-family: 'Playfair Display', serif; font-size: 22px; color: var(--brown); }
 
-  .pie-wrapper { padding: 20px 24px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid rgba(92,61,46,0.06); }
+  /* Pie chart only — no category list below */
+  .pie-wrapper { padding: 20px 24px; display: flex; align-items: center; gap: 24px; }
   .pie-canvas-wrap { flex-shrink: 0; width: 140px; height: 140px; }
   .pie-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
   .pie-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); }
   .pie-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .pie-legend-name { flex: 1; }
   .pie-legend-val  { font-weight: 500; color: var(--brown); }
-
-  .category-row { padding: 9px 24px; border-bottom: 1px solid rgba(92,61,46,0.04); }
-  .category-row:last-child { border-bottom: none; }
-  .category-row-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-  .category-pct { font-size: 11px; color: var(--text-soft); margin-left: 6px; }
-  .category-bar-bg   { height: 3px; background: rgba(92,61,46,0.08); border-radius: 2px; }
-  .category-bar-fill { height: 3px; background: var(--terracotta); border-radius: 2px; transition: width 0.6s ease; }
 
   /* ---- KIDS SECTIONS ---- */
   .kid-section { border-bottom: 1px solid rgba(92,61,46,0.06); }
@@ -330,7 +332,10 @@
 const PASSWORD = 'familyisLOVE';
 const API      = '/dashboard-data';
 const FAMILY   = ['Mikaela', 'Meaghan', 'Eleanor', 'Marcus', 'Everyone'];
-const KIDS     = ['Mikaela', 'Meaghan'];
+const KIDS     = ['Mikaela', 'Meaghan', 'Eleanor'];
+
+// Milestone keywords for "Family Events" detection
+const MILESTONE_KEYWORDS = ['birthday', 'anniversary', 'graduation', 'wedding', 'christening', 'baptism', 'christmas', 'new year', 'cny', 'chinese new year', 'deepavali', 'hari raya', 'diwali'];
 
 const PIE_COLOURS = [
   '#c4704f','#e8a98a','#7a9e87','#b5cebe','#c9a84c',
@@ -389,6 +394,13 @@ async function loadDashboard() {
   }
 }
 
+// ---- HELPERS ----
+function isFamilyEvent(title) {
+  const t = (title || '').toLowerCase();
+  if (t.includes('family')) return true;
+  return MILESTONE_KEYWORDS.some(kw => t.includes(kw));
+}
+
 // ---- CARDS ----
 function renderCards(data) {
   const ex  = data.expenses        || {};
@@ -397,7 +409,8 @@ function renderCards(data) {
   const gr  = data.groceries       || [];
   const fe  = data.fertility       || {};
 
-  const openTasks = FAMILY.reduce((acc, m) => acc + (tbp[m] ? tbp[m].length : 0), 0);
+  const openTasks    = FAMILY.reduce((acc, m) => acc + (tbp[m] ? tbp[m].length : 0), 0);
+  const familyEvents = ev.filter(e => isFamilyEvent(e.title));
 
   document.getElementById('cards-grid').innerHTML = `
     <div class="card terracotta">
@@ -409,8 +422,8 @@ function renderCards(data) {
     <div class="card sage">
       <div class="card-icon">📅</div>
       <div class="card-label">Upcoming Events</div>
-      <div class="card-value">${ev.length}</div>
-      <div class="card-sub">Next 14 days</div>
+      <div class="card-value">${Math.min(ev.length, 10)}</div>
+      <div class="card-sub">Next 14 days${ev.length > 10 ? ' · ' + ev.length + ' total' : ''}</div>
     </div>
     <div class="card gold">
       <div class="card-icon">✅</div>
@@ -433,7 +446,7 @@ function renderCards(data) {
   `;
 }
 
-// ---- PIE CHART ----
+// ---- PIE CHART (no category list below) ----
 let pieCharts = {};
 
 function buildPieSection(panelId, categoryData, totalAmt) {
@@ -444,6 +457,7 @@ function buildPieSection(panelId, categoryData, totalAmt) {
   const colours = labels.map((_, i) => PIE_COLOURS[i % PIE_COLOURS.length]);
   const canvasId = `pie-${panelId}`;
 
+  // Legend: top 8 categories + overflow note
   let legendHtml = '';
   entries.slice(0, 8).forEach(([cat, amt], i) => {
     const pct = totalAmt > 0 ? ((amt / totalAmt) * 100).toFixed(0) : 0;
@@ -453,19 +467,9 @@ function buildPieSection(panelId, categoryData, totalAmt) {
       <span class="pie-legend-val">${pct}%</span>
     </div>`;
   });
-  if (entries.length > 8) legendHtml += `<div class="pie-legend-item" style="color:var(--text-soft);font-size:11px;">+${entries.length - 8} more</div>`;
-
-  let catListHtml = '';
-  entries.forEach(([cat, amt], i) => {
-    const pct = totalAmt > 0 ? ((amt / totalAmt) * 100).toFixed(0) : 0;
-    catListHtml += `<div class="category-row">
-      <div class="category-row-top">
-        <span>${cat}</span>
-        <span style="font-weight:500;">$${amt.toFixed(2)}<span class="category-pct">${pct}%</span></span>
-      </div>
-      <div class="category-bar-bg"><div class="category-bar-fill" style="width:${pct}%;background:${colours[i]};"></div></div>
-    </div>`;
-  });
+  if (entries.length > 8) {
+    legendHtml += `<div class="pie-legend-item" style="color:var(--text-soft);font-size:11px;">+${entries.length - 8} more categories</div>`;
+  }
 
   setTimeout(() => {
     const canvas = document.getElementById(canvasId);
@@ -476,18 +480,21 @@ function buildPieSection(panelId, categoryData, totalAmt) {
       data: { labels, datasets: [{ data: values, backgroundColor: colours, borderWidth: 2, borderColor: '#fdf6ee', hoverOffset: 6 }] },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '65%',
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: $${ctx.raw.toFixed(2)}` } } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: $${ctx.raw.toFixed(2)}` } }
+        },
         animation: { animateRotate: true, duration: 800 }
       }
     });
   }, 50);
 
+  // Pie + legend only — no category bar list
   return `
     <div class="pie-wrapper">
       <div class="pie-canvas-wrap"><canvas id="${canvasId}"></canvas></div>
       <div class="pie-legend">${legendHtml}</div>
-    </div>
-    <div>${catListHtml}</div>`;
+    </div>`;
 }
 
 function switchTab(name, btn) {
@@ -509,7 +516,120 @@ function renderTables(data) {
 
   let html = '';
 
-  // ------------------------------------------------------------------ EXPENSES
+  // ------------------------------------------------------------------ 1. UPCOMING FAMILY EVENTS
+  const familyEvents = ev.filter(e => isFamilyEvent(e.title));
+
+  html += `
+  <div class="table-card">
+    <div class="table-header">
+      <h3>🏠 Upcoming Family Events</h3>
+      <span class="badge badge-sage">${familyEvents.length} event${familyEvents.length !== 1 ? 's' : ''}</span>
+    </div>
+    <div class="table-body">`;
+
+  if (familyEvents.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">📆</div>No family events in the next 14 days</div>`;
+  } else {
+    html += `<table><thead><tr><th>Date</th><th>Time</th><th>Event</th></tr></thead><tbody>`;
+    familyEvents.forEach(e => {
+      html += `<tr><td>${e.date}</td><td>${e.time}</td><td>${e.title}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div></div>`;
+
+  // ------------------------------------------------------------------ 2. ALL UPCOMING EVENTS (max 10)
+  const evCapped   = ev.slice(0, 10);
+  const evOverflow = ev.length > 10 ? ev.length - 10 : 0;
+
+  html += `
+  <div class="table-card">
+    <div class="table-header">
+      <h3>📅 Upcoming Events</h3>
+      <span class="badge badge-sage">Next 14 days</span>
+    </div>
+    <div class="table-body">`;
+
+  if (evCapped.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">📆</div>No upcoming events</div>`;
+  } else {
+    html += `<table><thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Who</th></tr></thead><tbody>`;
+    evCapped.forEach(e => {
+      const tagHtml = e.tags && e.tags.length > 0
+        ? e.tags.map(t => `<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:${PERSON_COLOURS[t] || '#c4704f'}22;color:${PERSON_COLOURS[t] || '#c4704f'};margin-right:3px;">${t}</span>`).join('')
+        : '<span style="color:var(--text-soft);font-size:12px;">—</span>';
+      html += `<tr><td>${e.date}</td><td>${e.time}</td><td>${e.title}</td><td>${tagHtml}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+    if (evOverflow > 0) {
+      html += `<div class="overflow-note">+ ${evOverflow} more event${evOverflow > 1 ? 's' : ''} not shown</div>`;
+    }
+  }
+  html += `</div></div>`;
+
+  // ------------------------------------------------------------------ 3. TO-DO LIST
+  const totalOpen = FAMILY.reduce((acc, m) => acc + (tbp[m] ? tbp[m].length : 0), 0);
+
+  html += `
+  <div class="table-card">
+    <div class="table-header">
+      <h3>✅ To-Do List</h3>
+      <span class="badge badge-gold">${totalOpen} open</span>
+    </div>
+    <div class="table-body">`;
+
+  if (totalOpen === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">🎉</div>All done!</div>`;
+  } else {
+    FAMILY.forEach(member => {
+      const tasks = tbp[member] || [];
+      if (tasks.length === 0) return;
+      const colour = PERSON_COLOURS[member] || '#c4704f';
+      html += `<div class="person-block">
+        <div class="person-block-header">
+          <span style="color:${colour};">● ${member}</span>
+          <span class="person-count">${tasks.length} task${tasks.length > 1 ? 's' : ''}</span>
+        </div>
+        <table><tbody>`;
+      tasks.forEach(t => {
+        html += `<tr>
+          <td>${t.task}</td>
+          <td style="color:var(--text-soft);font-size:12px;white-space:nowrap;">${t.due ? '📅 ' + t.due : ''}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    });
+  }
+  html += `</div></div>`;
+
+  // ------------------------------------------------------------------ 4. MIKAELA
+  {
+    const kid = 'Mikaela';
+    const kidEvents = kc[kid] || [];
+    const kidTasks  = tbp[kid] || [];
+    const colour    = PERSON_COLOURS[kid];
+    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+  }
+
+  // ------------------------------------------------------------------ 5. MEAGHAN
+  {
+    const kid = 'Meaghan';
+    const kidEvents = kc[kid] || [];
+    const kidTasks  = tbp[kid] || [];
+    const colour    = PERSON_COLOURS[kid];
+    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+  }
+
+  // ------------------------------------------------------------------ 6. ELEANOR
+  {
+    const kid = 'Eleanor';
+    const kidEvents = kc[kid] || [];
+    const kidTasks  = tbp[kid] || [];
+    const colour    = PERSON_COLOURS[kid];
+    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+  }
+
+  // ------------------------------------------------------------------ 7. EXPENSES (pie + account totals only)
   const allRows      = ex.recent || [];
   const familyRows   = allRows.filter(r => (r.account || '').toLowerCase().includes('family'));
   const personalRows = allRows.filter(r => (r.account || '').toLowerCase().includes('personal'));
@@ -563,70 +683,15 @@ function renderTables(data) {
   }
   html += `</div></div>`;
 
-  // ------------------------------------------------------------------ CALENDAR
-  html += `
-  <div class="table-card">
-    <div class="table-header">
-      <h3>📅 Upcoming Events</h3>
-      <span class="badge badge-sage">Next 14 days</span>
-    </div>
-    <div class="table-body">`;
+  // ------------------------------------------------------------------ 8. GROCERY LIST (max 10 + overflow note)
+  const grCapped   = gr.slice(0, 10);
+  const grOverflow = gr.length > 10 ? gr.length - 10 : 0;
 
-  if (ev.length === 0) {
-    html += `<div class="empty-state"><div class="empty-icon">📆</div>No upcoming events</div>`;
-  } else {
-    html += `<table><thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Who</th></tr></thead><tbody>`;
-    ev.forEach(e => {
-      const tagHtml = e.tags && e.tags.length > 0
-        ? e.tags.map(t => `<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:${PERSON_COLOURS[t] || '#c4704f'}22;color:${PERSON_COLOURS[t] || '#c4704f'};margin-right:3px;">${t}</span>`).join('')
-        : '<span style="color:var(--text-soft);font-size:12px;">—</span>';
-      html += `<tr><td>${e.date}</td><td>${e.time}</td><td>${e.title}</td><td>${tagHtml}</td></tr>`;
-    });
-    html += `</tbody></table>`;
-  }
-  html += `</div></div>`;
-
-  // ------------------------------------------------------------------ TO-DO (grouped by person)
-  const totalOpen = FAMILY.reduce((acc, m) => acc + (tbp[m] ? tbp[m].length : 0), 0);
-
-  html += `
-  <div class="table-card">
-    <div class="table-header">
-      <h3>✅ To-Do List</h3>
-      <span class="badge badge-gold">${totalOpen} open</span>
-    </div>
-    <div class="table-body">`;
-
-  if (totalOpen === 0) {
-    html += `<div class="empty-state"><div class="empty-icon">🎉</div>All done!</div>`;
-  } else {
-    FAMILY.forEach(member => {
-      const tasks = tbp[member] || [];
-      if (tasks.length === 0) return;
-      const colour = PERSON_COLOURS[member] || '#c4704f';
-      html += `<div class="person-block">
-        <div class="person-block-header">
-          <span style="color:${colour};">● ${member}</span>
-          <span class="person-count">${tasks.length} task${tasks.length > 1 ? 's' : ''}</span>
-        </div>
-        <table><tbody>`;
-      tasks.forEach(t => {
-        html += `<tr>
-          <td>${t.task}</td>
-          <td style="color:var(--text-soft);font-size:12px;white-space:nowrap;">${t.due ? '📅 ' + t.due : ''}</td>
-        </tr>`;
-      });
-      html += `</tbody></table></div>`;
-    });
-  }
-  html += `</div></div>`;
-
-  // ------------------------------------------------------------------ GROCERY
   html += `
   <div class="table-card">
     <div class="table-header">
       <h3>🛒 Grocery List</h3>
-      <span class="badge badge-brown">${gr.length} items</span>
+      <span class="badge badge-brown">${gr.length} item${gr.length !== 1 ? 's' : ''}</span>
     </div>
     <div class="table-body">`;
 
@@ -634,12 +699,15 @@ function renderTables(data) {
     html += `<div class="empty-state"><div class="empty-icon">🛒</div>Nothing to buy!</div>`;
   } else {
     html += `<table><thead><tr><th>Item</th></tr></thead><tbody>`;
-    gr.forEach(g => { html += `<tr><td>${g.name}</td></tr>`; });
+    grCapped.forEach(g => { html += `<tr><td>${g.name}</td></tr>`; });
     html += `</tbody></table>`;
+    if (grOverflow > 0) {
+      html += `<div class="overflow-note">+ ${grOverflow} more item${grOverflow > 1 ? 's' : ''} not shown</div>`;
+    }
   }
   html += `</div></div>`;
 
-  // ------------------------------------------------------------------ FERTILITY
+  // ------------------------------------------------------------------ 9. FERTILITY TRACKER
   html += `
   <div class="table-card fertility-card">
     <div class="table-header">
@@ -663,52 +731,47 @@ function renderTables(data) {
   }
   html += `</div></div>`;
 
-  // ------------------------------------------------------------------ KIDS (one card per child)
-  KIDS.forEach(kid => {
-    const kidEvents = kc[kid] || [];
-    const kidTasks  = tbp[kid] || [];
-    const colour    = PERSON_COLOURS[kid];
-
-    html += `
-    <div class="table-card">
-      <div class="table-header">
-        <h3>👧 ${kid}</h3>
-        <span class="badge badge-sage">${kidEvents.length} events · ${kidTasks.length} tasks</span>
-      </div>
-      <div class="table-body">`;
-
-    // Calendar events for this child
-    html += `<div class="kid-section">
-      <div class="kid-section-header" style="color:${colour};">📅 Upcoming Schedule</div>`;
-    if (kidEvents.length === 0) {
-      html += `<div class="empty-state" style="padding:16px 24px;"><div style="color:var(--text-soft);font-size:13px;">No upcoming events — add events with ${kid}'s name in the title</div></div>`;
-    } else {
-      html += `<table><thead><tr><th>Date</th><th>Time</th><th>Event</th></tr></thead><tbody>`;
-      kidEvents.forEach(e => {
-        html += `<tr><td>${e.date}</td><td>${e.time}</td><td>${e.title}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    }
-    html += `</div>`;
-
-    // Tasks for this child
-    html += `<div class="kid-section">
-      <div class="kid-section-header" style="color:${colour};">✅ Tasks</div>`;
-    if (kidTasks.length === 0) {
-      html += `<div class="empty-state" style="padding:16px 24px;"><div style="color:var(--text-soft);font-size:13px;">No open tasks</div></div>`;
-    } else {
-      html += `<table><thead><tr><th>Task</th><th>Due</th></tr></thead><tbody>`;
-      kidTasks.forEach(t => {
-        html += `<tr><td>${t.task}</td><td style="color:var(--text-soft);font-size:12px;">${t.due || '—'}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    }
-    html += `</div>`;
-
-    html += `</div></div>`;
-  });
-
   document.getElementById('tables-grid').innerHTML = html;
+}
+
+// ---- KID CARD BUILDER ----
+function buildKidCard(kid, kidEvents, kidTasks, colour) {
+  let html = `
+  <div class="table-card">
+    <div class="table-header">
+      <h3>👧 ${kid}</h3>
+      <span class="badge badge-sage">${kidEvents.length} event${kidEvents.length !== 1 ? 's' : ''} · ${kidTasks.length} task${kidTasks.length !== 1 ? 's' : ''}</span>
+    </div>
+    <div class="table-body">`;
+
+  html += `<div class="kid-section">
+    <div class="kid-section-header" style="color:${colour};">📅 Upcoming Schedule</div>`;
+  if (kidEvents.length === 0) {
+    html += `<div class="empty-state" style="padding:16px 24px;"><div style="color:var(--text-soft);font-size:13px;">No upcoming events — add events with ${kid}'s name in the title</div></div>`;
+  } else {
+    html += `<table><thead><tr><th>Date</th><th>Time</th><th>Event</th></tr></thead><tbody>`;
+    kidEvents.forEach(e => {
+      html += `<tr><td>${e.date}</td><td>${e.time}</td><td>${e.title}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="kid-section">
+    <div class="kid-section-header" style="color:${colour};">✅ Tasks</div>`;
+  if (kidTasks.length === 0) {
+    html += `<div class="empty-state" style="padding:16px 24px;"><div style="color:var(--text-soft);font-size:13px;">No open tasks</div></div>`;
+  } else {
+    html += `<table><thead><tr><th>Task</th><th>Due</th></tr></thead><tbody>`;
+    kidTasks.forEach(t => {
+      html += `<tr><td>${t.task}</td><td style="color:var(--text-soft);font-size:12px;">${t.due || '—'}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+
+  html += `</div></div>`;
+  return html;
 }
 </script>
 </body>
