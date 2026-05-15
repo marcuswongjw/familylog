@@ -566,25 +566,50 @@ function renderTables(data) {
     </div>
     <div class="table-body">`;
 
-  if ((ex.recent || []).length === 0) {
-    html += `<div class="empty-state"><div class="empty-icon">💸</div>No expenses logged yet</div>`;
-  } else {
-    html += `<table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th>By</th></tr></thead><tbody>`;
-    ex.recent.forEach(r => {
-      html += `<tr><td>${r.date}</td><td>${r.desc}</td><td>${r.category}</td><td>$${parseFloat(r.amount).toFixed(2)}</td><td>${r.paid_by}</td></tr>`;
-    });
-    html += `</tbody></table>`;
-  }
+  if (!ex.by_category || Object.keys(ex.by_category).length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">💸</div>No expenses this month</div>`;
+} else {
+    // Total bar
+    html += `<div style="padding:16px 24px 8px;border-bottom:1px solid rgba(92,61,46,0.06);">
+        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:600;color:var(--brown);">
+            <span>Total</span><span>$${ex.month_total.toFixed(2)}</span>
+        </div>
+    </div>`;
 
-  // Category breakdown
-  if (ex.by_category && Object.keys(ex.by_category).length > 0) {
-    html += `<div style="padding:16px 24px;border-top:1px solid rgba(92,61,46,0.06);">
-      <div style="font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;color:var(--text-soft);margin-bottom:10px;">By Category</div>`;
-    Object.entries(ex.by_category).sort((a,b)=>b[1]-a[1]).forEach(([cat,amt]) => {
-      html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>${cat}</span><span style="font-weight:500;">$${amt.toFixed(2)}</span></div>`;
-    });
-    html += `</div>`;
-  }
+    // Category breakdown with visual bar
+    html += `<table><thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">%</th></tr></thead><tbody>`;
+    const total = ex.month_total || 1;
+    Object.entries(ex.by_category)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([cat, amt]) => {
+            const pct = ((amt / total) * 100).toFixed(0);
+            html += `<tr>
+                <td>
+                    ${cat}
+                    <div style="height:3px;background:rgba(196,112,79,0.15);border-radius:2px;margin-top:4px;">
+                        <div style="height:3px;width:${pct}%;background:var(--terracotta);border-radius:2px;"></div>
+                    </div>
+                </td>
+                <td style="text-align:right;font-weight:500;">$${amt.toFixed(2)}</td>
+                <td style="text-align:right;color:var(--text-soft);font-size:12px;">${pct}%</td>
+            </tr>`;
+        });
+    html += `</tbody></table>`;
+
+    // By account
+    if (ex.by_person && Object.keys(ex.by_person).length > 0) {
+        html += `<div style="padding:12px 24px;border-top:1px solid rgba(92,61,46,0.06);">
+            <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;color:var(--text-soft);margin-bottom:8px;">By Account</div>`;
+        Object.entries(ex.by_person).forEach(([acc, amt]) => {
+            html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;">
+                <span>${acc}</span><span style="font-weight:500;">$${amt.toFixed(2)}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+}
+  
+  
 
   html += `</div></div>`;
 
