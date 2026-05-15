@@ -22,11 +22,11 @@ SHEET_URL         = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarv
 RAILWAY_URL       = "https://familylog-production.up.railway.app"
 
 NOTIFY_CHAT_IDS = [
-    486455062,   # wife
-    # 987654321, # husband — uncomment and add ID when ready
+    486455062,   # Eleanor
+    # 987654321, # Marcus — uncomment and add ID when ready
 ]
 
-KIDS = ["Mikaela", "Meaghan"]
+FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"]
 
 EXPENSE_GROUPS = {
     "👶 Children": ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
@@ -47,8 +47,6 @@ EXPENSE_GROUPS = {
 
 ACCOUNT_TYPES      = ["Personal Account", "Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
-KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 Event", "📝 Test/Exam", "🏆 Results", "📌 Others"]
-RESULT_SUBJECTS    = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
 
 
 # --- HELPERS ---
@@ -83,8 +81,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
          InlineKeyboardButton("✅ to-do list",        callback_data='view_todos')],
         [InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility'),
-         InlineKeyboardButton("👧 kids tracker",     callback_data='view_kids')],
-        [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
+         InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
     ]
     text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
@@ -183,7 +180,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'add_event':
         context.user_data['awaiting'] = 'event_title'
         await query.edit_message_text(
-            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')\n\n💡 tip: include a child's name to auto-tag them (e.g. 'Mikaela swimming')",
+            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')\n\n💡 include a family member's name to auto-tag them\n(e.g. 'Mikaela swimming', 'Meaghan violin')",
             parse_mode='Markdown'
         )
         return
@@ -206,10 +203,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == 'add_expense':
         context.user_data['awaiting'] = 'expense_amount'
-        await query.edit_message_text(
-            "💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text("💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
         return
 
     if query.data == 'show_groups':
@@ -245,8 +239,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text     = response.text.strip()
             keyboard = [
-                [InlineKeyboardButton("➕ add shared task",  callback_data='add_todo_shared'),
-                 InlineKeyboardButton("➕ add my task",      callback_data='add_todo_personal')],
+                [InlineKeyboardButton("➕ add task",        callback_data='add_todo')],
                 [InlineKeyboardButton("✅ complete a task",  callback_data='complete_todo')],
                 [InlineKeyboardButton("🏠 home",             callback_data='home')]
             ]
@@ -256,16 +249,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("couldn't load to-do list.", reply_markup=home_keyboard())
         return
 
-    if query.data == 'add_todo_shared':
-        context.user_data['awaiting']  = 'todo_task'
-        context.user_data['todo_type'] = 'Shared'
-        await query.edit_message_text("✅ *add a shared task*\n\nwhat needs to be done?", parse_mode='Markdown')
+    if query.data == 'add_todo':
+        context.user_data['awaiting'] = 'todo_task'
+        await query.edit_message_text("✅ *add a task*\n\nwhat needs to be done?", parse_mode='Markdown')
         return
 
-    if query.data == 'add_todo_personal':
-        context.user_data['awaiting']  = 'todo_task'
-        context.user_data['todo_type'] = 'Personal'
-        await query.edit_message_text("✅ *add a personal task*\n\nwhat do you need to do?", parse_mode='Markdown')
+    if query.data.startswith('todo_assign:'):
+        member = query.data.split(":", 1)[1]
+        context.user_data['todo_assignee'] = member
+        context.user_data['awaiting']      = 'todo_due'
+        await query.edit_message_text(
+            f"assigned to: *{member}*\n\nany due date? (e.g. '20 May')\ntype 'skip' for none",
+            parse_mode='Markdown'
+        )
         return
 
     if query.data == 'complete_todo':
@@ -281,8 +277,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for item in items:
                 parts = item.split("|")
                 if len(parts) >= 3:
-                    tid, task, owner = parts[0], parts[1], parts[2]
-                    keyboard.append([InlineKeyboardButton(f"✅ {task} ({owner})", callback_data=f"done_todo:{tid}")])
+                    tid, task, assignee = parts[0], parts[1], parts[2]
+                    keyboard.append([InlineKeyboardButton(f"✅ {task} ({assignee})", callback_data=f"done_todo:{tid}")])
             keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
             await query.edit_message_text("tap a task to mark it done:", reply_markup=InlineKeyboardMarkup(keyboard))
         except:
@@ -351,87 +347,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"✅ symptom logged: *{symptom}*", parse_mode='Markdown', reply_markup=home_keyboard())
         except:
             await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ KIDS
-    if query.data == 'view_kids':
-        keyboard = [
-            [InlineKeyboardButton(f"👧 {KIDS[0]}", callback_data=f"kid_menu:{KIDS[0]}"),
-             InlineKeyboardButton(f"👧 {KIDS[1]}", callback_data=f"kid_menu:{KIDS[1]}")],
-            [InlineKeyboardButton("🏠 home", callback_data='home')]
-        ]
-        await query.edit_message_text("👧 *kids tracker*\n\nwhich child?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_menu:'):
-        kid     = query.data.split(":", 1)[1]
-        payload = {"user": user, "note": "get_kid_summary", "kid_name": kid}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            summary  = response.text.strip() or f"no entries yet for {kid}."
-        except:
-            summary = f"couldn't load {kid}'s data."
-        keyboard = [
-            [InlineKeyboardButton("➕ add entry",  callback_data=f"kid_add:{kid}"),
-             InlineKeyboardButton("📋 view all",   callback_data=f"kid_view:{kid}")],
-            [InlineKeyboardButton("📅 calendar",   callback_data=f"kid_calendar:{kid}")],
-            [InlineKeyboardButton("⬅️ back",       callback_data="view_kids")]
-        ]
-        await query.edit_message_text(f"👧 *{kid}*\n\n{summary}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_calendar:'):
-        kid     = query.data.split(":", 1)[1]
-        payload = {"user": user, "note": "get_kid_calendar", "kid_name": kid}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text     = response.text.strip()
-            display  = text if text and text != "no_kid_events" else f"no upcoming calendar events for {kid}.\n\n💡 events are auto-tagged when their name appears in the event title."
-        except:
-            display = "couldn't load calendar."
-        keyboard = [[InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")]]
-        await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_add:'):
-        kid = query.data.split(":", 1)[1]
-        context.user_data['kid_name'] = kid
-        keyboard = [[InlineKeyboardButton(t, callback_data=f"kid_type:{t}")] for t in KIDS_ENTRY_TYPES]
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")])
-        await query.edit_message_text(f"➕ *add entry for {kid}*\n\nwhat type?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_type:'):
-        entry_type = query.data.split(":", 1)[1]
-        kid        = context.user_data.get('kid_name', '')
-        context.user_data['kid_entry_type'] = entry_type
-        if entry_type == "🏆 Results":
-            keyboard = [[InlineKeyboardButton(s, callback_data=f"kid_subject:{s}")] for s in RESULT_SUBJECTS]
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data=f"kid_add:{kid}")])
-            await query.edit_message_text(f"📝 *{kid} — Results*\n\nwhich subject?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        else:
-            context.user_data['awaiting'] = 'kid_title'
-            await query.edit_message_text(f"*{kid} — {entry_type}*\n\nwhat's the title or description?", parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_subject:'):
-        subject = query.data.split(":", 1)[1]
-        context.user_data['kid_subject'] = subject
-        context.user_data['awaiting']    = 'kid_result_score'
-        kid = context.user_data.get('kid_name', '')
-        await query.edit_message_text(f"*{kid} — {subject}*\n\nwhat was the score?\n(e.g. '85/100' or 'A')", parse_mode='Markdown')
-        return
-
-    if query.data.startswith('kid_view:'):
-        kid     = query.data.split(":", 1)[1]
-        payload = {"user": user, "note": "get_kid_full", "kid_name": kid}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text     = response.text.strip() or f"no entries yet for {kid}."
-        except:
-            text = "couldn't load entries."
-        keyboard = [[InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
     # FALLBACK
@@ -506,7 +421,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'expense_description':
         context.user_data['expense_description'] = text
         context.user_data['awaiting']            = 'expense_date'
-        await update.message.reply_text("📅 what date was this expense?\n(e.g. '14 May' or '14/05/2026')\ntype 'today' for today's date")
+        await update.message.reply_text("📅 what date was this expense?\n(e.g. '14 May')\ntype 'today' for today's date")
         return
 
     if awaiting == 'expense_date':
@@ -533,23 +448,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save the expense.")
         return
 
-    # TO-DO FLOW
+    # TO-DO FLOW — step 1: task name
     if awaiting == 'todo_task':
         context.user_data['todo_task'] = text
-        context.user_data['awaiting']  = 'todo_due'
-        await update.message.reply_text(f"📋 task: *{text}*\n\nany due date? (e.g. '20 May')\ntype 'skip' for none", parse_mode='Markdown')
+        context.user_data.pop('awaiting', None)
+        # Show family member picker
+        keyboard = [[InlineKeyboardButton(m, callback_data=f"todo_assign:{m}")] for m in FAMILY_MEMBERS]
+        await update.message.reply_text(
+            f"📋 task: *{text}*\n\nwho is this for?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
         return
 
+    # TO-DO FLOW — step 2: due date (after assignee picked via button)
     if awaiting == 'todo_due':
-        due       = text if text.lower() != 'skip' else ''
-        task      = context.user_data.pop('todo_task', '')
-        todo_type = context.user_data.pop('todo_type', 'Shared')
+        due      = text if text.lower() != 'skip' else ''
+        task     = context.user_data.pop('todo_task', '')
+        assignee = context.user_data.pop('todo_assignee', 'Everyone')
         context.user_data.pop('awaiting', None)
-        payload   = {"user": user, "note": "add_todo", "todo_task": task, "todo_type": todo_type, "todo_due": due, "todo_owner": user}
+        payload  = {
+            "user": user, "note": "add_todo",
+            "todo_task": task, "todo_assignee": assignee,
+            "todo_due": due, "todo_added_by": user
+        }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             due_text = f"\n📅 due: {due}" if due else ""
-            await update.message.reply_text(f"✅ task added!\n\n📋 *{task}*\n👤 {todo_type} · added by {user}{due_text}", parse_mode='Markdown')
+            await update.message.reply_text(
+                f"✅ task added!\n\n📋 *{task}*\n👤 assigned to: {assignee}{due_text}",
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the task.")
         return
@@ -567,80 +496,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save. please try again.")
         return
 
-    # KIDS FLOW
-    if awaiting == 'kid_title':
-        context.user_data['kid_title'] = text
-        context.user_data['awaiting']  = 'kid_date'
-        entry_type = context.user_data.get('kid_entry_type', '')
-        if entry_type in ['📅 Event', '📝 Test/Exam']:
-            await update.message.reply_text("📆 what date?\n(e.g. '15 Jun')\ntype 'skip' if not applicable")
-        else:
-            await update.message.reply_text("📆 due date? (e.g. '15 Jun')\ntype 'skip' if not applicable")
-        return
-
-    if awaiting == 'kid_date':
-        context.user_data['kid_date'] = text if text.lower() != 'skip' else ''
-        context.user_data['awaiting'] = 'kid_notes'
-        await update.message.reply_text("📝 any notes?\ntype 'skip' to leave blank")
-        return
-
-    if awaiting == 'kid_notes':
-        kid        = context.user_data.pop('kid_name', '')
-        entry_type = context.user_data.pop('kid_entry_type', '')
-        title      = context.user_data.pop('kid_title', '')
-        date       = context.user_data.pop('kid_date', '')
-        notes      = text if text.lower() != 'skip' else ''
-        context.user_data.pop('awaiting', None)
-        payload = {
-            "user": user, "note": "add_kid_entry",
-            "kid_name": kid, "entry_type": entry_type,
-            "entry_title": title, "entry_date": date,
-            "entry_notes": notes, "entry_score": ""
-        }
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            cal_note = "\n📅 added to Google Calendar!" if entry_type in ['📅 Event', '📝 Test/Exam'] and date else ""
-            await update.message.reply_text(
-                f"✅ logged for *{kid}*!\n\n{entry_type}\n📋 {title}\n📆 {date or '—'}\n📝 {notes or '—'}{cal_note}",
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save the entry.")
-        return
-
-    if awaiting == 'kid_result_score':
-        kid     = context.user_data.get('kid_name', '')
-        subject = context.user_data.pop('kid_subject', '')
-        context.user_data['kid_score'] = text
-        context.user_data['kid_title'] = subject
-        context.user_data['awaiting']  = 'kid_result_notes'
-        await update.message.reply_text(f"📝 any notes for {subject}?\ntype 'skip' to leave blank")
-        return
-
-    if awaiting == 'kid_result_notes':
-        kid     = context.user_data.pop('kid_name', '')
-        subject = context.user_data.pop('kid_title', '')
-        score   = context.user_data.pop('kid_score', '')
-        notes   = text if text.lower() != 'skip' else ''
-        context.user_data.pop('awaiting', None)
-        context.user_data.pop('kid_entry_type', None)
-        payload = {
-            "user": user, "note": "add_kid_entry",
-            "kid_name": kid, "entry_type": "🏆 Results",
-            "entry_title": subject, "entry_date": "",
-            "entry_notes": notes, "entry_score": score
-        }
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(
-                f"✅ result logged for *{kid}*!\n\n📚 {subject}\n🏆 Score: *{score}*\n📝 {notes or '—'}",
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save the result.")
-        return
-
-    # DEFAULT — forward to Apps Script
+    # DEFAULT
     payload  = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
     await update.message.reply_text(response.text)
@@ -704,7 +560,7 @@ def watchdog():
             new_thread = threading.Thread(target=start_bot_loop, daemon=True)
             new_thread.start()
 
-bot_thread     = threading.Thread(target=start_bot_loop, daemon=True)
+bot_thread      = threading.Thread(target=start_bot_loop, daemon=True)
 bot_thread.start()
 watchdog_thread = threading.Thread(target=watchdog, daemon=True)
 watchdog_thread.start()
@@ -749,31 +605,23 @@ def dashboard_data():
                     parts    = detail.split('·')
                     date_str = parts[0].strip() if len(parts) > 0 else '—'
                     time_str = parts[1].strip() if len(parts) > 1 else '—'
+                    # Check for child tags
+                    tag_line = lines[2].strip() if len(lines) > 2 else ''
+                    tags     = []
+                    if 'mikaela' in tag_line.lower(): tags.append('Mikaela')
+                    if 'meaghan' in tag_line.lower(): tags.append('Meaghan')
                     if title and 'upcoming' not in title.lower():
-                        events.append({"title": title, "date": date_str, "time": time_str})
+                        events.append({"title": title, "date": date_str, "time": time_str, "tags": tags})
 
-        # TO-DO
-        todo_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_todos"}, timeout=15)
+        # TO-DO — grouped by assignee
+        todo_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_todos_by_person"}, timeout=15)
         todo_raw = todo_res.text.strip()
-        todos    = []
+        todos_by_person = {}
         if todo_raw and todo_raw != "no_todos":
-            current_type = 'Shared'
-            for line in todo_raw.split('\n'):
-                line = line.strip()
-                if '*shared:*'   in line.lower(): current_type = 'Shared'
-                if '*personal:*' in line.lower(): current_type = 'Personal'
-                if line.startswith('•'):
-                    content = line[1:].strip()
-                    owner   = ''
-                    if '(' in content and content.endswith(')'):
-                        owner   = content[content.rfind('(')+1:-1]
-                        content = content[:content.rfind('(')].strip()
-                    due = ''
-                    if '· due' in content:
-                        parts   = content.split('· due')
-                        content = parts[0].strip()
-                        due     = parts[1].strip() if len(parts) > 1 else ''
-                    todos.append({"task": content, "type": current_type, "due": due, "owner": owner, "status": "Open"})
+            try:
+                todos_by_person = __import__('json').loads(todo_raw)
+            except:
+                todos_by_person = {}
 
         # GROCERY
         groc_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
@@ -803,61 +651,32 @@ def dashboard_data():
                 elif 'duration' in line.lower():
                     fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
 
-        # KIDS — sheet entries + calendar events
-        kids = {}
+        # KIDS CALENDAR — events tagged to each child
+        kids_calendar = {}
         for kid in ['Mikaela', 'Meaghan']:
-            entries = []
-
-            # Sheet entries
-            kid_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_full", "kid_name": kid}, timeout=15)
-            kid_raw = kid_res.text.strip()
-            if kid_raw and 'no entries' not in kid_raw.lower():
-                for line in kid_raw.split('\n'):
-                    line = line.strip()
-                    if line.startswith('•'):
-                        content   = line[1:].strip()
-                        date_part = ''
-                        if '(' in content and content.endswith(')'):
-                            date_part = content[content.rfind('(')+1:-1]
-                            content   = content[:content.rfind('(')].strip()
-                        parts = [p.strip() for p in content.split('·')]
-                        entries.append({
-                            "type":   parts[0] if len(parts) > 0 else '—',
-                            "title":  parts[1] if len(parts) > 1 else '—',
-                            "score":  parts[2] if len(parts) > 2 else '',
-                            "date":   date_part,
-                            "source": "tracker"
-                        })
-
-            # Calendar events tagged to this child
-            cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_calendar", "kid_name": kid}, timeout=15)
-            cal_raw = cal_res.text.strip()
-            if cal_raw and cal_raw != "no_kid_events":
-                for block in cal_raw.split('\n\n'):
+            kid_cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_calendar", "kid_name": kid}, timeout=15)
+            kid_cal_raw = kid_cal_res.text.strip()
+            kid_events  = []
+            if kid_cal_raw and kid_cal_raw != "no_kid_events":
+                for block in kid_cal_raw.split('\n\n'):
                     block_lines = block.strip().split('\n')
                     if len(block_lines) >= 2:
                         title    = block_lines[0].replace('📅','').replace('*','').strip()
                         detail   = block_lines[1].strip()
                         parts    = detail.split('·')
                         date_str = parts[0].strip() if len(parts) > 0 else '—'
-                        if title and kid.lower() not in title.lower() and 'upcoming' not in title.lower():
-                            entries.append({
-                                "type":   "📅 Calendar",
-                                "title":  title,
-                                "score":  '',
-                                "date":   date_str,
-                                "source": "calendar"
-                            })
+                        time_str = parts[1].strip() if len(parts) > 1 else '—'
+                        if title and 'upcoming' not in title.lower():
+                            kid_events.append({"title": title, "date": date_str, "time": time_str})
+            kids_calendar[kid] = kid_events
 
-            kids[kid] = entries
-
-        return jsonify({
-            "expenses":  expenses,
-            "events":    events,
-            "todos":     todos,
-            "groceries": groceries,
-            "fertility": fertility,
-            "kids":      kids
+        return __import__('flask').jsonify({
+            "expenses":        expenses,
+            "events":          events,
+            "todos_by_person": todos_by_person,
+            "groceries":       groceries,
+            "fertility":       fertility,
+            "kids_calendar":   kids_calendar
         })
 
     except Exception as e:
