@@ -43,11 +43,10 @@ EXPENSE_GROUPS = {
     "🌍 Others": ["Holiday", "Misc", "Missions"]
 }
 
-ACCOUNT_TYPES      = ["👤 Personal", "👨‍👩‍👧‍👦 Family"]
+ACCOUNT_TYPES      = ["👤 Personal Account", "👨‍👩‍👧‍👦 Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
-
-KIDS_ENTRY_TYPES = ["📚 Homework", "📅 School Event", "🎓 Tuition", "📝 Test/Exam", "🏆 Results", "📌 Other"]
-RESULT_SUBJECTS  = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
+KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 School Event", "🎓 Tuition", "📝 Test/Exam", "🏆 Results", "📌 Other"]
+RESULT_SUBJECTS    = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
 
 
 # --- HELPERS ---
@@ -212,7 +211,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == 'add_expense':
         context.user_data['awaiting'] = 'expense_amount'
-        await query.edit_message_text("💰 *add an expense*\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
+        await query.edit_message_text(
+            "💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)",
+            parse_mode='Markdown'
+        )
         return
 
     if query.data == 'show_groups':
@@ -231,14 +233,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = query.data.split(":", 1)[1]
         context.user_data['expense_category'] = category
         keyboard  = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
-        await query.edit_message_text(f"category: *{category}*\n\nwhich account?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await query.edit_message_text(
+            f"category: *{category}*\n\nwhich account?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
         return
 
     if query.data.startswith('exp_acc:'):
         account = query.data.split(":", 1)[1]
         context.user_data['expense_account'] = account
         context.user_data['awaiting']        = 'expense_description'
-        await query.edit_message_text(f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
+        await query.edit_message_text(
+            f"account: *{account}*\n\nshort description? (e.g. 'starbucks')",
+            parse_mode='Markdown'
+        )
         return
 
     # ------------------------------------------------------------------ TO-DO
@@ -356,7 +365,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
         return
 
-    # ------------------------------------------------------------------ KIDS TRACKER
+    # ------------------------------------------------------------------ KIDS
     if query.data == 'view_kids':
         keyboard = [
             [InlineKeyboardButton(f"👧 {KIDS[0]}", callback_data=f"kid_menu:{KIDS[0]}"),
@@ -367,7 +376,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data.startswith('kid_menu:'):
-        kid  = query.data.split(":", 1)[1]
+        kid     = query.data.split(":", 1)[1]
         payload = {"user": user, "note": "get_kid_summary", "kid_name": kid}
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -375,15 +384,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             summary = f"couldn't load {kid}'s data."
         keyboard = [
-            [InlineKeyboardButton("➕ add entry",      callback_data=f"kid_add:{kid}"),
-             InlineKeyboardButton("📋 view all",       callback_data=f"kid_view:{kid}")],
-            [InlineKeyboardButton("⬅️ back",           callback_data="view_kids")]
+            [InlineKeyboardButton("➕ add entry",  callback_data=f"kid_add:{kid}"),
+             InlineKeyboardButton("📋 view all",   callback_data=f"kid_view:{kid}")],
+            [InlineKeyboardButton("⬅️ back",       callback_data="view_kids")]
         ]
-        await query.edit_message_text(
-            f"👧 *{kid}*\n\n{summary}",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"👧 *{kid}*\n\n{summary}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
     if query.data.startswith('kid_add:'):
@@ -391,29 +396,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['kid_name'] = kid
         keyboard = [[InlineKeyboardButton(t, callback_data=f"kid_type:{t}")] for t in KIDS_ENTRY_TYPES]
         keyboard.append([InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")])
-        await query.edit_message_text(
-            f"➕ *add entry for {kid}*\n\nwhat type?",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"➕ *add entry for {kid}*\n\nwhat type?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
     if query.data.startswith('kid_type:'):
         entry_type = query.data.split(":", 1)[1]
         kid        = context.user_data.get('kid_name', '')
         context.user_data['kid_entry_type'] = entry_type
-
         if entry_type == "🏆 Results":
-            # Pick subject first
             keyboard = [[InlineKeyboardButton(s, callback_data=f"kid_subject:{s}")] for s in RESULT_SUBJECTS]
             keyboard.append([InlineKeyboardButton("⬅️ back", callback_data=f"kid_add:{kid}")])
             await query.edit_message_text(f"📝 *{kid} — Results*\n\nwhich subject?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         else:
             context.user_data['awaiting'] = 'kid_title'
-            await query.edit_message_text(
-                f"*{kid} — {entry_type}*\n\nwhat's the title or description?\n(e.g. 'Math homework chapter 5')",
-                parse_mode='Markdown'
-            )
+            await query.edit_message_text(f"*{kid} — {entry_type}*\n\nwhat's the title or description?", parse_mode='Markdown')
         return
 
     if query.data.startswith('kid_subject:'):
@@ -421,10 +417,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['kid_subject'] = subject
         context.user_data['awaiting']    = 'kid_result_score'
         kid = context.user_data.get('kid_name', '')
-        await query.edit_message_text(
-            f"*{kid} — {subject}*\n\nwhat was the score?\n(e.g. '85/100' or 'A')",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"*{kid} — {subject}*\n\nwhat was the score?\n(e.g. '85/100' or 'A')", parse_mode='Markdown')
         return
 
     if query.data.startswith('kid_view:'):
@@ -449,6 +442,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text     = update.message.text.strip()
     awaiting = context.user_data.get('awaiting')
 
+    # FRUIT
     if awaiting == 'fruit_qty':
         fruit = context.user_data.pop('selected_fruit', '')
         context.user_data.pop('awaiting', None)
@@ -460,6 +454,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("please send a valid number.")
         return
 
+    # ACTIVITY
     if awaiting == 'activity':
         context.user_data.pop('awaiting', None)
         payload  = {"user": user, "note": text}
@@ -512,14 +507,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if awaiting == 'expense_description':
-        amount   = context.user_data.pop('expense_amount', 0)
-        category = context.user_data.pop('expense_category', 'Other')
-        account  = context.user_data.pop('expense_account', 'Family')
+        context.user_data['expense_description'] = text
+        context.user_data['awaiting']            = 'expense_date'
+        await update.message.reply_text(
+            "📅 what date was this expense?\n(e.g. '14 May' or '14/05/2026')\ntype 'today' for today's date"
+        )
+        return
+
+    if awaiting == 'expense_date':
+        expense_date = text if text.lower() != 'today' else ''
+        amount       = context.user_data.pop('expense_amount', 0)
+        category     = context.user_data.pop('expense_category', 'Other')
+        account      = context.user_data.pop('expense_account', 'Family')
+        description  = context.user_data.pop('expense_description', '')
         context.user_data.pop('awaiting', None)
-        payload  = {"user": user, "note": "add_expense", "expense_amount": amount, "expense_category": category, "expense_account": account, "expense_description": text, "expense_paid_by": user}
+
+        payload = {
+            "user": user, "note": "add_expense",
+            "expense_amount":      amount,
+            "expense_category":    category,
+            "expense_account":     account,
+            "expense_description": description,
+            "expense_date":        expense_date
+        }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(f"✅ expense logged!\n\n💰 *${amount:.2f}*\n🏷 {category}\n🏦 {account}\n📝 {text}\n👤 paid by {user}", parse_mode='Markdown')
+            date_display = expense_date if expense_date else "today"
+            await update.message.reply_text(
+                f"✅ expense logged!\n\n"
+                f"💰 *${amount:.2f}*\n"
+                f"🏷 {category}\n"
+                f"🏦 {account}\n"
+                f"📝 {description}\n"
+                f"📅 {date_display}",
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the expense.")
         return
@@ -560,11 +582,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # KIDS FLOW
     if awaiting == 'kid_title':
-        kid        = context.user_data.get('kid_name', '')
-        entry_type = context.user_data.get('kid_entry_type', '')
         context.user_data['kid_title'] = text
         context.user_data['awaiting']  = 'kid_date'
-        await update.message.reply_text(f"📆 what date?\n(e.g. '15 Jun')\ntype 'skip' if not applicable")
+        await update.message.reply_text("📆 what date?\n(e.g. '15 Jun')\ntype 'skip' if not applicable")
         return
 
     if awaiting == 'kid_date':
@@ -580,18 +600,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date       = context.user_data.pop('kid_date', '')
         notes      = text if text.lower() != 'skip' else ''
         context.user_data.pop('awaiting', None)
-        payload = {
-            "user": user, "note": "add_kid_entry",
-            "kid_name": kid, "entry_type": entry_type,
-            "entry_title": title, "entry_date": date,
-            "entry_notes": notes, "entry_score": ""
-        }
+        payload = {"user": user, "note": "add_kid_entry", "kid_name": kid, "entry_type": entry_type, "entry_title": title, "entry_date": date, "entry_notes": notes, "entry_score": ""}
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(
-                f"✅ logged for *{kid}*!\n\n{entry_type}\n📋 {title}\n📆 {date or '—'}\n📝 {notes or '—'}",
-                parse_mode='Markdown'
-            )
+            await update.message.reply_text(f"✅ logged for *{kid}*!\n\n{entry_type}\n📋 {title}\n📆 {date or '—'}\n📝 {notes or '—'}", parse_mode='Markdown')
         except:
             await update.message.reply_text("couldn't save the entry.")
         return
@@ -599,9 +611,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'kid_result_score':
         kid     = context.user_data.get('kid_name', '')
         subject = context.user_data.pop('kid_subject', '')
-        context.user_data['kid_score']  = text
-        context.user_data['kid_title']  = subject
-        context.user_data['awaiting']   = 'kid_result_notes'
+        context.user_data['kid_score'] = text
+        context.user_data['kid_title'] = subject
+        context.user_data['awaiting']  = 'kid_result_notes'
         await update.message.reply_text(f"📝 any notes for {subject}?\ntype 'skip' to leave blank")
         return
 
@@ -612,18 +624,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         notes   = text if text.lower() != 'skip' else ''
         context.user_data.pop('awaiting', None)
         context.user_data.pop('kid_entry_type', None)
-        payload = {
-            "user": user, "note": "add_kid_entry",
-            "kid_name": kid, "entry_type": "🏆 Results",
-            "entry_title": subject, "entry_date": "",
-            "entry_notes": notes, "entry_score": score
-        }
+        payload = {"user": user, "note": "add_kid_entry", "kid_name": kid, "entry_type": "🏆 Results", "entry_title": subject, "entry_date": "", "entry_notes": notes, "entry_score": score}
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(
-                f"✅ result logged for *{kid}*!\n\n📚 {subject}\n🏆 Score: *{score}*\n📝 {notes or '—'}",
-                parse_mode='Markdown'
-            )
+            await update.message.reply_text(f"✅ result logged for *{kid}*!\n\n📚 {subject}\n🏆 Score: *{score}*\n📝 {notes or '—'}", parse_mode='Markdown')
         except:
             await update.message.reply_text("couldn't save the result.")
         return
@@ -694,41 +698,35 @@ def watchdog():
 
 bot_thread = threading.Thread(target=start_bot_loop, daemon=True)
 bot_thread.start()
-
 watchdog_thread = threading.Thread(target=watchdog, daemon=True)
 watchdog_thread.start()
-
 time.sleep(2)
+
 
 # --- FLASK ---
 app = Flask(__name__)
 
-# Serve the dashboard HTML
 @app.route('/dashboard', methods=['GET'])
 def dashboard():
     return send_file('templates/dashboard.html')
 
-# API endpoint — fetches all data from Apps Script and returns JSON
 @app.route('/dashboard-data', methods=['GET'])
 def dashboard_data():
     try:
-        # ---- EXPENSES ----
-        # ---- EXPENSES ----
+        # ---- EXPENSES (raw JSON from Apps Script) ----
         exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses_raw"}, timeout=15)
         try:
             rows = exp_res.json()
         except:
             rows = []
-        
+
         expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
         for r in rows:
             expenses['month_total'] += r.get('amount', 0)
-            cat = r.get('category', 'Other')
-            person = r.get('paid_by', 'unknown')
-            expenses['by_category'][cat] = expenses['by_category'].get(cat, 0) + r.get('amount', 0)
+            cat    = r.get('category', 'Other')
+            person = r.get('account', 'unknown')
+            expenses['by_category'][cat]  = expenses['by_category'].get(cat, 0)  + r.get('amount', 0)
             expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
-        
-
 
         # ---- CALENDAR ----
         cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
@@ -740,11 +738,11 @@ def dashboard_data():
                 lines = block.strip().split('\n')
                 if len(lines) >= 2:
                     title    = lines[0].replace('📅','').replace('*','').strip()
-                    detail   = lines[1].strip() if len(lines) > 1 else ''
+                    detail   = lines[1].strip()
                     parts    = detail.split('·')
                     date_str = parts[0].strip() if len(parts) > 0 else '—'
                     time_str = parts[1].strip() if len(parts) > 1 else '—'
-                    if title and '📅' not in title and 'upcoming' not in title.lower():
+                    if title and 'upcoming' not in title.lower():
                         events.append({"title": title, "date": date_str, "time": time_str})
 
         # ---- TO-DO ----
@@ -752,10 +750,12 @@ def dashboard_data():
         todo_raw = todo_res.text.strip()
         todos    = []
         if todo_raw and todo_raw != "no_todos":
+            current_type = 'Shared'
             for line in todo_raw.split('\n'):
                 line = line.strip()
+                if '*shared:*' in line.lower():    current_type = 'Shared'
+                if '*personal:*' in line.lower():  current_type = 'Personal'
                 if line.startswith('•'):
-                    # format: • task · due dd MMM (owner)
                     content = line[1:].strip()
                     owner   = ''
                     if '(' in content and content.endswith(')'):
@@ -766,12 +766,11 @@ def dashboard_data():
                         parts   = content.split('· due')
                         content = parts[0].strip()
                         due     = parts[1].strip() if len(parts) > 1 else ''
-                    # determine type from section
-                    todos.append({"task": content, "type": "Shared", "due": due, "owner": owner, "status": "Open"})
+                    todos.append({"task": content, "type": current_type, "due": due, "owner": owner, "status": "Open"})
 
         # ---- GROCERY ----
-        groc_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
-        groc_raw = groc_res.text.strip()
+        groc_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
+        groc_raw  = groc_res.text.strip()
         groceries = []
         if groc_raw:
             for item in groc_raw.split(','):
@@ -780,8 +779,8 @@ def dashboard_data():
                     groceries.append({"name": item, "added_by": "—"})
 
         # ---- FERTILITY ----
-        fert_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
-        fert_raw = fert_res.text.strip()
+        fert_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
+        fert_raw  = fert_res.text.strip()
         fertility = {}
         if fert_raw and fert_raw != "no_fertility":
             for line in fert_raw.split('\n'):
@@ -807,8 +806,7 @@ def dashboard_data():
                 for line in kid_raw.split('\n'):
                     line = line.strip()
                     if line.startswith('•'):
-                        content = line[1:].strip()
-                        # format: type · title · score (date)
+                        content   = line[1:].strip()
                         date_part = ''
                         if '(' in content and content.endswith(')'):
                             date_part = content[content.rfind('(')+1:-1]
@@ -834,7 +832,7 @@ def dashboard_data():
     except Exception as e:
         print(f"DASHBOARD ERROR: {e}")
         return jsonify({"error": str(e)}), 500
-        
+
 @app.route('/', methods=['GET'])
 def healthcheck():
     return "ok", 200
