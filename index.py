@@ -4,6 +4,8 @@ import threading
 import requests
 import base64
 import time
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify, send_file
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -69,6 +71,36 @@ async def send_to_all(text, parse_mode='Markdown'):
             await application.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
         except Exception as e:
             print(f"Failed to send to {chat_id}: {e}")
+
+
+# --- TIME RANGE PARSER ---
+# Handles formats like:
+#   "10.30am to 11.15am", "10:30am-11:15am", "10am to 11pm",
+#   "10.30 am - 11.15 pm", "2pm to 3.30pm"
+# Returns (start_time_str, end_time_str) or (original, '') if no range found.
+_TIME_PART = r'(\d{1,2})(?:[:\.](\d{2}))?\s*(am|pm)'
+_RANGE_RE  = re.compile(
+    rf'^{_TIME_PART}\s*(?:to|-)\s*{_TIME_PART}$',
+    re.IGNORECASE
+)
+
+def parse_time_range(raw: str):
+    """
+    If raw looks like a time range, return (start_str, end_str) in 'H:MMam' form.
+    Otherwise return (raw.strip(), '').
+    """
+    raw = raw.strip()
+    m = _RANGE_RE.match(raw)
+    if not m:
+        return raw, ''
+
+    h1, m1, mer1, h2, m2, mer2 = m.groups()
+    start = _normalise_time(h1, m1 or '00', mer1)
+    end   = _normalise_time(h2, m2 or '00', mer2)
+    return start, end
+
+def _normalise_time(h, m, meridiem):
+    return f"{int(h)}:{m.zfill(2)}{meridiem.lower()}"
 
 
 # --- HOME ---
@@ -168,8 +200,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text     = response.text.strip()
             keyboard = [
-                [InlineKeyboardButton("➕ add event", callback_data='add_event')],
-                [InlineKeyboardButton("🏠 home",      callback_data='home')]
+                [InlineKeyboardButton("➕ add event",    callback_data='add_event')],
+                [InlineKeyboardButton("🗑 delete event", callback_data='delete_event')],
+                [InlineKeyboardButton("🏠 home",          callback_data='home')]
             ]
             display = text if text and text != "no_events" else "no upcoming events! add one below 📅"
             await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -185,6 +218,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if query.data == 'delete_event':
+        payload = {"user": user, "note": "get_event_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_events":
+                await query.edit_message_text("no upcoming events to delete! 📅", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 2:
+                    eid, title = parts[0], parts[1]
+                    date_str   = parts[2] if len(parts) > 2 else ''
+                    label      = f"🗑 {title}" + (f" ({date_str})" if date_str else "")
+                    keyboard.append([InlineKeyboardButton(label, callback_data=f"confirm_del_event:{eid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_calendar")])
+            await query.edit_message_text("which event do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load events. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_event:'):
+        eid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_event:{eid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_calendar")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this event?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_event:'):
+        eid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_event", "event_id": eid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ event deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete event.", reply_markup=home_keyboard())
+        return
+
     # ------------------------------------------------------------------ EXPENSES
     if query.data == 'view_expenses':
         payload = {"user": user, "note": "get_expenses"}
@@ -192,8 +267,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text     = response.text.strip()
             keyboard = [
-                [InlineKeyboardButton("➕ add expense", callback_data='add_expense')],
-                [InlineKeyboardButton("🏠 home",        callback_data='home')]
+                [InlineKeyboardButton("➕ add expense",    callback_data='add_expense')],
+                [InlineKeyboardButton("🗑 delete expense", callback_data='delete_expense')],
+                [InlineKeyboardButton("🏠 home",            callback_data='home')]
             ]
             display = text if text and text != "no_expenses" else "no expenses logged yet!"
             await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -204,6 +280,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'add_expense':
         context.user_data['awaiting'] = 'expense_amount'
         await query.edit_message_text("💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
+        return
+
+    if query.data == 'delete_expense':
+        payload = {"user": user, "note": "get_expense_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_expenses":
+                await query.edit_message_text("no recent expenses to delete!", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    rid, label_text = parts[0], " · ".join(parts[1:])
+                    keyboard.append([InlineKeyboardButton(f"🗑 {label_text}", callback_data=f"confirm_del_exp:{rid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_expenses")])
+            await query.edit_message_text("which expense do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load expenses. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_exp:'):
+        rid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_exp:{rid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_expenses")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this expense?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_exp:'):
+        rid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_expense", "row_id": rid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ expense deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete expense.", reply_markup=home_keyboard())
         return
 
     if query.data == 'show_groups':
@@ -240,7 +356,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text     = response.text.strip()
             keyboard = [
                 [InlineKeyboardButton("➕ add task",        callback_data='add_todo')],
-                [InlineKeyboardButton("✅ complete a task",  callback_data='complete_todo')],
+                [InlineKeyboardButton("✅ complete a task",  callback_data='complete_todo'),
+                 InlineKeyboardButton("🗑 delete a task",   callback_data='delete_todo')],
                 [InlineKeyboardButton("🏠 home",             callback_data='home')]
             ]
             display = text if text and text != "no_todos" else "no tasks yet! add one below ✅"
@@ -294,6 +411,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
         except:
             await query.answer("couldn't update task.")
+        return
+
+    if query.data == 'delete_todo':
+        payload = {"user": user, "note": "get_todo_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_todos":
+                await query.edit_message_text("no open tasks to delete!", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    tid, task, assignee = parts[0], parts[1], parts[2]
+                    keyboard.append([InlineKeyboardButton(f"🗑 {task} ({assignee})", callback_data=f"confirm_del_todo:{tid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
+            await query.edit_message_text("which task do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load tasks.", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_todo:'):
+        tid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_todo:{tid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_todos")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this task?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_todo:'):
+        tid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_todo", "todo_id": tid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ task deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete task.", reply_markup=home_keyboard())
         return
 
     # ------------------------------------------------------------------ FERTILITY
@@ -381,26 +538,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'event_date':
         context.user_data['event_date'] = text
         context.user_data['awaiting']   = 'event_time'
-        await update.message.reply_text("🕐 what time? (e.g. '3pm')\ntype 'skip' for all-day")
+        await update.message.reply_text(
+            "🕐 what time?\n"
+            "• Single time: '3pm' or '14:30'\n"
+            "• Time range: '10.30am to 11.15am' or '2pm-3.30pm'\n"
+            "• Type 'skip' for all-day"
+        )
         return
 
     if awaiting == 'event_time':
-        context.user_data['event_time'] = text if text.lower() != 'skip' else ''
-        context.user_data['awaiting']   = 'event_notes'
+        raw_time = text if text.lower() != 'skip' else ''
+        if raw_time:
+            start_time, end_time = parse_time_range(raw_time)
+        else:
+            start_time, end_time = '', ''
+        context.user_data['event_time']     = start_time
+        context.user_data['event_end_time'] = end_time
+        context.user_data['awaiting']       = 'event_notes'
         await update.message.reply_text("📝 any notes?\ntype 'skip' to leave blank")
         return
 
     if awaiting == 'event_notes':
-        notes = text if text.lower() != 'skip' else ''
-        title = context.user_data.pop('event_title', '')
-        date  = context.user_data.pop('event_date', '')
-        time  = context.user_data.pop('event_time', '')
+        notes    = text if text.lower() != 'skip' else ''
+        title    = context.user_data.pop('event_title', '')
+        date     = context.user_data.pop('event_date', '')
+        time_str = context.user_data.pop('event_time', '')
+        end_time = context.user_data.pop('event_end_time', '')
         context.user_data.pop('awaiting', None)
-        payload = {"user": user, "note": "add_event", "event_title": title, "event_date": date, "event_time": time, "event_notes": notes}
+        payload = {
+            "user": user, "note": "add_event",
+            "event_title": title, "event_date": date,
+            "event_time": time_str, "event_end_time": end_time,
+            "event_notes": notes
+        }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            time_display = time_str
+            if end_time:
+                time_display = f"{time_str} – {end_time}"
+            elif not time_str:
+                time_display = "all day"
             await update.message.reply_text(
-                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(),
+                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time_display}\n📝 {notes or '—'}".strip(),
                 parse_mode='Markdown'
             )
         except:
@@ -452,7 +631,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'todo_task':
         context.user_data['todo_task'] = text
         context.user_data.pop('awaiting', None)
-        # Show family member picker
         keyboard = [[InlineKeyboardButton(m, callback_data=f"todo_assign:{m}")] for m in FAMILY_MEMBERS]
         await update.message.reply_text(
             f"📋 task: *{text}*\n\nwho is this for?",
@@ -461,7 +639,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # TO-DO FLOW — step 2: due date (after assignee picked via button)
+    # TO-DO FLOW — step 2: due date
     if awaiting == 'todo_due':
         due      = text if text.lower() != 'skip' else ''
         task     = context.user_data.pop('todo_task', '')
@@ -574,13 +752,50 @@ app = Flask(__name__)
 def dashboard():
     return send_file('templates/dashboard.html')
 
+
+def _gas_post(payload, timeout=15):
+    """Single GAS call — used inside thread pool."""
+    return requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=timeout)
+
+
 @app.route('/dashboard-data', methods=['GET'])
 def dashboard_data():
+    import json as _json
+
+    # ------------------------------------------------------------------
+    # Build all requests we need to fire in parallel
+    # ------------------------------------------------------------------
+    tasks = {
+        "expenses":   {"user": "dashboard", "note": "get_expenses_raw"},
+        "events":     {"user": "dashboard", "note": "get_events"},
+        "todos":      {"user": "dashboard", "note": "get_todos_by_person"},
+        "groceries":  {"user": "dashboard", "note": "get_checklist"},
+        "fertility":  {"user": "dashboard", "note": "get_fertility"},
+        "kid_Mikaela":  {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Mikaela"},
+        "kid_Meaghan":  {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Meaghan"},
+        "kid_Eleanor":  {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Eleanor"},
+    }
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_key = {executor.submit(_gas_post, payload): key for key, payload in tasks.items()}
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            try:
+                results[key] = future.result()
+            except Exception as exc:
+                print(f"GAS fetch failed [{key}]: {exc}")
+                results[key] = None
+
+    def safe_text(key):
+        r = results.get(key)
+        return r.text.strip() if r and r.ok else ''
+
     try:
         # EXPENSES
-        exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses_raw"}, timeout=15)
+        exp_text = safe_text("expenses")
         try:
-            rows = exp_res.json()
+            rows = _json.loads(exp_text) if exp_text else []
         except:
             rows = []
         expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
@@ -591,9 +806,8 @@ def dashboard_data():
             expenses['by_category'][cat]  = expenses['by_category'].get(cat, 0)  + r.get('amount', 0)
             expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
 
-        # CALENDAR (14 days)
-        cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
-        cal_raw = cal_res.text.strip()
+        # CALENDAR (14 days) — tag ALL family members
+        cal_raw = safe_text("events")
         events  = []
         if cal_raw and cal_raw != "no_events":
             blocks = cal_raw.split('\n\n')
@@ -605,27 +819,24 @@ def dashboard_data():
                     parts    = detail.split('·')
                     date_str = parts[0].strip() if len(parts) > 0 else '—'
                     time_str = parts[1].strip() if len(parts) > 1 else '—'
-                    # Check for child tags
-                    tag_line = lines[2].strip() if len(lines) > 2 else ''
-                    tags     = []
-                    if 'mikaela' in tag_line.lower(): tags.append('Mikaela')
-                    if 'meaghan' in tag_line.lower(): tags.append('Meaghan')
+                    # Tag any family member whose name appears in title or tag line
+                    combined = ' '.join(lines).lower()
+                    tags = [m for m in FAMILY_MEMBERS
+                            if m != 'Everyone' and m.lower() in combined]
                     if title and 'upcoming' not in title.lower():
                         events.append({"title": title, "date": date_str, "time": time_str, "tags": tags})
 
         # TO-DO — grouped by assignee
-        todo_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_todos_by_person"}, timeout=15)
-        todo_raw = todo_res.text.strip()
+        todo_raw = safe_text("todos")
         todos_by_person = {}
         if todo_raw and todo_raw != "no_todos":
             try:
-                todos_by_person = __import__('json').loads(todo_raw)
+                todos_by_person = _json.loads(todo_raw)
             except:
                 todos_by_person = {}
 
         # GROCERY
-        groc_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
-        groc_raw  = groc_res.text.strip()
+        groc_raw  = safe_text("groceries")
         groceries = []
         if groc_raw:
             for item in groc_raw.split(','):
@@ -634,8 +845,7 @@ def dashboard_data():
                     groceries.append({"name": item})
 
         # FERTILITY
-        fert_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
-        fert_raw  = fert_res.text.strip()
+        fert_raw  = safe_text("fertility")
         fertility = {}
         if fert_raw and fert_raw != "no_fertility":
             for line in fert_raw.split('\n'):
@@ -651,26 +861,25 @@ def dashboard_data():
                 elif 'duration' in line.lower():
                     fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
 
-        # KIDS CALENDAR — events tagged to each child
+        # KIDS CALENDAR — Mikaela, Meaghan, Eleanor
         kids_calendar = {}
-        for kid in ['Mikaela', 'Meaghan']:
-            kid_cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_calendar", "kid_name": kid}, timeout=15)
-            kid_cal_raw = kid_cal_res.text.strip()
-            kid_events  = []
-            if kid_cal_raw and kid_cal_raw != "no_kid_events":
-                for block in kid_cal_raw.split('\n\n'):
+        for kid in ['Mikaela', 'Meaghan', 'Eleanor']:
+            kid_raw    = safe_text(f"kid_{kid}")
+            kid_events = []
+            if kid_raw and kid_raw != "no_kid_events":
+                for block in kid_raw.split('\n\n'):
                     block_lines = block.strip().split('\n')
                     if len(block_lines) >= 2:
-                        title    = block_lines[0].replace('📅','').replace('*','').strip()
+                        t        = block_lines[0].replace('📅','').replace('*','').strip()
                         detail   = block_lines[1].strip()
-                        parts    = detail.split('·')
-                        date_str = parts[0].strip() if len(parts) > 0 else '—'
-                        time_str = parts[1].strip() if len(parts) > 1 else '—'
-                        if title and 'upcoming' not in title.lower():
-                            kid_events.append({"title": title, "date": date_str, "time": time_str})
+                        bparts   = detail.split('·')
+                        date_str = bparts[0].strip() if len(bparts) > 0 else '—'
+                        time_str = bparts[1].strip() if len(bparts) > 1 else '—'
+                        if t and 'upcoming' not in t.lower():
+                            kid_events.append({"title": t, "date": date_str, "time": time_str})
             kids_calendar[kid] = kid_events
 
-        return __import__('flask').jsonify({
+        return jsonify({
             "expenses":        expenses,
             "events":          events,
             "todos_by_person": todos_by_person,
@@ -682,6 +891,7 @@ def dashboard_data():
     except Exception as e:
         print(f"DASHBOARD ERROR: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/', methods=['GET'])
 def healthcheck():
