@@ -45,7 +45,7 @@ EXPENSE_GROUPS = {
     "🌍 Others": ["Electronics", "Misc", "Missions"]
 }
 
-ACCOUNT_TYPES      = ["Personal Account", "Family"]
+ACCOUNT_TYPES      = ["👤 Personal Account", "👨‍👩‍👧‍👦 Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
 KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 School Event", "🎓 Tuition", "📝 Test/Exam", "🏆 Results", "📌 Other"]
 RESULT_SUBJECTS    = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
@@ -235,21 +235,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         category = query.data.split(":", 1)[1]
         context.user_data['expense_category'] = category
         keyboard  = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
-        await query.edit_message_text(
-            f"category: *{category}*\n\nwhich account?",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"category: *{category}*\n\nwhich account?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
     if query.data.startswith('exp_acc:'):
         account = query.data.split(":", 1)[1]
         context.user_data['expense_account'] = account
         context.user_data['awaiting']        = 'expense_description'
-        await query.edit_message_text(
-            f"account: *{account}*\n\nshort description? (e.g. 'starbucks')",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
         return
 
     # ------------------------------------------------------------------ TO-DO
@@ -388,9 +381,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("➕ add entry",  callback_data=f"kid_add:{kid}"),
              InlineKeyboardButton("📋 view all",   callback_data=f"kid_view:{kid}")],
+            [InlineKeyboardButton("📅 calendar",   callback_data=f"kid_calendar:{kid}")],
             [InlineKeyboardButton("⬅️ back",       callback_data="view_kids")]
         ]
         await query.edit_message_text(f"👧 *{kid}*\n\n{summary}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+
+    if query.data.startswith('kid_calendar:'):
+        kid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "get_kid_calendar", "kid_name": kid}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            display  = text if text and text != "no_kid_events" else f"no upcoming calendar events for {kid}.\n\nTip: add their name to event titles to auto-tag them!"
+        except:
+            display = "couldn't load calendar."
+        keyboard = [[InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")]]
+        await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
 
     if query.data.startswith('kid_add:'):
@@ -511,9 +518,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'expense_description':
         context.user_data['expense_description'] = text
         context.user_data['awaiting']            = 'expense_date'
-        await update.message.reply_text(
-            "📅 what date was this expense?\n(e.g. '14 May' or '14/05/2026')\ntype 'today' for today's date"
-        )
+        await update.message.reply_text("📅 what date was this expense?\n(e.g. '14 May' or '14/05/2026')\ntype 'today' for today's date")
         return
 
     if awaiting == 'expense_date':
@@ -523,25 +528,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account      = context.user_data.pop('expense_account', 'Family')
         description  = context.user_data.pop('expense_description', '')
         context.user_data.pop('awaiting', None)
-
         payload = {
             "user": user, "note": "add_expense",
-            "expense_amount":      amount,
-            "expense_category":    category,
-            "expense_account":     account,
-            "expense_description": description,
-            "expense_date":        expense_date
+            "expense_amount": amount, "expense_category": category,
+            "expense_account": account, "expense_description": description,
+            "expense_date": expense_date
         }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             date_display = expense_date if expense_date else "today"
             await update.message.reply_text(
-                f"✅ expense logged!\n\n"
-                f"💰 *${amount:.2f}*\n"
-                f"🏷 {category}\n"
-                f"🏦 {account}\n"
-                f"📝 {description}\n"
-                f"📅 {date_display}",
+                f"✅ expense logged!\n\n💰 *${amount:.2f}*\n🏷 {category}\n🏦 {account}\n📝 {description}\n📅 {date_display}",
                 parse_mode='Markdown'
             )
         except:
@@ -715,13 +712,12 @@ def dashboard():
 @app.route('/dashboard-data', methods=['GET'])
 def dashboard_data():
     try:
-        # ---- EXPENSES (raw JSON from Apps Script) ----
+        # EXPENSES
         exp_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_expenses_raw"}, timeout=15)
         try:
             rows = exp_res.json()
         except:
             rows = []
-
         expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
         for r in rows:
             expenses['month_total'] += r.get('amount', 0)
@@ -730,7 +726,7 @@ def dashboard_data():
             expenses['by_category'][cat]  = expenses['by_category'].get(cat, 0)  + r.get('amount', 0)
             expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
 
-        # ---- CALENDAR ----
+        # CALENDAR
         cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
         cal_raw = cal_res.text.strip()
         events  = []
@@ -747,7 +743,7 @@ def dashboard_data():
                     if title and 'upcoming' not in title.lower():
                         events.append({"title": title, "date": date_str, "time": time_str})
 
-        # ---- TO-DO ----
+        # TO-DO
         todo_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_todos"}, timeout=15)
         todo_raw = todo_res.text.strip()
         todos    = []
@@ -755,8 +751,8 @@ def dashboard_data():
             current_type = 'Shared'
             for line in todo_raw.split('\n'):
                 line = line.strip()
-                if '*shared:*' in line.lower():    current_type = 'Shared'
-                if '*personal:*' in line.lower():  current_type = 'Personal'
+                if '*shared:*'   in line.lower(): current_type = 'Shared'
+                if '*personal:*' in line.lower(): current_type = 'Personal'
                 if line.startswith('•'):
                     content = line[1:].strip()
                     owner   = ''
@@ -770,7 +766,7 @@ def dashboard_data():
                         due     = parts[1].strip() if len(parts) > 1 else ''
                     todos.append({"task": content, "type": current_type, "due": due, "owner": owner, "status": "Open"})
 
-        # ---- GROCERY ----
+        # GROCERY
         groc_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_checklist"}, timeout=15)
         groc_raw  = groc_res.text.strip()
         groceries = []
@@ -780,7 +776,7 @@ def dashboard_data():
                 if item:
                     groceries.append({"name": item, "added_by": "—"})
 
-        # ---- FERTILITY ----
+        # FERTILITY
         fert_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
         fert_raw  = fert_res.text.strip()
         fertility = {}
@@ -798,7 +794,7 @@ def dashboard_data():
                 elif 'duration' in line.lower():
                     fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
 
-        # ---- KIDS ----
+        # KIDS
         kids = {}
         for kid in ['Mikaela', 'Meaghan']:
             kid_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_full", "kid_name": kid}, timeout=15)
