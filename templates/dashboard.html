@@ -146,11 +146,6 @@
     gap: 12px;
   }
 
-  .last-updated {
-    font-size: 12px;
-    color: var(--text-soft);
-  }
-
   .refresh-btn {
     padding: 8px 16px;
     background: var(--terracotta);
@@ -221,10 +216,7 @@
     margin-bottom: 4px;
   }
 
-  .card-sub {
-    font-size: 13px;
-    color: var(--text-soft);
-  }
+  .card-sub { font-size: 13px; color: var(--text-soft); }
 
   .card.terracotta { border-top: 3px solid var(--terracotta); }
   .card.sage       { border-top: 3px solid var(--sage); }
@@ -288,8 +280,6 @@
   .badge-blush      { background: rgba(232,180,184,0.2); color: #a0606a; }
   .badge-brown      { background: rgba(92,61,46,0.10); color: var(--brown-light); }
 
-  .table-body { padding: 0; }
-
   table {
     width: 100%;
     border-collapse: collapse;
@@ -336,12 +326,12 @@
     font-weight: 500;
   }
 
-  .pill-open    { background: rgba(122,158,135,0.15); color: var(--sage); }
-  .pill-done    { background: rgba(92,61,46,0.08); color: var(--text-soft); text-decoration: line-through; }
-  .pill-shared  { background: rgba(201,168,76,0.12); color: #9a7a2c; }
-  .pill-personal{ background: rgba(196,112,79,0.10); color: var(--terracotta); }
+  .pill-open     { background: rgba(122,158,135,0.15); color: var(--sage); }
+  .pill-done     { background: rgba(92,61,46,0.08); color: var(--text-soft); text-decoration: line-through; }
+  .pill-shared   { background: rgba(201,168,76,0.12); color: #9a7a2c; }
+  .pill-personal { background: rgba(196,112,79,0.10); color: var(--terracotta); }
 
-  /* ---- FERTILITY SPECIAL CARD ---- */
+  /* ---- FERTILITY CARD ---- */
   .fertility-card {
     background: linear-gradient(135deg, rgba(232,180,184,0.15), rgba(201,168,76,0.08));
     border: 1px solid rgba(232,180,184,0.3);
@@ -358,6 +348,53 @@
   .fertility-row:last-child { border-bottom: none; }
   .fertility-label { color: var(--text-soft); }
   .fertility-value { font-weight: 500; color: var(--brown); }
+
+  /* ---- EXPENSE CATEGORY BAR ---- */
+  .expense-total-row {
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid rgba(92,61,46,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .expense-total-label {
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-soft);
+  }
+
+  .expense-total-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    color: var(--brown);
+    font-weight: 600;
+  }
+
+  .expense-account-section {
+    padding: 12px 24px 16px;
+    border-top: 1px solid rgba(92,61,46,0.06);
+  }
+
+  .expense-account-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-soft);
+    margin-bottom: 8px;
+  }
+
+  .expense-account-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3px 0;
+  }
+
+  .expense-account-row span:last-child { font-weight: 500; }
 
   /* ---- LOADING ---- */
   .loading {
@@ -384,11 +421,8 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* animation delays for cards */
   .card:nth-child(1) { animation-delay: 0.05s; }
   .card:nth-child(2) { animation-delay: 0.10s; }
   .card:nth-child(3) { animation-delay: 0.15s; }
@@ -401,6 +435,8 @@
   .table-card:nth-child(4) { animation-delay: 0.25s; }
   .table-card:nth-child(5) { animation-delay: 0.30s; }
   .table-card:nth-child(6) { animation-delay: 0.35s; }
+  .table-card:nth-child(7) { animation-delay: 0.40s; }
+  .table-card:nth-child(8) { animation-delay: 0.45s; }
 
   @media (max-width: 768px) {
     header { padding: 20px; flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -429,7 +465,7 @@
   <header>
     <div class="header-left">
       <h1>Wong Family Dashboard 🏠</h1>
-      <p class="last-updated" id="last-updated">Loading...</p>
+      <p id="last-updated">Loading...</p>
     </div>
     <div class="header-right">
       <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
@@ -438,13 +474,11 @@
   </header>
 
   <main>
-    <!-- SUMMARY CARDS -->
     <div class="section-title"><span>📊</span> Overview</div>
     <div class="cards-grid" id="cards-grid">
       <div class="loading"><div class="spinner"></div> Loading...</div>
     </div>
 
-    <!-- TABLES -->
     <div class="section-title" style="margin-top:8px;"><span>📋</span> Details</div>
     <div class="tables-grid" id="tables-grid">
       <div class="loading"><div class="spinner"></div> Loading...</div>
@@ -477,7 +511,6 @@ function logout() {
   document.getElementById('password-input').value = '';
 }
 
-// Auto-login if session exists
 if (sessionStorage.getItem('wf_auth') === '1') {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
@@ -501,17 +534,16 @@ async function loadDashboard() {
 }
 
 function renderCards(data) {
-  const ex = data.expenses || {};
-  const ev = data.events   || [];
-  const td = data.todos    || [];
+  const ex = data.expenses  || {};
+  const ev = data.events    || [];
+  const td = data.todos     || [];
   const gr = data.groceries || [];
   const fe = data.fertility || {};
 
-  const openTasks  = td.filter(t => t.status !== 'Done').length;
-  const groceryCount = gr.length;
-  const monthTotal = ex.month_total || 0;
-  const nextPeriod = fe.next_period || '—';
-  const upcomingEv = ev.length;
+  const openTasks    = td.filter(t => t.status !== 'Done').length;
+  const monthTotal   = ex.month_total || 0;
+  const nextPeriod   = fe.next_period || '—';
+  const fertileWindow = fe.fertile_window || '—';
 
   document.getElementById('cards-grid').innerHTML = `
     <div class="card terracotta">
@@ -523,41 +555,41 @@ function renderCards(data) {
     <div class="card sage">
       <div class="card-icon">📅</div>
       <div class="card-label">Upcoming Events</div>
-      <div class="card-value">${upcomingEv}</div>
+      <div class="card-value">${ev.length}</div>
       <div class="card-sub">Next 30 days</div>
     </div>
     <div class="card gold">
       <div class="card-icon">✅</div>
       <div class="card-label">Open Tasks</div>
       <div class="card-value">${openTasks}</div>
-      <div class="card-sub">${td.filter(t=>t.status==='Done').length} completed</div>
-    </div>
-    <div class="card blush">
-      <div class="card-icon">🛒</div>
-      <div class="card-label">Grocery Items</div>
-      <div class="card-value">${groceryCount}</div>
-      <div class="card-sub">items to buy</div>
+      <div class="card-sub">${td.filter(t => t.status === 'Done').length} completed</div>
     </div>
     <div class="card brown">
+      <div class="card-icon">🛒</div>
+      <div class="card-label">Grocery Items</div>
+      <div class="card-value">${gr.length}</div>
+      <div class="card-sub">items to buy</div>
+    </div>
+    <div class="card blush">
       <div class="card-icon">🌸</div>
       <div class="card-label">Next Period (est)</div>
-      <div class="card-value" style="font-size:20px;margin-top:4px;">${nextPeriod}</div>
-      <div class="card-sub">Fertile: ${fe.fertile_window || '—'}</div>
+      <div class="card-value" style="font-size:18px;margin-top:4px;">${nextPeriod}</div>
+      <div class="card-sub">Fertile: ${fertileWindow}</div>
     </div>
   `;
 }
 
 function renderTables(data) {
-  const ex = data.expenses || {};
-  const ev = data.events   || [];
-  const td = data.todos    || [];
-  const gr = data.groceries || [];
-  const fe = data.fertility || {};
-  const kids = data.kids   || {};
+  const ex   = data.expenses  || {};
+  const ev   = data.events    || [];
+  const td   = data.todos     || [];
+  const gr   = data.groceries || [];
+  const fe   = data.fertility || {};
+  const kids = data.kids      || {};
 
   let html = '';
 
-  // --- EXPENSES TABLE ---
+  // ------------------------------------------------------------------ EXPENSES
   html += `
   <div class="table-card">
     <div class="table-header">
@@ -568,52 +600,47 @@ function renderTables(data) {
 
   if (!ex.by_category || Object.keys(ex.by_category).length === 0) {
     html += `<div class="empty-state"><div class="empty-icon">💸</div>No expenses this month</div>`;
-} else {
-    // Total bar
-    html += `<div style="padding:16px 24px 8px;border-bottom:1px solid rgba(92,61,46,0.06);">
-        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:600;color:var(--brown);">
-            <span>Total</span><span>$${ex.month_total.toFixed(2)}</span>
-        </div>
+  } else {
+    // Total
+    html += `<div class="expense-total-row">
+      <span class="expense-total-label">Total</span>
+      <span class="expense-total-value">$${(ex.month_total || 0).toFixed(2)}</span>
     </div>`;
 
-    // Category breakdown with visual bar
+    // Category breakdown with progress bar
     html += `<table><thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">%</th></tr></thead><tbody>`;
     const total = ex.month_total || 1;
     Object.entries(ex.by_category)
-        .sort((a, b) => b[1] - a[1])
-        .forEach(([cat, amt]) => {
-            const pct = ((amt / total) * 100).toFixed(0);
-            html += `<tr>
-                <td>
-                    ${cat}
-                    <div style="height:3px;background:rgba(196,112,79,0.15);border-radius:2px;margin-top:4px;">
-                        <div style="height:3px;width:${pct}%;background:var(--terracotta);border-radius:2px;"></div>
-                    </div>
-                </td>
-                <td style="text-align:right;font-weight:500;">$${amt.toFixed(2)}</td>
-                <td style="text-align:right;color:var(--text-soft);font-size:12px;">${pct}%</td>
-            </tr>`;
-        });
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([cat, amt]) => {
+        const pct = ((amt / total) * 100).toFixed(0);
+        html += `<tr>
+          <td>
+            <div>${cat}</div>
+            <div style="height:3px;background:rgba(196,112,79,0.12);border-radius:2px;margin-top:5px;">
+              <div style="height:3px;width:${pct}%;background:var(--terracotta);border-radius:2px;transition:width 0.6s ease;"></div>
+            </div>
+          </td>
+          <td style="text-align:right;font-weight:500;">$${amt.toFixed(2)}</td>
+          <td style="text-align:right;color:var(--text-soft);font-size:12px;">${pct}%</td>
+        </tr>`;
+      });
     html += `</tbody></table>`;
 
     // By account
     if (ex.by_person && Object.keys(ex.by_person).length > 0) {
-        html += `<div style="padding:12px 24px;border-top:1px solid rgba(92,61,46,0.06);">
-            <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.8px;color:var(--text-soft);margin-bottom:8px;">By Account</div>`;
-        Object.entries(ex.by_person).forEach(([acc, amt]) => {
-            html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;">
-                <span>${acc}</span><span style="font-weight:500;">$${amt.toFixed(2)}</span>
-            </div>`;
-        });
-        html += `</div>`;
+      html += `<div class="expense-account-section">
+        <div class="expense-account-label">By Account</div>`;
+      Object.entries(ex.by_person).forEach(([acc, amt]) => {
+        html += `<div class="expense-account-row"><span>${acc}</span><span>$${amt.toFixed(2)}</span></div>`;
+      });
+      html += `</div>`;
     }
-}
-  
-  
+  }
 
   html += `</div></div>`;
 
-  // --- CALENDAR TABLE ---
+  // ------------------------------------------------------------------ CALENDAR
   html += `
   <div class="table-card">
     <div class="table-header">
@@ -633,40 +660,42 @@ function renderTables(data) {
   }
   html += `</div></div>`;
 
-  // --- TO-DO TABLE ---
+  // ------------------------------------------------------------------ TO-DO
+  const openTasks = td.filter(t => t.status !== 'Done');
+  const doneTasks = td.filter(t => t.status === 'Done');
+
   html += `
   <div class="table-card">
     <div class="table-header">
       <h3>✅ To-Do List</h3>
-      <span class="badge badge-gold">${td.filter(t=>t.status!=='Done').length} open</span>
+      <span class="badge badge-gold">${openTasks.length} open</span>
     </div>
     <div class="table-body">`;
 
   if (td.length === 0) {
     html += `<div class="empty-state"><div class="empty-icon">📋</div>No tasks yet</div>`;
   } else {
-    html += `<table><thead><tr><th>Task</th><th>Type</th><th>Due</th><th>Owner</th><th>Status</th></tr></thead><tbody>`;
-    td.filter(t=>t.status!=='Done').forEach(t => {
+    html += `<table><thead><tr><th>Task</th><th>Type</th><th>Due</th><th>Owner</th></tr></thead><tbody>`;
+    openTasks.forEach(t => {
       html += `<tr>
         <td>${t.task}</td>
-        <td><span class="pill ${t.type==='Shared'?'pill-shared':'pill-personal'}">${t.type}</span></td>
+        <td><span class="pill ${t.type === 'Shared' ? 'pill-shared' : 'pill-personal'}">${t.type}</span></td>
         <td>${t.due || '—'}</td>
         <td>${t.owner}</td>
-        <td><span class="pill pill-open">Open</span></td>
       </tr>`;
     });
-    td.filter(t=>t.status==='Done').slice(-3).forEach(t => {
+    doneTasks.slice(-3).forEach(t => {
       html += `<tr>
-        <td><span class="pill pill-done">${t.task}</span></td>
-        <td>—</td><td>—</td><td>${t.owner}</td>
-        <td><span class="pill pill-done">Done</span></td>
+        <td><span style="text-decoration:line-through;color:var(--text-soft);">${t.task}</span></td>
+        <td>—</td><td>—</td>
+        <td style="color:var(--text-soft);">${t.owner}</td>
       </tr>`;
     });
     html += `</tbody></table>`;
   }
   html += `</div></div>`;
 
-  // --- GROCERY TABLE ---
+  // ------------------------------------------------------------------ GROCERY
   html += `
   <div class="table-card">
     <div class="table-header">
@@ -678,15 +707,15 @@ function renderTables(data) {
   if (gr.length === 0) {
     html += `<div class="empty-state"><div class="empty-icon">🛒</div>Nothing to buy!</div>`;
   } else {
-    html += `<table><thead><tr><th>Item</th><th>Added By</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>Item</th></tr></thead><tbody>`;
     gr.forEach(g => {
-      html += `<tr><td>${g.name}</td><td>${g.added_by}</td></tr>`;
+      html += `<tr><td>${g.name}</td></tr>`;
     });
     html += `</tbody></table>`;
   }
   html += `</div></div>`;
 
-  // --- FERTILITY ---
+  // ------------------------------------------------------------------ FERTILITY
   html += `
   <div class="table-card fertility-card">
     <div class="table-header">
@@ -699,20 +728,22 @@ function renderTables(data) {
     html += `<div class="empty-state"><div class="empty-icon">🌸</div>No period data logged yet</div>`;
   } else {
     const rows = [
-      ['Last Period Start', fe.last_period_start],
-      ['Period Duration',   fe.duration ? fe.duration + ' days' : '—'],
-      ['Next Period (est)', fe.next_period || '—'],
-      ['Fertile Window',   fe.fertile_window || '—'],
-      ['Last Ovulation',   fe.last_ovulation || '—'],
-      ['Recent Symptoms',  (fe.symptoms || []).join(', ') || '—'],
+      ['Last Period Start',  fe.last_period_start || '—'],
+      ['Period Duration',    fe.duration ? fe.duration + ' days' : '—'],
+      ['Next Period (est)',  fe.next_period    || '—'],
+      ['Fertile Window',     fe.fertile_window || '—'],
+      ['Last Ovulation',     fe.last_ovulation || '—'],
     ];
     rows.forEach(([label, val]) => {
-      html += `<div class="fertility-row"><span class="fertility-label">${label}</span><span class="fertility-value">${val}</span></div>`;
+      html += `<div class="fertility-row">
+        <span class="fertility-label">${label}</span>
+        <span class="fertility-value">${val}</span>
+      </div>`;
     });
   }
   html += `</div></div>`;
 
-  // --- KIDS ---
+  // ------------------------------------------------------------------ KIDS
   ['Mikaela', 'Meaghan'].forEach(kid => {
     const kd = kids[kid] || [];
     html += `
@@ -728,7 +759,12 @@ function renderTables(data) {
     } else {
       html += `<table><thead><tr><th>Type</th><th>Title</th><th>Score</th><th>Date</th></tr></thead><tbody>`;
       kd.slice(-10).reverse().forEach(e => {
-        html += `<tr><td>${e.type}</td><td>${e.title}</td><td>${e.score || '—'}</td><td>${e.date || '—'}</td></tr>`;
+        html += `<tr>
+          <td>${e.type}</td>
+          <td>${e.title}</td>
+          <td>${e.score || '—'}</td>
+          <td>${e.date  || '—'}</td>
+        </tr>`;
       });
       html += `</tbody></table>`;
     }
