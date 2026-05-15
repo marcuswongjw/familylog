@@ -308,6 +308,7 @@
     <div class="header-left">
       <h1>Wong Family Dashboard 🏠</h1>
       <p id="last-updated">Loading...</p>
+      <p id="refresh-countdown" style="font-size:12px;color:var(--text-soft);margin-top:2px;opacity:0.7;"></p>
     </div>
     <div class="header-right">
       <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
@@ -377,6 +378,32 @@ if (sessionStorage.getItem('wf_auth') === '1') {
   loadDashboard();
 }
 
+// ---- AUTO-REFRESH (every 5 minutes) ----
+const REFRESH_INTERVAL = 5 * 60; // seconds
+let refreshTimer  = null;
+let countdownSecs = REFRESH_INTERVAL;
+
+function startAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  countdownSecs = REFRESH_INTERVAL;
+  refreshTimer = setInterval(() => {
+    countdownSecs--;
+    updateCountdown();
+    if (countdownSecs <= 0) {
+      countdownSecs = REFRESH_INTERVAL;
+      loadDashboard();
+    }
+  }, 1000);
+}
+
+function updateCountdown() {
+  const el = document.getElementById('refresh-countdown');
+  if (!el) return;
+  const m = Math.floor(countdownSecs / 60);
+  const s = countdownSecs % 60;
+  el.textContent = `auto-refresh in ${m}:${String(s).padStart(2,'0')}`;
+}
+
 // ---- DATA ----
 async function loadDashboard() {
   document.getElementById('last-updated').textContent = 'Refreshing...';
@@ -387,6 +414,7 @@ async function loadDashboard() {
     renderTables(data);
     document.getElementById('last-updated').textContent =
       'Last updated: ' + new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' });
+    startAutoRefresh();
   } catch (e) {
     document.getElementById('cards-grid').innerHTML  = '<div class="loading">Failed to load. Please refresh.</div>';
     document.getElementById('tables-grid').innerHTML = '';
