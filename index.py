@@ -47,7 +47,7 @@ EXPENSE_GROUPS = {
 
 ACCOUNT_TYPES      = ["Personal Account", "Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
-KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 School Event", "🎓 Tuition", "📝 Test/Exam", "🏆 Results", "📌 Other"]
+KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 Event", "📝 Test/Exam", "🏆 Results", "📌 Others"]
 RESULT_SUBJECTS    = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
 
 
@@ -76,15 +76,14 @@ async def send_to_all(text, parse_mode='Markdown'):
 # --- HOME ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📝 log activity",     callback_data='log_activity'),
-         InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries')],
-        [InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge'),
-         InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
-        [InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar'),
-         InlineKeyboardButton("💰 expenses",         callback_data='view_expenses')],
-        [InlineKeyboardButton("✅ to-do list",        callback_data='view_todos'),
-         InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
-        [InlineKeyboardButton("👧 kids tracker",     callback_data='view_kids')],
+        [InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries'),
+         InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge')],
+        [InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit'),
+         InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar')],
+        [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
+         InlineKeyboardButton("✅ to-do list",        callback_data='view_todos')],
+        [InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility'),
+         InlineKeyboardButton("👧 kids tracker",     callback_data='view_kids')],
         [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
     ]
     text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
@@ -165,12 +164,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"how many {fruit_name}s did you have? (type the number)")
         return
 
-    # ------------------------------------------------------------------ ACTIVITY
-    if query.data == 'log_activity':
-        context.user_data['awaiting'] = 'activity'
-        await query.edit_message_text("simply type your activity (e.g., 'run 5km') and I'll log it!")
-        return
-
     # ------------------------------------------------------------------ CALENDAR
     if query.data == 'view_calendar':
         payload = {"user": user, "note": "get_events"}
@@ -190,7 +183,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'add_event':
         context.user_data['awaiting'] = 'event_title'
         await query.edit_message_text(
-            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')",
+            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')\n\n💡 tip: include a child's name to auto-tag them (e.g. 'Mikaela swimming')",
             parse_mode='Markdown'
         )
         return
@@ -393,7 +386,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
             text     = response.text.strip()
-            display  = text if text and text != "no_kid_events" else f"no upcoming calendar events for {kid}.\n\nTip: add their name to event titles to auto-tag them!"
+            display  = text if text and text != "no_kid_events" else f"no upcoming calendar events for {kid}.\n\n💡 events are auto-tagged when their name appears in the event title."
         except:
             display = "couldn't load calendar."
         keyboard = [[InlineKeyboardButton("⬅️ back", callback_data=f"kid_menu:{kid}")]]
@@ -463,14 +456,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("please send a valid number.")
         return
 
-    # ACTIVITY
-    if awaiting == 'activity':
-        context.user_data.pop('awaiting', None)
-        payload  = {"user": user, "note": text}
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-        await update.message.reply_text(response.text)
-        return
-
     # CALENDAR FLOW
     if awaiting == 'event_title':
         context.user_data['event_title'] = text
@@ -499,7 +484,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payload = {"user": user, "note": "add_event", "event_title": title, "event_date": date, "event_time": time, "event_notes": notes}
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(), parse_mode='Markdown')
+            await update.message.reply_text(
+                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time}\n📝 {notes or '—'}".strip(),
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the event.")
         return
@@ -583,7 +571,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if awaiting == 'kid_title':
         context.user_data['kid_title'] = text
         context.user_data['awaiting']  = 'kid_date'
-        await update.message.reply_text("📆 what date?\n(e.g. '15 Jun')\ntype 'skip' if not applicable")
+        entry_type = context.user_data.get('kid_entry_type', '')
+        if entry_type in ['📅 Event', '📝 Test/Exam']:
+            await update.message.reply_text("📆 what date?\n(e.g. '15 Jun')\ntype 'skip' if not applicable")
+        else:
+            await update.message.reply_text("📆 due date? (e.g. '15 Jun')\ntype 'skip' if not applicable")
         return
 
     if awaiting == 'kid_date':
@@ -599,10 +591,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date       = context.user_data.pop('kid_date', '')
         notes      = text if text.lower() != 'skip' else ''
         context.user_data.pop('awaiting', None)
-        payload = {"user": user, "note": "add_kid_entry", "kid_name": kid, "entry_type": entry_type, "entry_title": title, "entry_date": date, "entry_notes": notes, "entry_score": ""}
+        payload = {
+            "user": user, "note": "add_kid_entry",
+            "kid_name": kid, "entry_type": entry_type,
+            "entry_title": title, "entry_date": date,
+            "entry_notes": notes, "entry_score": ""
+        }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(f"✅ logged for *{kid}*!\n\n{entry_type}\n📋 {title}\n📆 {date or '—'}\n📝 {notes or '—'}", parse_mode='Markdown')
+            cal_note = "\n📅 added to Google Calendar!" if entry_type in ['📅 Event', '📝 Test/Exam'] and date else ""
+            await update.message.reply_text(
+                f"✅ logged for *{kid}*!\n\n{entry_type}\n📋 {title}\n📆 {date or '—'}\n📝 {notes or '—'}{cal_note}",
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the entry.")
         return
@@ -623,15 +624,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         notes   = text if text.lower() != 'skip' else ''
         context.user_data.pop('awaiting', None)
         context.user_data.pop('kid_entry_type', None)
-        payload = {"user": user, "note": "add_kid_entry", "kid_name": kid, "entry_type": "🏆 Results", "entry_title": subject, "entry_date": "", "entry_notes": notes, "entry_score": score}
+        payload = {
+            "user": user, "note": "add_kid_entry",
+            "kid_name": kid, "entry_type": "🏆 Results",
+            "entry_title": subject, "entry_date": "",
+            "entry_notes": notes, "entry_score": score
+        }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await update.message.reply_text(f"✅ result logged for *{kid}*!\n\n📚 {subject}\n🏆 Score: *{score}*\n📝 {notes or '—'}", parse_mode='Markdown')
+            await update.message.reply_text(
+                f"✅ result logged for *{kid}*!\n\n📚 {subject}\n🏆 Score: *{score}*\n📝 {notes or '—'}",
+                parse_mode='Markdown'
+            )
         except:
             await update.message.reply_text("couldn't save the result.")
         return
 
-    # DEFAULT
+    # DEFAULT — forward to Apps Script
     payload  = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
     await update.message.reply_text(response.text)
@@ -695,7 +704,7 @@ def watchdog():
             new_thread = threading.Thread(target=start_bot_loop, daemon=True)
             new_thread.start()
 
-bot_thread = threading.Thread(target=start_bot_loop, daemon=True)
+bot_thread     = threading.Thread(target=start_bot_loop, daemon=True)
 bot_thread.start()
 watchdog_thread = threading.Thread(target=watchdog, daemon=True)
 watchdog_thread.start()
@@ -726,7 +735,7 @@ def dashboard_data():
             expenses['by_category'][cat]  = expenses['by_category'].get(cat, 0)  + r.get('amount', 0)
             expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
 
-        # CALENDAR
+        # CALENDAR (14 days)
         cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_events"}, timeout=15)
         cal_raw = cal_res.text.strip()
         events  = []
@@ -774,7 +783,7 @@ def dashboard_data():
             for item in groc_raw.split(','):
                 item = item.strip()
                 if item:
-                    groceries.append({"name": item, "added_by": "—"})
+                    groceries.append({"name": item})
 
         # FERTILITY
         fert_res  = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_fertility"}, timeout=15)
@@ -794,12 +803,14 @@ def dashboard_data():
                 elif 'duration' in line.lower():
                     fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
 
-        # KIDS
+        # KIDS — sheet entries + calendar events
         kids = {}
         for kid in ['Mikaela', 'Meaghan']:
+            entries = []
+
+            # Sheet entries
             kid_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_full", "kid_name": kid}, timeout=15)
             kid_raw = kid_res.text.strip()
-            entries = []
             if kid_raw and 'no entries' not in kid_raw.lower():
                 for line in kid_raw.split('\n'):
                     line = line.strip()
@@ -811,11 +822,33 @@ def dashboard_data():
                             content   = content[:content.rfind('(')].strip()
                         parts = [p.strip() for p in content.split('·')]
                         entries.append({
-                            "type":  parts[0] if len(parts) > 0 else '—',
-                            "title": parts[1] if len(parts) > 1 else '—',
-                            "score": parts[2] if len(parts) > 2 else '',
-                            "date":  date_part
+                            "type":   parts[0] if len(parts) > 0 else '—',
+                            "title":  parts[1] if len(parts) > 1 else '—',
+                            "score":  parts[2] if len(parts) > 2 else '',
+                            "date":   date_part,
+                            "source": "tracker"
                         })
+
+            # Calendar events tagged to this child
+            cal_res = requests.post(GOOGLE_SCRIPT_URL, json={"user": "dashboard", "note": "get_kid_calendar", "kid_name": kid}, timeout=15)
+            cal_raw = cal_res.text.strip()
+            if cal_raw and cal_raw != "no_kid_events":
+                for block in cal_raw.split('\n\n'):
+                    block_lines = block.strip().split('\n')
+                    if len(block_lines) >= 2:
+                        title    = block_lines[0].replace('📅','').replace('*','').strip()
+                        detail   = block_lines[1].strip()
+                        parts    = detail.split('·')
+                        date_str = parts[0].strip() if len(parts) > 0 else '—'
+                        if title and kid.lower() not in title.lower() and 'upcoming' not in title.lower():
+                            entries.append({
+                                "type":   "📅 Calendar",
+                                "title":  title,
+                                "score":  '',
+                                "date":   date_str,
+                                "source": "calendar"
+                            })
+
             kids[kid] = entries
 
         return jsonify({
