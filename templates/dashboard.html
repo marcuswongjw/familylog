@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wong Family Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
     --cream: #fdf6ee;
@@ -69,11 +70,7 @@
     margin-bottom: 6px;
   }
 
-  .login-box p {
-    color: var(--text-soft);
-    font-size: 14px;
-    margin-bottom: 32px;
-  }
+  .login-box p { color: var(--text-soft); font-size: 14px; margin-bottom: 32px; }
 
   .login-box input {
     width: 100%;
@@ -108,13 +105,7 @@
 
   .login-box button:hover { background: var(--brown); }
   .login-box button:active { transform: scale(0.98); }
-
-  .login-error {
-    color: #c0392b;
-    font-size: 13px;
-    margin-top: 10px;
-    display: none;
-  }
+  .login-error { color: #c0392b; font-size: 13px; margin-top: 10px; display: none; }
 
   /* ---- DASHBOARD ---- */
   #dashboard { display: none; }
@@ -134,17 +125,9 @@
     line-height: 1.1;
   }
 
-  .header-left p {
-    color: var(--text-soft);
-    font-size: 14px;
-    margin-top: 4px;
-  }
+  .header-left p { color: var(--text-soft); font-size: 14px; margin-top: 4px; }
 
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+  .header-right { display: flex; align-items: center; gap: 12px; }
 
   .refresh-btn {
     padding: 8px 16px;
@@ -196,7 +179,6 @@
   }
 
   .card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
-
   .card-icon { font-size: 28px; margin-bottom: 12px; }
 
   .card-label {
@@ -224,6 +206,12 @@
   .card.blush      { border-top: 3px solid var(--blush); }
   .card.brown      { border-top: 3px solid var(--brown-light); }
 
+  .card:nth-child(1) { animation-delay: 0.05s; }
+  .card:nth-child(2) { animation-delay: 0.10s; }
+  .card:nth-child(3) { animation-delay: 0.15s; }
+  .card:nth-child(4) { animation-delay: 0.20s; }
+  .card:nth-child(5) { animation-delay: 0.25s; }
+
   /* ---- SECTION HEADERS ---- */
   .section-title {
     font-family: 'Playfair Display', serif;
@@ -235,9 +223,7 @@
     gap: 10px;
   }
 
-  .section-title span { font-size: 20px; }
-
-  /* ---- TABLES ---- */
+  /* ---- TABLES GRID ---- */
   .tables-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
@@ -253,6 +239,15 @@
     animation: fadeUp 0.5s ease both;
   }
 
+  .table-card:nth-child(1) { animation-delay: 0.10s; }
+  .table-card:nth-child(2) { animation-delay: 0.15s; }
+  .table-card:nth-child(3) { animation-delay: 0.20s; }
+  .table-card:nth-child(4) { animation-delay: 0.25s; }
+  .table-card:nth-child(5) { animation-delay: 0.30s; }
+  .table-card:nth-child(6) { animation-delay: 0.35s; }
+  .table-card:nth-child(7) { animation-delay: 0.40s; }
+  .table-card:nth-child(8) { animation-delay: 0.45s; }
+
   .table-header {
     padding: 18px 24px;
     border-bottom: 1px solid rgba(92,61,46,0.08);
@@ -267,7 +262,7 @@
     color: var(--brown);
   }
 
-  .table-header .badge {
+  .badge {
     font-size: 12px;
     padding: 3px 10px;
     border-radius: 20px;
@@ -277,14 +272,10 @@
   .badge-terracotta { background: rgba(196,112,79,0.12); color: var(--terracotta); }
   .badge-sage       { background: rgba(122,158,135,0.12); color: var(--sage); }
   .badge-gold       { background: rgba(201,168,76,0.12); color: #9a7a2c; }
-  .badge-blush      { background: rgba(232,180,184,0.2); color: #a0606a; }
-  .badge-brown      { background: rgba(92,61,46,0.10); color: var(--brown-light); }
+  .badge-blush      { background: rgba(232,180,184,0.2);  color: #a0606a; }
+  .badge-brown      { background: rgba(92,61,46,0.10);    color: var(--brown-light); }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
   th {
     padding: 10px 24px;
@@ -317,24 +308,14 @@
 
   .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
 
-  /* ---- STATUS PILLS ---- */
-  .pill {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .pill-open     { background: rgba(122,158,135,0.15); color: var(--sage); }
-  .pill-done     { background: rgba(92,61,46,0.08); color: var(--text-soft); text-decoration: line-through; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
   .pill-shared   { background: rgba(201,168,76,0.12); color: #9a7a2c; }
   .pill-personal { background: rgba(196,112,79,0.10); color: var(--terracotta); }
 
-  /* ---- FERTILITY CARD ---- */
+  /* ---- FERTILITY ---- */
   .fertility-card {
     background: linear-gradient(135deg, rgba(232,180,184,0.15), rgba(201,168,76,0.08));
-    border: 1px solid rgba(232,180,184,0.3);
+    border: 1px solid rgba(232,180,184,0.3) !important;
   }
 
   .fertility-row {
@@ -349,52 +330,128 @@
   .fertility-label { color: var(--text-soft); }
   .fertility-value { font-weight: 500; color: var(--brown); }
 
-  /* ---- EXPENSE CATEGORY BAR ---- */
-  .expense-total-row {
-    padding: 16px 24px 12px;
-    border-bottom: 1px solid rgba(92,61,46,0.06);
+  /* ---- EXPENSES SPLIT ---- */
+  .expense-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(92,61,46,0.08);
+  }
+
+  .expense-tab {
+    flex: 1;
+    padding: 12px 16px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--text-soft);
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .expense-tab.active {
+    color: var(--terracotta);
+    border-bottom-color: var(--terracotta);
+  }
+
+  .expense-tab:hover { color: var(--brown); }
+
+  .expense-panel { display: none; }
+  .expense-panel.active { display: block; }
+
+  .expense-summary-row {
+    padding: 14px 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border-bottom: 1px solid rgba(92,61,46,0.06);
   }
 
-  .expense-total-label {
-    font-size: 13px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-soft);
-  }
-
-  .expense-total-value {
+  .expense-summary-label { font-size: 13px; color: var(--text-soft); }
+  .expense-summary-value {
     font-family: 'Playfair Display', serif;
-    font-size: 22px;
+    font-size: 20px;
     color: var(--brown);
     font-weight: 600;
   }
 
-  .expense-account-section {
-    padding: 12px 24px 16px;
-    border-top: 1px solid rgba(92,61,46,0.06);
+  /* Pie chart container */
+  .pie-wrapper {
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    border-bottom: 1px solid rgba(92,61,46,0.06);
   }
 
-  .expense-account-label {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-soft);
-    margin-bottom: 8px;
+  .pie-canvas-wrap {
+    flex-shrink: 0;
+    width: 140px;
+    height: 140px;
   }
 
-  .expense-account-row {
+  .pie-legend {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pie-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .pie-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pie-legend-name { flex: 1; }
+  .pie-legend-val  { font-weight: 500; color: var(--brown); }
+
+  /* Category breakdown inside panel */
+  .category-list { padding: 0 0 8px; }
+
+  .category-row {
+    padding: 9px 24px;
+    border-bottom: 1px solid rgba(92,61,46,0.04);
+  }
+
+  .category-row:last-child { border-bottom: none; }
+
+  .category-row-top {
     display: flex;
     justify-content: space-between;
     font-size: 13px;
-    padding: 3px 0;
+    margin-bottom: 4px;
   }
 
-  .expense-account-row span:last-child { font-weight: 500; }
+  .category-name  { color: var(--text); }
+  .category-amount { font-weight: 500; color: var(--brown); }
+  .category-pct   { font-size: 11px; color: var(--text-soft); }
+
+  .category-bar-bg {
+    height: 3px;
+    background: rgba(92,61,46,0.08);
+    border-radius: 2px;
+  }
+
+  .category-bar-fill {
+    height: 3px;
+    background: var(--terracotta);
+    border-radius: 2px;
+    transition: width 0.6s ease;
+  }
 
   /* ---- LOADING ---- */
   .loading {
@@ -415,7 +472,6 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ---- ANIMATIONS ---- */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -423,26 +479,12 @@
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .card:nth-child(1) { animation-delay: 0.05s; }
-  .card:nth-child(2) { animation-delay: 0.10s; }
-  .card:nth-child(3) { animation-delay: 0.15s; }
-  .card:nth-child(4) { animation-delay: 0.20s; }
-  .card:nth-child(5) { animation-delay: 0.25s; }
-
-  .table-card:nth-child(1) { animation-delay: 0.10s; }
-  .table-card:nth-child(2) { animation-delay: 0.15s; }
-  .table-card:nth-child(3) { animation-delay: 0.20s; }
-  .table-card:nth-child(4) { animation-delay: 0.25s; }
-  .table-card:nth-child(5) { animation-delay: 0.30s; }
-  .table-card:nth-child(6) { animation-delay: 0.35s; }
-  .table-card:nth-child(7) { animation-delay: 0.40s; }
-  .table-card:nth-child(8) { animation-delay: 0.45s; }
-
   @media (max-width: 768px) {
     header { padding: 20px; flex-direction: column; align-items: flex-start; gap: 12px; }
     main { padding: 20px; }
     .tables-grid { grid-template-columns: 1fr; }
     .cards-grid { grid-template-columns: repeat(2, 1fr); }
+    .pie-wrapper { flex-direction: column; align-items: flex-start; }
   }
 </style>
 </head>
@@ -490,6 +532,15 @@
 const PASSWORD = 'familyisLOVE';
 const API      = '/dashboard-data';
 
+// Pie chart colour palette — warm tones matching the dashboard
+const PIE_COLOURS = [
+  '#c4704f','#e8a98a','#7a9e87','#b5cebe','#c9a84c',
+  '#e8d5a3','#8b6355','#e8b4b8','#5c3d2e','#a0606a',
+  '#d4956e','#94b8a0','#d9bb72','#c4a09a','#6b8f78',
+  '#e0c4b0','#b07060','#8fb0a0','#d4c060','#a08080'
+];
+
+// ---- AUTH ----
 function login() {
   const val = document.getElementById('password-input').value;
   if (val === PASSWORD) {
@@ -517,6 +568,7 @@ if (sessionStorage.getItem('wf_auth') === '1') {
   loadDashboard();
 }
 
+// ---- DATA ----
 async function loadDashboard() {
   document.getElementById('last-updated').textContent = 'Refreshing...';
   try {
@@ -533,6 +585,7 @@ async function loadDashboard() {
   }
 }
 
+// ---- CARDS ----
 function renderCards(data) {
   const ex = data.expenses  || {};
   const ev = data.events    || [];
@@ -541,9 +594,13 @@ function renderCards(data) {
   const fe = data.fertility || {};
 
   const openTasks    = td.filter(t => t.status !== 'Done').length;
-  const monthTotal   = ex.month_total || 0;
-  const nextPeriod   = fe.next_period || '—';
+  const monthTotal   = ex.month_total   || 0;
+  const nextPeriod   = fe.next_period   || '—';
   const fertileWindow = fe.fertile_window || '—';
+
+  // Filter events to next 14 days for the card count
+  const now14 = new Date(); now14.setDate(now14.getDate() + 14);
+  const evCount = ev.length; // already filtered server-side to 30 days; show all in card
 
   document.getElementById('cards-grid').innerHTML = `
     <div class="card terracotta">
@@ -555,8 +612,8 @@ function renderCards(data) {
     <div class="card sage">
       <div class="card-icon">📅</div>
       <div class="card-label">Upcoming Events</div>
-      <div class="card-value">${ev.length}</div>
-      <div class="card-sub">Next 30 days</div>
+      <div class="card-value">${evCount}</div>
+      <div class="card-sub">Next 14 days</div>
     </div>
     <div class="card gold">
       <div class="card-icon">✅</div>
@@ -579,6 +636,95 @@ function renderCards(data) {
   `;
 }
 
+// ---- EXPENSE PIE CHART helper ----
+let pieCharts = {}; // store chart instances to destroy on re-render
+
+function buildPieSection(panelId, categoryData, totalAmt) {
+  if (!categoryData || Object.keys(categoryData).length === 0) return '';
+
+  const entries = Object.entries(categoryData).sort((a, b) => b[1] - a[1]);
+  const labels  = entries.map(e => e[0]);
+  const values  = entries.map(e => e[1]);
+  const colours = labels.map((_, i) => PIE_COLOURS[i % PIE_COLOURS.length]);
+
+  const canvasId = `pie-${panelId}`;
+
+  // Build legend HTML
+  let legendHtml = '';
+  entries.slice(0, 8).forEach(([cat, amt], i) => {
+    const pct = totalAmt > 0 ? ((amt / totalAmt) * 100).toFixed(0) : 0;
+    legendHtml += `
+      <div class="pie-legend-item">
+        <div class="pie-legend-dot" style="background:${colours[i]};"></div>
+        <span class="pie-legend-name">${cat}</span>
+        <span class="pie-legend-val">${pct}%</span>
+      </div>`;
+  });
+  if (entries.length > 8) {
+    legendHtml += `<div class="pie-legend-item" style="color:var(--text-soft);font-size:11px;">+${entries.length - 8} more categories</div>`;
+  }
+
+  // Build category list HTML
+  let catListHtml = '';
+  entries.forEach(([cat, amt], i) => {
+    const pct = totalAmt > 0 ? ((amt / totalAmt) * 100).toFixed(0) : 0;
+    catListHtml += `
+      <div class="category-row">
+        <div class="category-row-top">
+          <span class="category-name">${cat}</span>
+          <span class="category-amount">$${amt.toFixed(2)} <span class="category-pct">${pct}%</span></span>
+        </div>
+        <div class="category-bar-bg">
+          <div class="category-bar-fill" style="width:${pct}%;background:${colours[i]};"></div>
+        </div>
+      </div>`;
+  });
+
+  // Schedule chart render after DOM insert
+  setTimeout(() => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    if (pieCharts[canvasId]) { pieCharts[canvasId].destroy(); }
+    pieCharts[canvasId] = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colours,
+          borderWidth: 2,
+          borderColor: '#fdf6ee',
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.label}: $${ctx.raw.toFixed(2)}`
+            }
+          }
+        },
+        animation: { animateRotate: true, duration: 800 }
+      }
+    });
+  }, 50);
+
+  return `
+    <div class="pie-wrapper">
+      <div class="pie-canvas-wrap">
+        <canvas id="${canvasId}"></canvas>
+      </div>
+      <div class="pie-legend">${legendHtml}</div>
+    </div>
+    <div class="category-list">${catListHtml}</div>`;
+}
+
+// ---- TABLES ----
 function renderTables(data) {
   const ex   = data.expenses  || {};
   const ev   = data.events    || [];
@@ -589,63 +735,77 @@ function renderTables(data) {
 
   let html = '';
 
-  // ------------------------------------------------------------------ EXPENSES
+  // ------------------------------------------------------------------ EXPENSES (split by account)
+  const allRows     = ex.recent || [];
+  const familyRows  = allRows.filter(r => (r.account || '').toLowerCase().includes('family'));
+  const personalRows = allRows.filter(r => (r.account || '').toLowerCase().includes('personal'));
+
+  // Build per-account category breakdown
+  function buildCatBreakdown(rows) {
+    const cats = {};
+    let total  = 0;
+    rows.forEach(r => {
+      const cat = r.category || 'Other';
+      const amt = parseFloat(r.amount) || 0;
+      cats[cat] = (cats[cat] || 0) + amt;
+      total     += amt;
+    });
+    return { cats, total };
+  }
+
+  const familyData   = buildCatBreakdown(familyRows);
+  const personalData = buildCatBreakdown(personalRows);
+  const grandTotal   = (ex.month_total || 0);
+
   html += `
   <div class="table-card">
     <div class="table-header">
       <h3>💰 Expenses</h3>
-      <span class="badge badge-terracotta">This Month</span>
+      <span class="badge badge-terracotta">This Month · $${grandTotal.toFixed(2)}</span>
     </div>
     <div class="table-body">`;
 
-  if (!ex.by_category || Object.keys(ex.by_category).length === 0) {
+  if (allRows.length === 0 && grandTotal === 0) {
     html += `<div class="empty-state"><div class="empty-icon">💸</div>No expenses this month</div>`;
   } else {
-    // Total
-    html += `<div class="expense-total-row">
-      <span class="expense-total-label">Total</span>
-      <span class="expense-total-value">$${(ex.month_total || 0).toFixed(2)}</span>
+    // Account summary totals
+    html += `
+    <div style="display:flex;border-bottom:1px solid rgba(92,61,46,0.06);">
+      <div style="flex:1;padding:14px 24px;border-right:1px solid rgba(92,61,46,0.06);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-soft);margin-bottom:4px;">Family</div>
+        <div style="font-family:'Playfair Display',serif;font-size:22px;color:var(--brown);">$${familyData.total.toFixed(2)}</div>
+      </div>
+      <div style="flex:1;padding:14px 24px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-soft);margin-bottom:4px;">Personal</div>
+        <div style="font-family:'Playfair Display',serif;font-size:22px;color:var(--brown);">$${personalData.total.toFixed(2)}</div>
+      </div>
+    </div>
+
+    <div class="expense-tabs">
+      <button class="expense-tab active" onclick="switchTab('all',this)">All</button>
+      <button class="expense-tab" onclick="switchTab('family',this)">Family</button>
+      <button class="expense-tab" onclick="switchTab('personal',this)">Personal</button>
+    </div>
+
+    <div id="panel-all" class="expense-panel active">
+      ${buildPieSection('all', ex.by_category, grandTotal)}
+    </div>
+    <div id="panel-family" class="expense-panel">
+      ${familyData.total > 0 ? buildPieSection('family', familyData.cats, familyData.total) : '<div class="empty-state"><div class="empty-icon">💸</div>No family expenses this month</div>'}
+    </div>
+    <div id="panel-personal" class="expense-panel">
+      ${personalData.total > 0 ? buildPieSection('personal', personalData.cats, personalData.total) : '<div class="empty-state"><div class="empty-icon">💸</div>No personal expenses this month</div>'}
     </div>`;
-
-    // Category breakdown with progress bar
-    html += `<table><thead><tr><th>Category</th><th style="text-align:right;">Amount</th><th style="text-align:right;">%</th></tr></thead><tbody>`;
-    const total = ex.month_total || 1;
-    Object.entries(ex.by_category)
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([cat, amt]) => {
-        const pct = ((amt / total) * 100).toFixed(0);
-        html += `<tr>
-          <td>
-            <div>${cat}</div>
-            <div style="height:3px;background:rgba(196,112,79,0.12);border-radius:2px;margin-top:5px;">
-              <div style="height:3px;width:${pct}%;background:var(--terracotta);border-radius:2px;transition:width 0.6s ease;"></div>
-            </div>
-          </td>
-          <td style="text-align:right;font-weight:500;">$${amt.toFixed(2)}</td>
-          <td style="text-align:right;color:var(--text-soft);font-size:12px;">${pct}%</td>
-        </tr>`;
-      });
-    html += `</tbody></table>`;
-
-    // By account
-    if (ex.by_person && Object.keys(ex.by_person).length > 0) {
-      html += `<div class="expense-account-section">
-        <div class="expense-account-label">By Account</div>`;
-      Object.entries(ex.by_person).forEach(([acc, amt]) => {
-        html += `<div class="expense-account-row"><span>${acc}</span><span>$${amt.toFixed(2)}</span></div>`;
-      });
-      html += `</div>`;
-    }
   }
 
   html += `</div></div>`;
 
-  // ------------------------------------------------------------------ CALENDAR
+  // ------------------------------------------------------------------ CALENDAR (14 days)
   html += `
   <div class="table-card">
     <div class="table-header">
       <h3>📅 Upcoming Events</h3>
-      <span class="badge badge-sage">Next 30 days</span>
+      <span class="badge badge-sage">Next 14 days</span>
     </div>
     <div class="table-body">`;
 
@@ -708,9 +868,7 @@ function renderTables(data) {
     html += `<div class="empty-state"><div class="empty-icon">🛒</div>Nothing to buy!</div>`;
   } else {
     html += `<table><thead><tr><th>Item</th></tr></thead><tbody>`;
-    gr.forEach(g => {
-      html += `<tr><td>${g.name}</td></tr>`;
-    });
+    gr.forEach(g => { html += `<tr><td>${g.name}</td></tr>`; });
     html += `</tbody></table>`;
   }
   html += `</div></div>`;
@@ -727,14 +885,13 @@ function renderTables(data) {
   if (!fe.last_period_start) {
     html += `<div class="empty-state"><div class="empty-icon">🌸</div>No period data logged yet</div>`;
   } else {
-    const rows = [
+    [
       ['Last Period Start',  fe.last_period_start || '—'],
       ['Period Duration',    fe.duration ? fe.duration + ' days' : '—'],
       ['Next Period (est)',  fe.next_period    || '—'],
-      ['Fertile Window',     fe.fertile_window || '—'],
-      ['Last Ovulation',     fe.last_ovulation || '—'],
-    ];
-    rows.forEach(([label, val]) => {
+      ['Fertile Window',    fe.fertile_window || '—'],
+      ['Last Ovulation',    fe.last_ovulation || '—'],
+    ].forEach(([label, val]) => {
       html += `<div class="fertility-row">
         <span class="fertility-label">${label}</span>
         <span class="fertility-value">${val}</span>
@@ -772,6 +929,27 @@ function renderTables(data) {
   });
 
   document.getElementById('tables-grid').innerHTML = html;
+
+  // Trigger pie chart renders now that DOM is ready
+  buildPieSection('all',      ex.by_category,    grandTotal);
+  buildPieSection('family',   familyData.cats,   familyData.total);
+  buildPieSection('personal', personalData.cats, personalData.total);
+}
+
+// ---- TAB SWITCHER ----
+function switchTab(name, btn) {
+  document.querySelectorAll('.expense-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.expense-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  const panel = document.getElementById('panel-' + name);
+  if (panel) {
+    panel.classList.add('active');
+    // Re-render chart for this panel if needed
+    const canvasId = 'pie-' + name;
+    if (!pieCharts[canvasId] && document.getElementById(canvasId)) {
+      loadDashboard(); // safe fallback — just refresh
+    }
+  }
 }
 </script>
 </body>
