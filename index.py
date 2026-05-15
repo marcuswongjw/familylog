@@ -45,7 +45,7 @@ EXPENSE_GROUPS = {
     "🌍 Others": ["Electronics", "Misc", "Missions"]
 }
 
-ACCOUNT_TYPES      = ["👤 Personal Account", "👨‍👩‍👧‍👦 Family"]
+ACCOUNT_TYPES      = ["Personal Account", "Family"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
 KIDS_ENTRY_TYPES   = ["📚 Homework", "📅 School Event", "🎓 Tuition", "📝 Test/Exam", "🏆 Results", "📌 Other"]
 RESULT_SUBJECTS    = ["English", "Math", "Science", "Chinese", "Humanities", "Art", "PE", "Other"]
