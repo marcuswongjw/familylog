@@ -1448,7 +1448,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("please enter a number between 1 and 14.")
             return
         context.user_data.pop('awaiting', None)
-        today      = _date.today()
+        from datetime import timezone, timedelta
+        SGT   = timezone(timedelta(hours=8))
+        today = _dt.now(SGT).date()          # ← SGT-aware today
+        days_queue = []
+        for i in range(days):
+            d     = today + timedelta(days=i)
+            label = d.strftime("%-d %b") + (" (Today)" if i == 0 else f" ({d.strftime('%A')})")
+            days_queue.append((d.strftime("%-d %b %Y"), label))
         days_queue = []
         for i in range(days):
             d     = today + timedelta(days=i)
