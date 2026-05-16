@@ -165,15 +165,16 @@
     overflow: hidden; animation: fadeUp 0.5s ease both;
   }
 
-  .table-card:nth-child(1) { animation-delay: 0.10s; }
-  .table-card:nth-child(2) { animation-delay: 0.15s; }
-  .table-card:nth-child(3) { animation-delay: 0.20s; }
-  .table-card:nth-child(4) { animation-delay: 0.25s; }
-  .table-card:nth-child(5) { animation-delay: 0.30s; }
-  .table-card:nth-child(6) { animation-delay: 0.35s; }
-  .table-card:nth-child(7) { animation-delay: 0.40s; }
-  .table-card:nth-child(8) { animation-delay: 0.45s; }
-  .table-card:nth-child(9) { animation-delay: 0.50s; }
+  .table-card:nth-child(1)  { animation-delay: 0.10s; }
+  .table-card:nth-child(2)  { animation-delay: 0.15s; }
+  .table-card:nth-child(3)  { animation-delay: 0.20s; }
+  .table-card:nth-child(4)  { animation-delay: 0.25s; }
+  .table-card:nth-child(5)  { animation-delay: 0.30s; }
+  .table-card:nth-child(6)  { animation-delay: 0.35s; }
+  .table-card:nth-child(7)  { animation-delay: 0.40s; }
+  .table-card:nth-child(8)  { animation-delay: 0.45s; }
+  .table-card:nth-child(9)  { animation-delay: 0.50s; }
+  .table-card:nth-child(10) { animation-delay: 0.55s; }
 
   .table-header {
     padding: 18px 24px; border-bottom: 1px solid rgba(92,61,46,0.08);
@@ -218,6 +219,22 @@
   .fertility-label { color: var(--text-soft); }
   .fertility-value { font-weight: 500; color: var(--brown); }
 
+  /* ---- BIRTHDAY CARD ---- */
+  .birthday-card {
+    background: linear-gradient(135deg, rgba(201,168,76,0.08), rgba(196,112,79,0.06));
+    border: 1px solid rgba(201,168,76,0.25) !important;
+  }
+  .birthday-today {
+    background: rgba(201,168,76,0.10);
+    font-weight: 600;
+  }
+  .birthday-tomorrow {
+    background: rgba(196,112,79,0.06);
+  }
+  .birthday-week {
+    background: rgba(122,158,135,0.05);
+  }
+
   /* ---- EXPENSE SPLIT ---- */
   .expense-tabs { display: flex; border-bottom: 1px solid rgba(92,61,46,0.08); }
   .expense-tab {
@@ -242,7 +259,7 @@
   .expense-account-col .label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-soft); margin-bottom: 4px; }
   .expense-account-col .value { font-family: 'Playfair Display', serif; font-size: 22px; color: var(--brown); }
 
-  /* Pie chart only — no category list below */
+  /* Pie chart only */
   .pie-wrapper { padding: 20px 24px; display: flex; align-items: center; gap: 24px; }
   .pie-canvas-wrap { flex-shrink: 0; width: 140px; height: 140px; }
   .pie-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
@@ -335,7 +352,6 @@ const API      = '/dashboard-data';
 const FAMILY   = ['Mikaela', 'Meaghan', 'Eleanor', 'Marcus', 'Everyone'];
 const KIDS     = ['Mikaela', 'Meaghan', 'Eleanor'];
 
-// Milestone keywords for "Family Events" detection
 const MILESTONE_KEYWORDS = ['birthday', 'anniversary', 'graduation', 'wedding', 'christening', 'baptism', 'christmas', 'new year', 'cny', 'chinese new year', 'deepavali', 'hari raya', 'diwali'];
 
 const PIE_COLOURS = [
@@ -379,7 +395,7 @@ if (sessionStorage.getItem('wf_auth') === '1') {
 }
 
 // ---- AUTO-REFRESH (every 5 minutes) ----
-const REFRESH_INTERVAL = 5 * 60; // seconds
+const REFRESH_INTERVAL = 5 * 60;
 let refreshTimer  = null;
 let countdownSecs = REFRESH_INTERVAL;
 
@@ -436,9 +452,10 @@ function renderCards(data) {
   const tbp = data.todos_by_person || {};
   const gr  = data.groceries       || [];
   const fe  = data.fertility       || {};
+  const bd  = data.birthdays       || [];
 
   const openTasks    = FAMILY.reduce((acc, m) => acc + (tbp[m] ? tbp[m].length : 0), 0);
-  const familyEvents = ev.filter(e => isFamilyEvent(e.title));
+  const nextBirthday = bd.length > 0 ? bd[0] : null;
 
   document.getElementById('cards-grid').innerHTML = `
     <div class="card terracotta">
@@ -471,10 +488,16 @@ function renderCards(data) {
       <div class="card-value" style="font-size:18px;margin-top:4px;">${fe.next_period || '—'}</div>
       <div class="card-sub">Fertile: ${fe.fertile_window || '—'}</div>
     </div>
+    <div class="card gold">
+      <div class="card-icon">🎂</div>
+      <div class="card-label">Next Birthday</div>
+      <div class="card-value" style="font-size:${nextBirthday ? '18px' : '32px'};margin-top:${nextBirthday ? '4px' : '0'};">${nextBirthday ? nextBirthday.name : '—'}</div>
+      <div class="card-sub">${nextBirthday ? (nextBirthday.daysAway === 0 ? '🥳 Today!' : nextBirthday.daysAway === 1 ? '🎉 Tomorrow!' : 'In ' + nextBirthday.daysAway + ' days · ' + nextBirthday.dateLabel) : 'No birthdays saved'}</div>
+    </div>
   `;
 }
 
-// ---- PIE CHART (no category list below) ----
+// ---- PIE CHART ----
 let pieCharts = {};
 
 function buildPieSection(panelId, categoryData, totalAmt) {
@@ -485,7 +508,6 @@ function buildPieSection(panelId, categoryData, totalAmt) {
   const colours = labels.map((_, i) => PIE_COLOURS[i % PIE_COLOURS.length]);
   const canvasId = `pie-${panelId}`;
 
-  // Legend: top 8 categories + overflow note
   let legendHtml = '';
   entries.slice(0, 8).forEach(([cat, amt], i) => {
     const pct = totalAmt > 0 ? ((amt / totalAmt) * 100).toFixed(0) : 0;
@@ -517,7 +539,6 @@ function buildPieSection(panelId, categoryData, totalAmt) {
     });
   }, 50);
 
-  // Pie + legend only — no category bar list
   return `
     <div class="pie-wrapper">
       <div class="pie-canvas-wrap"><canvas id="${canvasId}"></canvas></div>
@@ -541,6 +562,7 @@ function renderTables(data) {
   const gr   = data.groceries       || [];
   const fe   = data.fertility       || {};
   const kc   = data.kids_calendar   || {};
+  const bd   = data.birthdays       || [];
 
   let html = '';
 
@@ -633,28 +655,19 @@ function renderTables(data) {
   // ------------------------------------------------------------------ 4. MIKAELA
   {
     const kid = 'Mikaela';
-    const kidEvents = kc[kid] || [];
-    const kidTasks  = tbp[kid] || [];
-    const colour    = PERSON_COLOURS[kid];
-    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+    html += buildKidCard(kid, kc[kid] || [], tbp[kid] || [], PERSON_COLOURS[kid]);
   }
 
   // ------------------------------------------------------------------ 5. MEAGHAN
   {
     const kid = 'Meaghan';
-    const kidEvents = kc[kid] || [];
-    const kidTasks  = tbp[kid] || [];
-    const colour    = PERSON_COLOURS[kid];
-    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+    html += buildKidCard(kid, kc[kid] || [], tbp[kid] || [], PERSON_COLOURS[kid]);
   }
 
   // ------------------------------------------------------------------ 6. ELEANOR
   {
     const kid = 'Eleanor';
-    const kidEvents = kc[kid] || [];
-    const kidTasks  = tbp[kid] || [];
-    const colour    = PERSON_COLOURS[kid];
-    html += buildKidCard(kid, kidEvents, kidTasks, colour);
+    html += buildKidCard(kid, kc[kid] || [], tbp[kid] || [], PERSON_COLOURS[kid]);
   }
 
   // ------------------------------------------------------------------ 7. EXPENSES (pie + account totals only)
@@ -711,7 +724,7 @@ function renderTables(data) {
   }
   html += `</div></div>`;
 
-  // ------------------------------------------------------------------ 8. GROCERY LIST (max 10 + overflow note)
+  // ------------------------------------------------------------------ 8. GROCERY LIST (max 10)
   const grCapped   = gr.slice(0, 10);
   const grOverflow = gr.length > 10 ? gr.length - 10 : 0;
 
@@ -756,6 +769,52 @@ function renderTables(data) {
     ].forEach(([label, val]) => {
       html += `<div class="fertility-row"><span class="fertility-label">${label}</span><span class="fertility-value">${val}</span></div>`;
     });
+  }
+  html += `</div></div>`;
+
+  // ------------------------------------------------------------------ 10. BIRTHDAYS & ANNIVERSARIES
+  const bdSoon     = bd.filter(e => e.daysAway <= 30);
+  const bdUpcoming = bd.filter(e => e.daysAway > 30);
+
+  html += `
+  <div class="table-card birthday-card">
+    <div class="table-header">
+      <h3>🎂 Birthdays & Anniversaries</h3>
+      <span class="badge badge-gold">${bd.length} saved</span>
+    </div>
+    <div class="table-body">`;
+
+  if (bd.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">🎂</div>No birthdays saved yet — add them via the bot!</div>`;
+  } else {
+    if (bdSoon.length === 0) {
+      html += `<div class="empty-state" style="padding:20px 24px;"><div class="empty-icon">📅</div>No birthdays in the next 30 days</div>`;
+    } else {
+      html += `<table><thead><tr><th>Date</th><th>Who</th><th>Type</th><th>When</th></tr></thead><tbody>`;
+      bdSoon.forEach(e => {
+        const rowClass = e.daysAway === 0 ? 'birthday-today'
+                       : e.daysAway <= 1  ? 'birthday-tomorrow'
+                       : e.daysAway <= 7  ? 'birthday-week'
+                       : '';
+        const when  = e.daysAway === 0 ? '🥳 Today!'
+                    : e.daysAway === 1 ? '🎉 Tomorrow!'
+                    : `In ${e.daysAway} days`;
+        const emoji = e.type === 'Birthday' ? '🎂' : '💍';
+        const age   = e.agePart
+          ? `<br><span style="font-size:11px;color:var(--text-soft);">${e.agePart}</span>`
+          : '';
+        html += `<tr class="${rowClass}">
+          <td style="white-space:nowrap;">${e.dateLabel}</td>
+          <td><strong>${e.name}</strong>${age}</td>
+          <td>${emoji} ${e.type}</td>
+          <td style="color:var(--terracotta);font-weight:500;white-space:nowrap;">${when}</td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+    if (bdUpcoming.length > 0) {
+      html += `<div class="overflow-note">+ ${bdUpcoming.length} more coming up · next after 30 days: ${bdUpcoming[0].name} (${bdUpcoming[0].dateLabel})</div>`;
+    }
   }
   html += `</div></div>`;
 
