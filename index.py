@@ -48,6 +48,7 @@ EXPENSE_GROUPS = {
 }
 
 ACCOUNT_TYPES      = ["Personal Account", "Family"]
+BIRTHDAY_TYPES = ["Birthday", "Wedding Anniversary"]
 FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
 
 
@@ -106,15 +107,17 @@ def _normalise_time(h, m, meridiem):
 # --- HOME ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries'),
-         InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge')],
-        [InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit'),
-         InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar')],
-        [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
-         InlineKeyboardButton("✅ to-do list",        callback_data='view_todos')],
-        [InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility'),
-         InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
+        [InlineKeyboardButton("🛒 grocery list",          callback_data='view_groceries'),
+         InlineKeyboardButton("🍎 check fridge",          callback_data='check_fridge')],
+        [InlineKeyboardButton("🍽 log eating fruit",      callback_data='eat_fruit'),
+         InlineKeyboardButton("📅 family calendar",       callback_data='view_calendar')],
+        [InlineKeyboardButton("💰 expenses",              callback_data='view_expenses'),
+         InlineKeyboardButton("✅ to-do list",             callback_data='view_todos')],
+        [InlineKeyboardButton("🌸 fertility",             callback_data='view_fertility'),
+         InlineKeyboardButton("🎂 birthdays",             callback_data='view_birthdays')],  # ← NEW ROW
+        [InlineKeyboardButton("📊 view dashboard",        url=f"{RAILWAY_URL}/dashboard")]
     ]
+    
     text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -505,7 +508,105 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
         return
+    # ------------------------------------------------------------------ BIRTHDAYS
+    if query.data == 'view_birthdays':
+        payload = {"user": user, "note": "get_birthdays"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = []
+            try:
+                entries = __import__('json').loads(response.text)
+            except:
+                pass
 
+            if not entries:
+                await query.edit_message_text(
+                    "no birthdays or anniversaries saved yet! 🎂\ntap *Add* to add one.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
+                        [InlineKeyboardButton("🏠 home", callback_data='home')]
+                    ])
+                )
+                return
+
+            # Sort by days away
+            from datetime import date as _date
+            today = _date.today()
+            def days_away(e):
+                try:
+                    m, d = e['date'].split('-')
+                    ev = _date(today.year, int(m), int(d))
+                    if ev < today:
+                        ev = _date(today.year + 1, int(m), int(d))
+                    return (ev - today).days
+                except:
+                    return 999
+
+            entries.sort(key=days_away)
+
+            lines = ["🎂 *Birthdays & Anniversaries*\n"]
+            for e in entries:
+                diff = days_away(e)
+                if diff == 0:   when = "Today! 🥳"
+                elif diff == 1: when = "Tomorrow!"
+                else:           when = f"In {diff} days"
+                emoji = "🎂" if e.get('type') == 'Birthday' else "💍"
+                try:
+                    m, d = e['date'].split('-')
+                    month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                    date_label  = f"{month_names[int(m)-1]} {int(d)}"
+                except:
+                    date_label = e.get('date', '')
+                age_str = ""
+                if e.get('year'):
+                    try:
+                        from datetime import date as _d2
+                        ev_year = today.year if days_away(e) < 365 else today.year + 1
+                        if e.get('type') == 'Birthday':
+                            age_str = f" · turning {ev_year - int(e['year'])}"
+                        else:
+                            age_str = f" · {ev_year - int(e['year'])} years"
+                    except:
+                        pass
+                line = f"{emoji} *{e['name']}* — {e['type']}\n   {when} · {date_label}{age_str}"
+                if e.get('notes'):
+                    line += f"\n   _{e['notes']}_"
+                lines.append(line)
+
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
+                    [InlineKeyboardButton("🏠 home", callback_data='home')]
+                ])
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load birthdays. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_birthday':
+        context.user_data.clear()
+        context.user_data['awaiting'] = 'bday_name'
+        await query.edit_message_text(
+            "🎂 *add birthday / anniversary*\n\nwhat's the person's name?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    if query.data.startswith('bday_type:'):
+        btype = query.data.split(":", 1)[1]
+        context.user_data['bday_type'] = btype
+        context.user_data['awaiting']  = 'bday_date'
+        await query.edit_message_text(
+            f"type: *{btype}*\n\n📅 what's the date?\nsend as *MM-DD* (e.g. `05-23` for 23 May)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+        
     # FALLBACK
     await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
 
@@ -674,6 +775,87 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("couldn't save. please try again.")
         return
 
+    # BIRTHDAY FLOW (text steps)
+    if awaiting == 'bday_name':
+        context.user_data['bday_name'] = text.strip()
+        context.user_data.pop('awaiting', None)
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"bday_type:{t}")] for t in BIRTHDAY_TYPES]
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
+        await update.message.reply_text(
+            f"name: *{text.strip()}*\n\nwhat type?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if awaiting == 'bday_date':
+        raw = text.strip()
+        if not re.match(r'^\d{2}-\d{2}$', raw):
+            await update.message.reply_text("please use MM-DD format, e.g. `05-23`.", parse_mode='Markdown')
+            return
+        try:
+            m_part, d_part = raw.split('-')
+            from datetime import datetime as _dt
+            _dt(2000, int(m_part), int(d_part))
+        except ValueError:
+            await update.message.reply_text("that doesn't look like a valid date. try again (MM-DD).")
+            return
+        context.user_data['bday_date'] = raw
+        context.user_data['awaiting']  = 'bday_year'
+        await update.message.reply_text(
+            "what year were they born / married?\n"
+            "this lets me calculate age or years together.\n"
+            "send the year (e.g. `1990`) or type `skip`.",
+            parse_mode='Markdown'
+        )
+        return
+
+    if awaiting == 'bday_year':
+        if text.strip().lower() == 'skip':
+            context.user_data['bday_year'] = ''
+        else:
+            try:
+                from datetime import date as _d3
+                yr = int(text.strip())
+                if yr < 1900 or yr > _d3.today().year:
+                    raise ValueError
+                context.user_data['bday_year'] = str(yr)
+            except ValueError:
+                await update.message.reply_text("please enter a valid year (e.g. `1990`) or type `skip`.", parse_mode='Markdown')
+                return
+        context.user_data['awaiting'] = 'bday_notes'
+        await update.message.reply_text("any notes? (e.g. gift ideas, favourite cake)\ntype `skip` to leave blank.", parse_mode='Markdown')
+        return
+
+    if awaiting == 'bday_notes':
+        notes   = '' if text.strip().lower() == 'skip' else text.strip()
+        name    = context.user_data.pop('bday_name', '')
+        btype   = context.user_data.pop('bday_type', 'Birthday')
+        bdate   = context.user_data.pop('bday_date', '')
+        byear   = context.user_data.pop('bday_year', '')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user": user, "note": "add_birthday",
+            "name": name, "type": btype, "date": bdate,
+            "year": byear, "notes": notes, "addedBy": user
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+            m_p, d_p   = bdate.split('-')
+            date_pretty = f"{month_names[int(m_p)-1]} {int(d_p)}"
+            year_part   = f" ({byear})" if byear else ""
+            await update.message.reply_text(
+                f"✅ saved!\n\n"
+                f"{'🎂' if btype == 'Birthday' else '💍'} *{name}* — {btype}\n"
+                f"📅 {date_pretty}{year_part}"
+                + (f"\n📝 {notes}" if notes else ""),
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save. please try again.")
+        return
+        
     # DEFAULT
     payload  = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -702,6 +884,8 @@ async def handle_notify(notify_type: str, data: dict):
         await send_to_all(f"💰 *Wong Family — Monthly Expense Summary*\n\n{data.get('message', '')}")
     elif notify_type == "expense_report":
         await send_to_all(f"📊 *Wong Family — Last Month's Full Report*\n\n{data.get('message', '')}")
+    elif notify_type == "birthday_reminder":
+        await send_to_all(data.get("message", ""))    
     elif notify_type == "fertile_soon":
         await send_to_all(f"🌸 *Fertile Window in 3 Days*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nPlan accordingly 💕")
     elif notify_type == "fertile_tomorrow":
