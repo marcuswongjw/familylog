@@ -73,9 +73,10 @@ def build_budget_group_keyboard():
     keyboard   = []
     group_keys = list(EXPENSE_GROUPS.keys())
     for i in range(0, len(group_keys), 2):
-        row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_group:{group_keys[i]}")]
+        # Use index for group too to be safe
+        row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_group:{i}")]
         if i + 1 < len(group_keys):
-            row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_group:{group_keys[i + 1]}"))
+            row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_group:{i+1}"))
         keyboard.append(row)
     return keyboard
 
@@ -863,9 +864,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data.startswith('budget_group:'):
-        group_name = query.data.split(":", 1)[1]
+        try:
+            idx        = int(query.data.split(":", 1)[1])
+            group_name = list(EXPENSE_GROUPS.keys())[idx]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong.", show_alert=True)
+            return
         categories = EXPENSE_GROUPS.get(group_name, [])
-        keyboard   = [[InlineKeyboardButton(cat, callback_data=f"budget_cat:{cat}")] for cat in categories]
+        keyboard   = []
+        for cat_idx, cat in enumerate(categories):
+            keyboard.append([InlineKeyboardButton(cat, callback_data=f"budget_cat_i:{idx}|{cat_idx}")])
         keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="set_budget_start")])
         await query.edit_message_text(
             f"📂 *{group_name}*\npick a category to budget:",
@@ -874,8 +882,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if query.data.startswith('budget_cat:'):
-        category = query.data.split(":", 1)[1]
+    if query.data.startswith('budget_cat_i:'):
+        payload_str = query.data.split(":", 1)[1]
+        group_idx_str, cat_idx_str = payload_str.split("|")
+        try:
+            group_name = list(EXPENSE_GROUPS.keys())[int(group_idx_str)]
+            category   = EXPENSE_GROUPS[group_name][int(cat_idx_str)]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong, please try again.", show_alert=True)
+            return
         context.user_data['budget_category'] = category
         context.user_data['awaiting']        = 'budget_amount'
         await query.edit_message_text(
