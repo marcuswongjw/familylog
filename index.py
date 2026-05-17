@@ -805,42 +805,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # Group budgets by EXPENSE_GROUPS
-            group_map = {}
-            for group_name, cats in EXPENSE_GROUPS.items():
-                for cat in cats:
-                    group_map[cat] = group_name
-
-            grouped = {}
-            ungrouped = []
-            for b in budgets:
-                group = group_map.get(b['category'])
-                if group:
-                    if group not in grouped:
-                        grouped[group] = []
-                    grouped[group].append(b)
-                else:
-                    ungrouped.append(b)
-
             lines = ["📊 *Budget Tracker — Family Account*\n"]
-
-            for group_name, items in grouped.items():
-                group_budget = sum(b['budget'] for b in items)
-                group_spent  = sum(b.get('spent', 0) for b in items)
-                group_pct    = int(group_spent / group_budget * 100) if group_budget > 0 else 0
-                bar          = '█' * min(int(group_pct / 10), 10) + '░' * max(0, 10 - int(group_pct / 10))
-                emoji        = '🚨' if group_spent > group_budget else '⚠️' if group_pct >= 80 else '✅'
-                lines.append(f"{emoji} *{group_name}*\n   {bar} {group_pct}%  ${group_spent:.2f} / ${group_budget:.2f}")
-                for b in items:
-                    pct   = int(b.get('spent', 0) / b['budget'] * 100) if b['budget'] > 0 else 0
-                    dot   = '🔴' if b.get('spent', 0) > b['budget'] else '🟡' if pct >= 80 else '🟢'
-                    lines.append(f"   {dot} {b['category']}: ${b.get('spent', 0):.2f} / ${b['budget']:.2f}")
-
-            for b in ungrouped:
-                pct   = int(b.get('spent', 0) / b['budget'] * 100) if b['budget'] > 0 else 0
-                bar   = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
-                emoji = '🚨' if b.get('spent', 0) > b['budget'] else '⚠️' if pct >= 80 else '✅'
-                lines.append(f"{emoji} *{b['category']}*\n   {bar} {pct}%  ${b.get('spent', 0):.2f} / ${b['budget']:.2f}")
+            for b in sorted(budgets, key=lambda x: x['group']):
+                group  = b['group']
+                limit  = b['budget']
+                spent  = b.get('spent', 0)
+                pct    = int(spent / limit * 100) if limit > 0 else 0
+                bar    = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
+                emoji  = '🚨' if spent > limit else '⚠️' if pct >= 80 else '✅'
+                lines.append(f"{emoji} *{group}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
 
             await query.edit_message_text(
                 "\n\n".join(lines),
@@ -853,52 +826,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == 'set_budget_start':
         context.user_data.clear()
+        # Show group picker using index-based callback to stay under 64-byte limit
+        group_keys = list(EXPENSE_GROUPS.keys())
+        keyboard   = []
+        for i in range(0, len(group_keys), 2):
+            row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_grp:{i}")]
+            if i + 1 < len(group_keys):
+                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_grp:{i+1}"))
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
         await query.edit_message_text(
-            "📊 *set a budget*\n\nselect a category group:",
+            "📊 *set a group budget*\n\nwhich category group?",
             parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup(
-                build_budget_group_keyboard() +
-                [[InlineKeyboardButton("❌ cancel", callback_data='home')]]
-            )
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
 
-    if query.data.startswith('budget_group:'):
+    if query.data.startswith('budget_grp:'):
         try:
             idx        = int(query.data.split(":", 1)[1])
             group_name = list(EXPENSE_GROUPS.keys())[idx]
         except (ValueError, IndexError):
             await query.answer("something went wrong.", show_alert=True)
             return
-        categories = EXPENSE_GROUPS.get(group_name, [])
-        keyboard   = []
-        for cat_idx, cat in enumerate(categories):
-            keyboard.append([InlineKeyboardButton(cat, callback_data=f"budget_cat_i:{idx}|{cat_idx}")])
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="set_budget_start")])
+        context.user_data['budget_group'] = group_name
+        context.user_data['awaiting']     = 'budget_amount'
+        # Show categories in this group for reference
+        cats     = EXPENSE_GROUPS[group_name]
+        cat_list = "\n".join([f"  · {c}" for c in cats])
         await query.edit_message_text(
-            f"📂 *{group_name}*\npick a category to budget:",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data.startswith('budget_cat_i:'):
-        payload_str = query.data.split(":", 1)[1]
-        group_idx_str, cat_idx_str = payload_str.split("|")
-        try:
-            group_name = list(EXPENSE_GROUPS.keys())[int(group_idx_str)]
-            category   = EXPENSE_GROUPS[group_name][int(cat_idx_str)]
-        except (ValueError, IndexError):
-            await query.answer("something went wrong, please try again.", show_alert=True)
-            return
-        context.user_data['budget_category'] = category
-        context.user_data['awaiting']        = 'budget_amount'
-        await query.edit_message_text(
-            f"category: *{category}*\n\nwhat's the monthly budget for this category?\n(e.g. `500` for $500/month)",
+            f"📂 *{group_name}*\n\n"
+            f"_covers:_\n{cat_list}\n\n"
+            f"what's the monthly budget for this group?\n(e.g. `500` for $500/month)",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
         )
         return
+        
+    
 
     # ------------------------------------------------------------------ MEMORIES
     if query.data == 'view_memories':
@@ -1370,6 +1335,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # BUDGET FLOW
+    # BUDGET FLOW
     if awaiting == 'budget_amount':
         try:
             amount = float(text.replace('$', '').replace(',', ''))
@@ -1378,19 +1344,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("please enter a valid amount (e.g. `500`).", parse_mode='Markdown')
             return
-        category = context.user_data.pop('budget_category', '')
+        group = context.user_data.pop('budget_group', '')
         context.user_data.pop('awaiting', None)
         payload = {
-            "user":     user,
-            "note":     "set_budget",
-            "category": category,
-            "budget":   amount,
-            "account":  BUDGET_ACCOUNT
+            "user":   user,
+            "note":   "set_budget",
+            "group":  group,
+            "budget": amount
         }
         try:
             requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            cats     = EXPENSE_GROUPS.get(group, [])
+            cat_list = "\n".join([f"  · {c}" for c in cats])
             await update.message.reply_text(
-                f"✅ budget set!\n\n📊 *{category}*\n💰 ${amount:.2f} / month (Family account)\n\nyou'll be notified at 80% and 100%.",
+                f"✅ budget set!\n\n📊 *{group}*\n💰 ${amount:.2f} / month\n\n"
+                f"_covers:_\n{cat_list}\n\n"
+                f"you'll be notified at 80% and 100%.",
                 parse_mode='Markdown'
             )
         except:
