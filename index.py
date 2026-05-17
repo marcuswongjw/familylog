@@ -43,7 +43,7 @@ EXPENSE_GROUPS = {
     "🏥 Health": ["Health & Fitness - Dental + Medical", "Health & Fitness - Events + Subscription", "Health & Fitness - Equipment + Supplements"],
     "🏠 Household": ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet"],
     "🐾 Pets": ["Pets - Pet Food", "Pets - Grooming", "Pets - Pet Misc"],
-    "💆 Self Care": ["Self Care - Massage", "Self Care - Personal Care", "Utilities - Mobile"],
+    "💆 Self Care": ["Self Care - Massage", "Self Care - Personal Care", "Self Care - Mobile"],
     "✈️ Travel": ["Travel - Hotels", "Travel - Transport", "Travel - Expenses"],
     "🚗 Transport": ["Transportation - Bus/MRT", "Transportation - Taxi/Grab", "Transportation - Auto: Service", "Transportation - Auto: Loan", "Transportation - Auto: Gas"],
     "📈 Finance": ["Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
