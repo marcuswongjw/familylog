@@ -762,41 +762,6 @@ function renderTables(data) {
   html += `</div></div>`;
 
   // ------------------------------------------------------------------ 11. BUDGET TRACKER
-  // Build group map from EXPENSE_GROUPS equivalent
-  const EXPENSE_GROUPS = {
-    '👶 Children':    ['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
-    '👕 Clothing':    ['Clothing - Accessories','Clothing - Clothes','Clothing - Shoes'],
-    '🍽 Eating Out':  ['Eating Out - Beverages','Eating Out - Breakfast','Eating Out - Dinner','Eating Out - Lunch','Eating Out - Snacks'],
-    '📚 Education':   ['Education - Books','Education - Courses & Enrichment','Education - Subscription'],
-    '🎭 Entertainment':['Entertainment - Experiences','Entertainment - Subscriptions','Entertainment - Objects (toys, etc)'],
-    '🎁 Gifts/Giving':['Gifts & Treats - CNY','Gifts & Treats - Family','Gifts & Treats - Friends','Gifts & Treats - Wedding','Giving - Church','Giving - Charity','Giving - Parents'],
-    '🏥 Health':      ['Health & Fitness - Dental + Medical','Health & Fitness - Events + Subscription','Health & Fitness - Equipment + Supplements'],
-    '🏠 Household':   ['Household - Appliances','Household - Groceries','Household - Helper','Household - Household Misc','Household - Renovation','Household - Utilities (electric, gas, water)','Household - Internet'],
-    '🐾 Pets':        ['Pets - Pet Food','Pets - Grooming','Pets - Pet Misc'],
-    '💆 Self Care':   ['Self Care - Massage','Self Care - Personal Care','Utilities - Mobile'],
-    '✈️ Travel':      ['Travel - Hotels','Travel - Transport','Travel - Expenses'],
-    '🚗 Transport':   ['Transportation - Bus/MRT','Transportation - Taxi/Grab','Transportation - Auto: Service','Transportation - Auto: Loan','Transportation - Auto: Gas'],
-    '📈 Finance':     ['Endowment','Insurance','Investing','Taxes - Income Tax','Taxes - Property Tax'],
-    '🌍 Others':      ['Electronics','Misc','Missions']
-  };
-
-  // Build reverse map: category → group
-  const catToGroup = {};
-  Object.entries(EXPENSE_GROUPS).forEach(([group, cats]) => cats.forEach(cat => catToGroup[cat] = group));
-
-  // Group budgets
-  const budgetGroups = {};
-  const budgetUngrouped = [];
-  budgets.forEach(b => {
-    const group = catToGroup[b.category];
-    if (group) {
-      if (!budgetGroups[group]) budgetGroups[group] = [];
-      budgetGroups[group].push(b);
-    } else {
-      budgetUngrouped.push(b);
-    }
-  });
-
   const totalBudgeted = budgets.reduce((s, b) => s + (b.budget || 0), 0);
   const totalSpent    = budgets.reduce((s, b) => s + (b.spent  || 0), 0);
 
@@ -811,76 +776,33 @@ function renderTables(data) {
   if (budgets.length === 0) {
     html += `<div class="empty-state"><div class="empty-icon">📊</div>No budgets set — add them via the bot!</div>`;
   } else {
-    // Render each group
-    Object.entries(budgetGroups).forEach(([groupName, items]) => {
-      const gBudget = items.reduce((s, b) => s + (b.budget || 0), 0);
-      const gSpent  = items.reduce((s, b) => s + (b.spent  || 0), 0);
-      const gPct    = gBudget > 0 ? Math.round(gSpent / gBudget * 100) : 0;
-      const gOver   = gSpent > gBudget;
-      const gWarn   = gPct >= 80 && !gOver;
-      const gColour = gOver ? '#c0392b' : gWarn ? '#c9a84c' : 'var(--sage)';
-      const gEmoji  = gOver ? '🚨' : gWarn ? '⚠️' : '✅';
-      const gFill   = Math.min(gPct, 100);
-
-      html += `
-      <div style="border-bottom:1px solid rgba(92,61,46,0.06);">
-        <!-- Group header row -->
-        <div style="padding:12px 24px 8px;display:flex;align-items:center;gap:12px;background:rgba(92,61,46,0.02);cursor:pointer;"
-             onclick="toggleBudgetGroup(this)">
-          <span style="font-size:13px;font-weight:600;color:var(--brown);flex:1;">${gEmoji} ${groupName}</span>
-          <span style="font-size:12px;color:${gColour};font-weight:500;white-space:nowrap;">$${gSpent.toFixed(2)} / $${gBudget.toFixed(2)}</span>
-          <span style="font-size:11px;color:var(--text-soft);margin-left:4px;">▼</span>
-        </div>
-        <!-- Group progress bar -->
-        <div style="padding:0 24px 10px;background:rgba(92,61,46,0.02);">
-          <div style="height:5px;background:rgba(92,61,46,0.08);border-radius:3px;">
-            <div style="width:${gFill}%;height:100%;background:${gColour};border-radius:3px;transition:width 0.5s;"></div>
-          </div>
-          <span style="font-size:11px;color:${gColour};">${gEmoji} ${gPct}%${gOver ? ' — over budget!' : gWarn ? ' — near limit' : ''}</span>
-        </div>
-        <!-- Individual categories (collapsed by default) -->
-        <div class="budget-group-items" style="display:none;">`;
-
-      items.forEach(b => {
-        const spent   = b.spent  || 0;
-        const pct     = b.budget > 0 ? Math.round(spent / b.budget * 100) : 0;
-        const over    = spent > b.budget;
-        const warn    = pct >= 80 && !over;
-        const colour  = over ? '#c0392b' : warn ? '#c9a84c' : 'var(--sage)';
-        const fill    = Math.min(pct, 100);
-        html += `
-          <div style="padding:8px 24px 8px 36px;border-top:1px solid rgba(92,61,46,0.04);display:flex;align-items:center;gap:12px;">
-            <span style="font-size:13px;color:var(--text);flex:1;">${b.category}</span>
-            <div style="width:80px;height:4px;background:rgba(92,61,46,0.08);border-radius:2px;flex-shrink:0;">
-              <div style="width:${fill}%;height:100%;background:${colour};border-radius:2px;"></div>
+    html += `<table><thead><tr><th>Group</th><th>Spent</th><th>Budget</th><th>Status</th></tr></thead><tbody>`;
+    [...budgets].sort((a, b) => a.group.localeCompare(b.group)).forEach(b => {
+      const spent   = b.spent  || 0;
+      const pct     = b.budget > 0 ? Math.round(spent / b.budget * 100) : 0;
+      const over    = spent > b.budget;
+      const warning = pct >= 80 && !over;
+      const colour  = over ? '#c0392b' : warning ? '#c9a84c' : 'var(--sage)';
+      const emoji   = over ? '🚨' : warning ? '⚠️' : '✅';
+      const fill    = Math.min(pct, 100);
+      html += `<tr>
+        <td><strong>${b.group}</strong></td>
+        <td>$${spent.toFixed(2)}</td>
+        <td>$${b.budget.toFixed(2)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;height:6px;background:rgba(92,61,46,0.1);border-radius:3px;min-width:60px;">
+              <div style="width:${fill}%;height:100%;background:${colour};border-radius:3px;transition:width 0.5s;"></div>
             </div>
-            <span style="font-size:12px;color:${colour};font-weight:500;white-space:nowrap;min-width:100px;text-align:right;">$${spent.toFixed(2)} / $${b.budget.toFixed(2)}</span>
-          </div>`;
-      });
-
-      html += `</div></div>`;
+            <span style="font-size:12px;color:${colour};font-weight:500;white-space:nowrap;">${emoji} ${pct}%</span>
+          </div>
+        </td>
+      </tr>`;
     });
-
-    // Ungrouped categories
-    budgetUngrouped.forEach(b => {
-      const spent  = b.spent  || 0;
-      const pct    = b.budget > 0 ? Math.round(spent / b.budget * 100) : 0;
-      const over   = spent > b.budget;
-      const warn   = pct >= 80 && !over;
-      const colour = over ? '#c0392b' : warn ? '#c9a84c' : 'var(--sage)';
-      const fill   = Math.min(pct, 100);
-      const emoji  = over ? '🚨' : warn ? '⚠️' : '✅';
-      html += `
-      <div style="padding:12px 24px;border-bottom:1px solid rgba(92,61,46,0.06);display:flex;align-items:center;gap:12px;">
-        <span style="font-size:13px;color:var(--text);flex:1;">${emoji} ${b.category}</span>
-        <div style="width:80px;height:5px;background:rgba(92,61,46,0.08);border-radius:3px;flex-shrink:0;">
-          <div style="width:${fill}%;height:100%;background:${colour};border-radius:3px;"></div>
-        </div>
-        <span style="font-size:12px;color:${colour};font-weight:500;white-space:nowrap;min-width:120px;text-align:right;">$${spent.toFixed(2)} / $${b.budget.toFixed(2)} · ${pct}%</span>
-      </div>`;
-    });
+    html += `</tbody></table>`;
   }
   html += `</div></div>`;
+
 
   // ------------------------------------------------------------------ 12. FAMILY MEMORIES
   html += `
