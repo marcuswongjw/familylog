@@ -790,10 +790,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 budgets = _json.loads(response.text)
             except:
                 pass
+
             keyboard = [
                 [InlineKeyboardButton("➕ set / update a budget", callback_data='set_budget_start')],
                 [InlineKeyboardButton("🏠 home", callback_data='home')]
             ]
+
             if not budgets:
                 await query.edit_message_text(
                     "📊 *Budget Tracker*\n\nno budgets set yet!\ntap below to add your first one.",
@@ -801,26 +803,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
                 return
-            check_resp = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "check_budgets"}, timeout=10)
-            alerts = []
-            try:
-                alerts = _json.loads(check_resp.text)
-            except:
-                pass
-            alert_map = {a['category']: a for a in alerts}
-            lines = ["📊 *Budget Tracker — Family Account*\n"]
-            for b in sorted(budgets, key=lambda x: x['category']):
-                cat   = b['category']
-                limit = b['budget']
-                alert = alert_map.get(cat)
-                if alert:
-                    pct   = alert['pct']
-                    spent = alert['spent']
-                    bar   = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
-                    emoji = '🚨' if alert['level'] == 'over' else '⚠️'
-                    lines.append(f"{emoji} *{cat}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
+
+            # Group budgets by EXPENSE_GROUPS
+            group_map = {}
+            for group_name, cats in EXPENSE_GROUPS.items():
+                for cat in cats:
+                    group_map[cat] = group_name
+
+            grouped = {}
+            ungrouped = []
+            for b in budgets:
+                group = group_map.get(b['category'])
+                if group:
+                    if group not in grouped:
+                        grouped[group] = []
+                    grouped[group].append(b)
                 else:
-                    lines.append(f"✅ *{cat}*\n   budget: ${limit:.2f}")
+                    ungrouped.append(b)
+
+            lines = ["📊 *Budget Tracker — Family Account*\n"]
+
+            for group_name, items in grouped.items():
+                group_budget = sum(b['budget'] for b in items)
+                group_spent  = sum(b.get('spent', 0) for b in items)
+                group_pct    = int(group_spent / group_budget * 100) if group_budget > 0 else 0
+                bar          = '█' * min(int(group_pct / 10), 10) + '░' * max(0, 10 - int(group_pct / 10))
+                emoji        = '🚨' if group_spent > group_budget else '⚠️' if group_pct >= 80 else '✅'
+                lines.append(f"{emoji} *{group_name}*\n   {bar} {group_pct}%  ${group_spent:.2f} / ${group_budget:.2f}")
+                for b in items:
+                    pct   = int(b.get('spent', 0) / b['budget'] * 100) if b['budget'] > 0 else 0
+                    dot   = '🔴' if b.get('spent', 0) > b['budget'] else '🟡' if pct >= 80 else '🟢'
+                    lines.append(f"   {dot} {b['category']}: ${b.get('spent', 0):.2f} / ${b['budget']:.2f}")
+
+            for b in ungrouped:
+                pct   = int(b.get('spent', 0) / b['budget'] * 100) if b['budget'] > 0 else 0
+                bar   = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
+                emoji = '🚨' if b.get('spent', 0) > b['budget'] else '⚠️' if pct >= 80 else '✅'
+                lines.append(f"{emoji} *{b['category']}*\n   {bar} {pct}%  ${b.get('spent', 0):.2f} / ${b['budget']:.2f}")
+
             await query.edit_message_text(
                 "\n\n".join(lines),
                 parse_mode='Markdown',
