@@ -534,6 +534,15 @@ function switchTab(name, btn) {
   if (panel) panel.classList.add('active');
 }
 
+function toggleBudgetGroup(headerEl) {
+  const itemsEl = headerEl.parentElement.querySelector('.budget-group-items');
+  const arrow   = headerEl.querySelector('span:last-child');
+  if (!itemsEl) return;
+  const isOpen = itemsEl.style.display !== 'none';
+  itemsEl.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent      = isOpen ? '▼' : '▲';
+}
+  
 // ---- TABLES ----
 function renderTables(data) {
   const ex  = data.expenses        || {};
