@@ -444,93 +444,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("couldn't delete event.", reply_markup=home_keyboard())
         return
 
-    # ------------------------------------------------------------------ EXPENSES
-    if query.data == 'view_expenses':
-        payload = {"user": user, "note": "get_expenses"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            text     = response.text.strip()
-            keyboard = [
-                [InlineKeyboardButton("➕ add expense",    callback_data='add_expense')],
-                [InlineKeyboardButton("🗑 delete expense", callback_data='delete_expense')],
-                [InlineKeyboardButton("🏠 home",            callback_data='home')]
-            ]
-            display = text if text and text != "no_expenses" else "no expenses logged yet!"
-            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load expenses.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_expense':
-        context.user_data['awaiting'] = 'expense_amount'
-        await query.edit_message_text("💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
-        return
-
-    if query.data == 'delete_expense':
-        payload = {"user": user, "note": "get_expense_list"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            raw      = response.text.strip()
-            if not raw or raw == "no_expenses":
-                await query.edit_message_text("no recent expenses to delete!", reply_markup=home_keyboard())
-                return
-            items    = [i.strip() for i in raw.split("||") if i.strip()]
-            keyboard = []
-            for item in items:
-                parts = item.split("|")
-                if len(parts) >= 3:
-                    rid, label_text = parts[0], " · ".join(parts[1:])
-                    keyboard.append([InlineKeyboardButton(f"🗑 {label_text}", callback_data=f"confirm_del_exp:{rid}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_expenses")])
-            await query.edit_message_text("which expense do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load expenses. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('confirm_del_exp:'):
-        rid = query.data.split(":", 1)[1]
-        keyboard = [
-            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_exp:{rid}"),
-             InlineKeyboardButton("❌ cancel",          callback_data="view_expenses")]
-        ]
-        await query.edit_message_text("are you sure you want to delete this expense?", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('do_del_exp:'):
-        rid     = query.data.split(":", 1)[1]
-        payload = {"user": user, "note": "delete_expense", "row_id": rid}
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            await query.edit_message_text("✅ expense deleted!", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't delete expense.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'show_groups':
-        await query.edit_message_text("select a category group:", reply_markup=InlineKeyboardMarkup(build_group_keyboard()))
-        return
-
-    if query.data.startswith('exp_group:'):
-        group_name = query.data.split(":", 1)[1]
-        categories = EXPENSE_GROUPS.get(group_name, [])
-        keyboard   = [[InlineKeyboardButton(cat, callback_data=f"expense_cat:{cat}")] for cat in categories]
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="show_groups")])
-        await query.edit_message_text(f"📂 *{group_name}*\npick a category:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('expense_cat:'):
-        category = query.data.split(":", 1)[1]
-        context.user_data['expense_category'] = category
-        keyboard  = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
-        await query.edit_message_text(f"category: *{category}*\n\nwhich account?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('exp_acc:'):
-        account = query.data.split(":", 1)[1]
-        context.user_data['expense_account'] = account
-        context.user_data['awaiting']        = 'expense_description'
-        await query.edit_message_text(f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
-        return
 
     # ------------------------------------------------------------------ TO-DO
     if query.data == 'view_todos':
@@ -636,6 +549,177 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await query.edit_message_text("couldn't delete task.", reply_markup=home_keyboard())
         return
+        
+    # ------------------------------------------------------------------ EXPENSES
+    if query.data == 'view_expenses':
+        payload = {"user": user, "note": "get_expenses"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("➕ add expense",    callback_data='add_expense')],
+                [InlineKeyboardButton("🗑 delete expense", callback_data='delete_expense')],
+                [InlineKeyboardButton("🏠 home",            callback_data='home')]
+            ]
+            display = text if text and text != "no_expenses" else "no expenses logged yet!"
+            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load expenses.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_expense':
+        context.user_data['awaiting'] = 'expense_amount'
+        await query.edit_message_text("💰 *add an expense*\n\nhow much did you spend? (e.g. 24.50)", parse_mode='Markdown')
+        return
+
+    if query.data == 'delete_expense':
+        payload = {"user": user, "note": "get_expense_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_expenses":
+                await query.edit_message_text("no recent expenses to delete!", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    rid, label_text = parts[0], " · ".join(parts[1:])
+                    keyboard.append([InlineKeyboardButton(f"🗑 {label_text}", callback_data=f"confirm_del_exp:{rid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_expenses")])
+            await query.edit_message_text("which expense do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load expenses. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_exp:'):
+        rid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_exp:{rid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_expenses")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this expense?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_exp:'):
+        rid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_expense", "row_id": rid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ expense deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete expense.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'show_groups':
+        await query.edit_message_text("select a category group:", reply_markup=InlineKeyboardMarkup(build_group_keyboard()))
+        return
+
+    if query.data.startswith('exp_group:'):
+        group_name = query.data.split(":", 1)[1]
+        categories = EXPENSE_GROUPS.get(group_name, [])
+        keyboard   = [[InlineKeyboardButton(cat, callback_data=f"expense_cat:{cat}")] for cat in categories]
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="show_groups")])
+        await query.edit_message_text(f"📂 *{group_name}*\npick a category:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+
+    if query.data.startswith('expense_cat:'):
+        category = query.data.split(":", 1)[1]
+        context.user_data['expense_category'] = category
+        keyboard  = [[InlineKeyboardButton(acc, callback_data=f"exp_acc:{acc}")] for acc in ACCOUNT_TYPES]
+        await query.edit_message_text(f"category: *{category}*\n\nwhich account?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+
+    if query.data.startswith('exp_acc:'):
+        account = query.data.split(":", 1)[1]
+        context.user_data['expense_account'] = account
+        context.user_data['awaiting']        = 'expense_description'
+        await query.edit_message_text(f"account: *{account}*\n\nshort description? (e.g. 'starbucks')", parse_mode='Markdown')
+        return
+
+        # ------------------------------------------------------------------ BUDGETS
+    if query.data == 'view_budgets':
+        payload = {"user": user, "note": "get_budgets"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            budgets  = []
+            try:
+                budgets = _json.loads(response.text)
+            except:
+                pass
+
+            keyboard = [
+                [InlineKeyboardButton("➕ set / update a budget", callback_data='set_budget_start')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ]
+
+            if not budgets:
+                await query.edit_message_text(
+                    "📊 *Budget Tracker*\n\nno budgets set yet!\ntap below to add your first one.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+
+            lines = ["📊 *Budget Tracker — Family Account*\n"]
+            for b in sorted(budgets, key=lambda x: x['group']):
+                group  = b['group']
+                limit  = b['budget']
+                spent  = b.get('spent', 0)
+                pct    = int(spent / limit * 100) if limit > 0 else 0
+                bar    = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
+                emoji  = '🚨' if spent > limit else '⚠️' if pct >= 80 else '✅'
+                lines.append(f"{emoji} *{group}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
+
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load budgets. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'set_budget_start':
+        context.user_data.clear()
+        # Show group picker using index-based callback to stay under 64-byte limit
+        group_keys = list(EXPENSE_GROUPS.keys())
+        keyboard   = []
+        for i in range(0, len(group_keys), 2):
+            row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_grp:{i}")]
+            if i + 1 < len(group_keys):
+                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_grp:{i+1}"))
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
+        await query.edit_message_text(
+            "📊 *set a group budget*\n\nwhich category group?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith('budget_grp:'):
+        try:
+            idx        = int(query.data.split(":", 1)[1])
+            group_name = list(EXPENSE_GROUPS.keys())[idx]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong.", show_alert=True)
+            return
+        context.user_data['budget_group'] = group_name
+        context.user_data['awaiting']     = 'budget_amount'
+        # Show categories in this group for reference
+        cats     = EXPENSE_GROUPS[group_name]
+        cat_list = "\n".join([f"  · {c}" for c in cats])
+        await query.edit_message_text(
+            f"📂 *{group_name}*\n\n"
+            f"_covers:_\n{cat_list}\n\n"
+            f"what's the monthly budget for this group?\n(e.g. `500` for $500/month)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+        
 
     # ------------------------------------------------------------------ FERTILITY
     if query.data == 'view_fertility':
@@ -781,88 +865,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ------------------------------------------------------------------ BUDGETS
-    if query.data == 'view_budgets':
-        payload = {"user": user, "note": "get_budgets"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            budgets  = []
-            try:
-                budgets = _json.loads(response.text)
-            except:
-                pass
 
-            keyboard = [
-                [InlineKeyboardButton("➕ set / update a budget", callback_data='set_budget_start')],
-                [InlineKeyboardButton("🏠 home", callback_data='home')]
-            ]
-
-            if not budgets:
-                await query.edit_message_text(
-                    "📊 *Budget Tracker*\n\nno budgets set yet!\ntap below to add your first one.",
-                    parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                return
-
-            lines = ["📊 *Budget Tracker — Family Account*\n"]
-            for b in sorted(budgets, key=lambda x: x['group']):
-                group  = b['group']
-                limit  = b['budget']
-                spent  = b.get('spent', 0)
-                pct    = int(spent / limit * 100) if limit > 0 else 0
-                bar    = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
-                emoji  = '🚨' if spent > limit else '⚠️' if pct >= 80 else '✅'
-                lines.append(f"{emoji} *{group}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
-
-            await query.edit_message_text(
-                "\n\n".join(lines),
-                parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load budgets. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'set_budget_start':
-        context.user_data.clear()
-        # Show group picker using index-based callback to stay under 64-byte limit
-        group_keys = list(EXPENSE_GROUPS.keys())
-        keyboard   = []
-        for i in range(0, len(group_keys), 2):
-            row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_grp:{i}")]
-            if i + 1 < len(group_keys):
-                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_grp:{i+1}"))
-            keyboard.append(row)
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
-        await query.edit_message_text(
-            "📊 *set a group budget*\n\nwhich category group?",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data.startswith('budget_grp:'):
-        try:
-            idx        = int(query.data.split(":", 1)[1])
-            group_name = list(EXPENSE_GROUPS.keys())[idx]
-        except (ValueError, IndexError):
-            await query.answer("something went wrong.", show_alert=True)
-            return
-        context.user_data['budget_group'] = group_name
-        context.user_data['awaiting']     = 'budget_amount'
-        # Show categories in this group for reference
-        cats     = EXPENSE_GROUPS[group_name]
-        cat_list = "\n".join([f"  · {c}" for c in cats])
-        await query.edit_message_text(
-            f"📂 *{group_name}*\n\n"
-            f"_covers:_\n{cat_list}\n\n"
-            f"what's the monthly budget for this group?\n(e.g. `500` for $500/month)",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-        
     
 
     # ------------------------------------------------------------------ MEMORIES
