@@ -1,1268 +1,1771 @@
-"""
-Wong Family Telegram Bot — index.py
-Flask + python-telegram-bot (v13.x) on Railway
-"""
-
 import os
-import logging
+import asyncio
 import threading
-import time
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import requests
-from requests.adapters import HTTPAdapter, Retry
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-)
+import base64
+import time
+import re
+import json as _json
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as _date, datetime as _dt, timedelta, timezone
+from flask import Flask, request, jsonify, send_file
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    CallbackContext,
-    CallbackQueryHandler,
-    CommandHandler,
-    Filters,
+    ApplicationBuilder,
     MessageHandler,
-    Updater,
+    filters,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes
 )
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    level=logging.INFO,
-)
-log = logging.getLogger(__name__)
-
-# ── Environment ──────────────────────────────────────────────────────────────
-TOKEN             = os.environ["TELEGRAM_BOT_TOKEN"]
-GAS_URL           = os.environ["GAS_URL"]
-RAILWAY_URL       = os.environ.get("RAILWAY_URL", "https://familylog-production.up.railway.app")
-DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "familyisLOVE")
-SECRET_KEY        = os.environ.get("SECRET_KEY", "wongfamily2024secret")
-
-# ── Constants ────────────────────────────────────────────────────────────────
-FAMILY_MEMBERS  = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"]
-BIRTHDAY_TYPES  = ["Birthday", "Wedding Anniversary"]
-MEMORY_TYPES    = ["🏆 Milestone", "💬 Quote", "💛 Moment"]
-MEAL_TYPES      = ["Breakfast", "Lunch", "Dinner"]
-MEAL_EMOJI      = {"Breakfast": "🌅", "Lunch": "☀️", "Dinner": "🌙"}
-NOTIFY_CHAT_IDS = [486455062]
-
-EXPENSE_GROUPS = {
-    "👶 Children":     ["Children - Baby", "Children - Childcare", "Children - Education (Child)", "Children - Misc"],
-    "👕 Clothing":     ["Clothing - Adult", "Clothing - Children"],
-    "🍽 Eating Out":   ["Eating Out - Beverages", "Eating Out - Breakfast", "Eating Out - Dinner", "Eating Out - Lunch", "Eating Out - Snacks"],
-    "📚 Education":    ["Education - Books", "Education - Courses", "Education - Tuition"],
-    "🎭 Entertainment":["Entertainment - Events", "Entertainment - Hobbies", "Entertainment - Subscriptions"],
-    "🎁 Gifts/Giving": ["Gifts/Giving - Charity", "Gifts/Giving - Gifts"],
-    "🏥 Health":       ["Health - Dental", "Health - Medical", "Health - Pharmacy", "Health - Supplements"],
-    "🏠 Household":    ["Household - Furnishings", "Household - Maintenance", "Household - Rent", "Household - Utilities"],
-    "🐾 Pets":         ["Pets - Food", "Pets - Vet"],
-    "💆 Self Care":    ["Self Care - Beauty", "Self Care - Fitness", "Self Care - Personal"],
-    "✈️ Travel":       ["Travel - Accommodation", "Travel - Activities", "Travel - Flights", "Travel - Transport"],
-    "🚗 Transport":    ["Transport - Car", "Transport - Public", "Transport - Taxi"],
-    "📈 Finance":      ["Finance - Insurance", "Finance - Investment", "Finance - Savings"],
-    "🌍 Others":       ["Others - Misc"],
-}
-GROUP_NAMES = list(EXPENSE_GROUPS.keys())
-
-FERTILITY_TYPES = ["Period Start", "Period End", "Ovulation", "Symptom", "Note"]
-
-# ── Persistent HTTP session (connection pooling + retries) ───────────────────
-_http = requests.Session()
-_http.mount("https://", HTTPAdapter(
-    pool_connections=10, pool_maxsize=20,
-    max_retries=Retry(total=2, backoff_factor=0.3, status_forcelist=[502, 503, 504])
-))
-_http.mount("http://", HTTPAdapter(pool_connections=4, pool_maxsize=8))
-
-
-def gas(payload: dict, timeout: int = 12) -> dict:
-    """POST to Google Apps Script and return parsed JSON."""
-    try:
-        r = _http.post(GAS_URL, json=payload, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as exc:
-        log.error("GAS error (%s): %s", payload.get("note"), exc)
-        return {"status": "error", "message": str(exc)}
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-def fmt_money(val) -> str:
-    try:
-        return f"${float(val):,.2f}"
-    except Exception:
-        return str(val)
-
-
-def progress_bar(spent: float, limit: float, width: int = 10) -> str:
-    pct = min((spent / limit) if limit > 0 else 0, 1.0)
-    filled = round(pct * width)
-    return "█" * filled + "░" * (width - filled)
-
-
-def sender_name(update: Update) -> str:
-    u = update.effective_user
-    raw = (u.first_name or u.username or "Bot").lower()
-    return {"eleanor": "Eleanor", "marcus": "Marcus",
-            "mikaela": "Mikaela", "meaghan": "Meaghan"}.get(raw, u.first_name or "Bot")
-
-
-def ack(query, text="", alert=False):
-    try:
-        query.answer(text, show_alert=alert)
-    except Exception:
-        pass
-
-
-# ── Keyboards ────────────────────────────────────────────────────────────────
-HOME_KB = InlineKeyboardMarkup([
-    [InlineKeyboardButton("📊 Budgets",        callback_data="h:budgets"),
-     InlineKeyboardButton("💰 Expenses",       callback_data="h:expenses")],
-    [InlineKeyboardButton("🛒 Grocery List",   callback_data="h:grocery"),
-     InlineKeyboardButton("🛍 Shopping Mode",  callback_data="h:shopping")],
-    [InlineKeyboardButton("🍎 Check Fridge",   callback_data="h:fridge"),
-     InlineKeyboardButton("🍽 Log Eating",     callback_data="h:eat")],
-    [InlineKeyboardButton("🗓 Meal Planner",   callback_data="h:meal"),
-     InlineKeyboardButton("📅 Calendar",       callback_data="h:calendar")],
-    [InlineKeyboardButton("✅ To-Do List",     callback_data="h:todo"),
-     InlineKeyboardButton("🌸 Fertility",      callback_data="h:fertility")],
-    [InlineKeyboardButton("💛 Memories",       callback_data="h:memories"),
-     InlineKeyboardButton("🎂 Birthdays",      callback_data="h:birthdays")],
-    [InlineKeyboardButton("📊 View Dashboard", callback_data="h:dashboard")],
-])
-
-CANCEL_KB = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
-
-
-def member_kb(prefix: str) -> InlineKeyboardMarkup:
-    rows = []
-    for i in range(0, len(FAMILY_MEMBERS), 2):
-        row = [InlineKeyboardButton(FAMILY_MEMBERS[i], callback_data=f"{prefix}:{i}")]
-        if i + 1 < len(FAMILY_MEMBERS):
-            row.append(InlineKeyboardButton(FAMILY_MEMBERS[i + 1], callback_data=f"{prefix}:{i + 1}"))
-        rows.append(row)
-    return InlineKeyboardMarkup(rows)
-
-
-def edit(query, text, kb=None, md=True):
-    try:
-        query.edit_message_text(text, parse_mode="Markdown" if md else None, reply_markup=kb)
-    except Exception:
-        pass
-
-
-def reply(update, text, kb=None, md=True):
-    update.message.reply_text(text, parse_mode="Markdown" if md else None, reply_markup=kb)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# /start  /help  /home
-# ─────────────────────────────────────────────────────────────────────────────
-def cmd_start(update: Update, context: CallbackContext):
-    name = sender_name(update)
-    reply(update, f"👋 Hello *{name}*! Welcome to the Wong Family Bot 🏠\n\nWhat would you like to do?", HOME_KB)
-
-
-def cmd_help(update: Update, context: CallbackContext):
-    reply(update,
-        "📋 *Wong Family Bot — Features*\n\n"
-        "🛒 *Grocery* — View, add items, shopping mode\n"
-        "🍎 *Fridge* — Track fruit stock, log eating\n"
-        "📅 *Calendar* — View 14 days, add/delete events\n"
-        "✅ *To-Do* — View, add, complete, delete tasks\n"
-        "💰 *Expenses* — View monthly summary (add via Google Form)\n"
-        "📊 *Budgets* — Group budgets with progress bars\n"
-        "🌸 *Fertility* — Log period, ovulation, symptoms\n"
-        "🎂 *Birthdays* — Upcoming birthdays & anniversaries\n"
-        "💛 *Memories* — Log & browse family memories\n"
-        "🗓 *Meal Planner* — Plan & view upcoming meals\n"
-        "📊 *Dashboard* — Web dashboard at /dashboard",
-        HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HOME ROUTER
-# ─────────────────────────────────────────────────────────────────────────────
-def cb_home(update: Update, context: CallbackContext):
-    q = update.callback_query
-    ack(q)
-    action = q.data.split(":", 1)[1]
-    _HOME_MAP = {
-        "budgets":   _budgets_show,
-        "expenses":  _expenses_show,
-        "grocery":   _grocery_show,
-        "shopping":  _shopping_start,
-        "fridge":    _fridge_show,
-        "eat":       _eat_start,
-        "meal":      _meal_menu,
-        "calendar":  _calendar_show,
-        "todo":      _todo_show,
-        "fertility": _fertility_menu,
-        "memories":  _memories_menu,
-        "birthdays": _birthdays_show,
-        "dashboard": _dashboard_link,
-        "home":      lambda q, ctx: edit(q, "What would you like to do?", HOME_KB),
-    }
-    fn = _HOME_MAP.get(action)
-    if fn:
-        fn(q, context)
-    else:
-        edit(q, "🤷 Unknown action.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# EXPENSES
-# ─────────────────────────────────────────────────────────────────────────────
-def _expenses_show(q, context):
-    edit(q, "⏳ Fetching expenses…")
-    data = gas({"note": "get_expenses"})
-    if data.get("status") == "error":
-        edit(q, "❌ Could not fetch expenses.", HOME_KB); return
-
-    summary    = data.get("summary", {})
-    categories = data.get("by_category", [])
-    recent     = data.get("recent", [])
-    total      = summary.get("total", 0)
-    by_account = summary.get("by_account", {})
-
-    lines = [f"💰 *This Month's Expenses*\n", f"*Total:* {fmt_money(total)}\n"]
-    if by_account:
-        lines.append("*By Account:*")
-        for acct, amt in by_account.items():
-            lines.append(f"  {acct}: {fmt_money(amt)}")
-        lines.append("")
-    if categories:
-        lines.append("*By Category (top 10):*")
-        for cat in categories[:10]:
-            lines.append(f"  {cat['category']}: {fmt_money(cat['amount'])}")
-        lines.append("")
-    if recent:
-        lines.append("*Recent 5:*")
-        for e in recent[:5]:
-            lines.append(f"  {e['date']} | {e['category']} | {fmt_money(e['amount'])}")
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗑 Delete Expense", callback_data="exp:delete")],
-        [InlineKeyboardButton("🏠 Home",            callback_data="h:home")],
-    ])
-    edit(q, "\n".join(lines), kb)
-
-
-def cb_expense(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "delete":
-        edit(q, "⏳ Fetching recent expenses…")
-        data = gas({"note": "get_expenses"})
-        recent = data.get("recent", [])
-        if not recent:
-            edit(q, "No expenses to delete.", HOME_KB); return
-        context.user_data["del_expenses"] = recent
-        rows = [[InlineKeyboardButton(
-            f"{e['date']} | {e['category']} | {fmt_money(e['amount'])}",
-            callback_data=f"exp:dc:{i}")] for i, e in enumerate(recent[:10])]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select expense to delete:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "dc":                               # del_confirm
-        idx = int(parts[2])
-        expense = context.user_data.get("del_expenses", [])[idx]
-        context.user_data["del_exp_row"] = expense.get("row")
-        label = f"{expense['date']} | {expense['category']} | {fmt_money(expense['amount'])}"
-        edit(q, f"Delete this expense?\n_{label}_", InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="exp:do"),
-             InlineKeyboardButton("❌ Cancel",  callback_data="cancel")],
-        ]))
-
-    elif parts[1] == "do":
-        data = gas({"note": "delete_expense", "row": context.user_data.get("del_exp_row")})
-        edit(q, "✅ Expense deleted." if data.get("status") == "ok" else "❌ Could not delete.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# BUDGETS
-# ─────────────────────────────────────────────────────────────────────────────
-def _budgets_show(q, context):
-    edit(q, "⏳ Fetching budgets…")
-    data = gas({"note": "get_budgets"})
-    budgets = data.get("budgets", [])
-    if not budgets:
-        edit(q, "No budgets set.", HOME_KB); return
-
-    lines = ["📊 *Budget Tracker — This Month*\n"]
-    for b in sorted(budgets, key=lambda x: x.get("group", "")):
-        grp   = b.get("group", "")
-        limit = float(b.get("budget", 0) or 0)
-        spent = float(b.get("spent",  0) or 0)
-        pct   = (spent / limit * 100) if limit > 0 else 0
-        flag  = " 🔴" if pct >= 100 else (" 🟡" if pct >= 80 else "")
-        bar   = progress_bar(spent, limit)
-        lines.append(f"{grp}{flag}")
-        lines.append(f"{bar} {fmt_money(spent)} / {fmt_money(limit)} ({pct:.0f}%)\n")
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚙️ Set Budget", callback_data="bgt:set:0")],
-        [InlineKeyboardButton("🏠 Home",        callback_data="h:home")],
-    ])
-    edit(q, "\n".join(lines), kb)
-
-
-def cb_budget(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "set":
-        page = int(parts[2]) if len(parts) > 2 else 0
-        per  = 7; start = page * per; chunk = GROUP_NAMES[start:start + per]
-        rows = [[InlineKeyboardButton(g, callback_data=f"bgt:grp:{start + i}")] for i, g in enumerate(chunk)]
-        nav  = []
-        if page > 0:           nav.append(InlineKeyboardButton("⬅️", callback_data=f"bgt:set:{page - 1}"))
-        if start + per < len(GROUP_NAMES): nav.append(InlineKeyboardButton("➡️", callback_data=f"bgt:set:{page + 1}"))
-        if nav: rows.append(nav)
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select a budget group to set:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "grp":
-        idx = int(parts[2])
-        context.user_data.update({"bgt_group": GROUP_NAMES[idx], "awaiting": "budget_amount"})
-        edit(q, f"Setting budget for *{GROUP_NAMES[idx]}*\n\nEnter monthly budget amount (e.g. 500):", CANCEL_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GROCERY
-# ─────────────────────────────────────────────────────────────────────────────
-def _grocery_show(q, context):
-    edit(q, "⏳ Fetching grocery list…")
-    data  = gas({"note": "get_grocery"})
-    items = data.get("items", [])
-    pending = [i for i in items if i.get("status", "").lower() != "bought"]
-    bought  = [i for i in items if i.get("status", "").lower() == "bought"]
-
-    lines = ["🛒 *Grocery List*\n"]
-    if pending:
-        lines.append("*To Buy:*")
-        for it in pending[:20]:
-            by = f" _{it['added_by']}_" if it.get("added_by") else ""
-            lines.append(f"  ☐ {it['item']}{by}")
-    else:
-        lines.append("_All done! Nothing left to buy 🎉_")
-    if bought:
-        lines.append(f"\n_✅ Bought: {len(bought)} items_")
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Item",    callback_data="gro:add"),
-         InlineKeyboardButton("✅ Mark Bought", callback_data="gro:mark")],
-        [InlineKeyboardButton("🗑 Clear Bought", callback_data="gro:clear")],
-        [InlineKeyboardButton("🏠 Home",         callback_data="h:home")],
-    ])
-    edit(q, "\n".join(lines), kb)
-
-
-def _shopping_start(q, context):
-    edit(q, "⏳ Loading shopping mode…")
-    data  = gas({"note": "get_grocery"})
-    items = [i for i in data.get("items", []) if i.get("status", "").lower() != "bought"]
-    if not items:
-        edit(q, "🎉 Nothing left to buy!", HOME_KB); return
-    context.user_data.update({"shop_items": items, "shop_checked": set()})
-    _shopping_render(q, context)
-
-
-def _shopping_render(q, context):
-    items   = context.user_data.get("shop_items", [])
-    checked = context.user_data.get("shop_checked", set())
-    rows = [[InlineKeyboardButton(
-        f"{'✅' if i in checked else '☐'} {it['item']}",
-        callback_data=f"shop:t:{i}")] for i, it in enumerate(items)]
-    rows.append([InlineKeyboardButton("✅ Mark Checked as Bought", callback_data="shop:done")])
-    rows.append([InlineKeyboardButton("🏠 Home", callback_data="h:home")])
-    try:
-        q.edit_message_text("🛍 *Shopping Mode* — tap to check off:", parse_mode="Markdown",
-                            reply_markup=InlineKeyboardMarkup(rows))
-    except Exception:
-        pass
-
-
-def cb_grocery(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        context.user_data["awaiting"] = "gro_item"
-        edit(q, "Enter item to add to grocery list:", CANCEL_KB)
-
-    elif parts[1] == "mark":
-        data  = gas({"note": "get_grocery"})
-        items = [i for i in data.get("items", []) if i.get("status", "").lower() != "bought"]
-        if not items:
-            edit(q, "Nothing to mark!", HOME_KB); return
-        context.user_data["mark_items"] = items
-        rows = [[InlineKeyboardButton(it["item"], callback_data=f"gro:md:{i}")]
-                for i, it in enumerate(items[:15])]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select item to mark as bought:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "md":
-        idx   = int(parts[2])
-        items = context.user_data.get("mark_items", [])
-        if idx < len(items):
-            gas({"note": "mark_grocery_bought", "item": items[idx]["item"]})
-            edit(q, f"✅ *{items[idx]['item']}* marked as bought!", HOME_KB)
-
-    elif parts[1] == "clear":
-        gas({"note": "clear_grocery_bought"})
-        edit(q, "🗑 Cleared bought items.", HOME_KB)
-
-
-def cb_shopping(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "t":                                  # toggle
-        idx     = int(parts[2])
-        checked = context.user_data.get("shop_checked", set())
-        checked.discard(idx) if idx in checked else checked.add(idx)
-        context.user_data["shop_checked"] = checked
-        _shopping_render(q, context)
-
-    elif parts[1] == "done":
-        items   = context.user_data.get("shop_items", [])
-        checked = context.user_data.get("shop_checked", set())
-        if not checked:
-            ack(q, "No items checked!", alert=True); return
-        names = [items[i]["item"] for i in checked if i < len(items)]
-        gas({"note": "mark_grocery_bought_bulk", "items": names})
-        edit(q, f"✅ {len(names)} item(s) marked as bought!", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FRIDGE / FRUIT
-# ─────────────────────────────────────────────────────────────────────────────
-def _fridge_show(q, context):
-    edit(q, "⏳ Checking fridge…")
-    data   = gas({"note": "get_fruits"})
-    fruits = data.get("fruits", [])
-    if not fruits:
-        edit(q, "Fridge is empty!", HOME_KB); return
-
-    lines = ["🍎 *Fridge Stock*\n"]
-    for f in fruits:
-        stock = int(f.get("stock", 0))
-        eaten = int(f.get("eaten", 0))
-        bar   = progress_bar(min(stock, 10), 10, 6)
-        lines.append(f"{f['name']}: {bar} *{stock}* left  _(eaten: {eaten})_")
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Stock", callback_data="fridge:add")],
-        [InlineKeyboardButton("🏠 Home",      callback_data="h:home")],
-    ])
-    edit(q, "\n".join(lines), kb)
-
-
-def _eat_start(q, context):
-    edit(q, "⏳ Loading…")
-    data   = gas({"note": "get_fruits"})
-    fruits = data.get("fruits", [])
-    avail  = [f for f in fruits if int(f.get("stock", 0)) > 0]
-    if not avail:
-        edit(q, "No fruits in stock!", HOME_KB); return
-    context.user_data["eat_fruits"] = avail
-    rows = [[InlineKeyboardButton(f"{f['name']} ({f['stock']} left)", callback_data=f"fridge:eat:{i}")]
-            for i, f in enumerate(avail)]
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-    edit(q, "🍽 Which fruit did you eat?", InlineKeyboardMarkup(rows))
-
-
-def cb_fridge(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        context.user_data["awaiting"] = "fridge_add"
-        edit(q, "Enter fruit name and quantity (e.g. `Banana 5`):", CANCEL_KB)
-
-    elif parts[1] == "eat":
-        idx    = int(parts[2])
-        fruits = context.user_data.get("eat_fruits", [])
-        if idx < len(fruits):
-            context.user_data["eating"] = fruits[idx]["name"]
-            edit(q, f"How many *{fruits[idx]['name']}* did you eat?", InlineKeyboardMarkup([
-                [[InlineKeyboardButton(str(n), callback_data=f"fridge:qty:{n}") for n in range(1, 6)]],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-            ]))
-
-    elif parts[1] == "qty":
-        qty   = int(parts[2])
-        fruit = context.user_data.get("eating", "")
-        data  = gas({"note": "log_eat_fruit", "fruit": fruit, "qty": qty,
-                     "by": sender_name(update)})
-        edit(q, f"✅ Logged eating {qty}× *{fruit}*!" if data.get("status") == "ok"
-             else "❌ Error logging.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CALENDAR
-# ─────────────────────────────────────────────────────────────────────────────
-def _calendar_show(q, context):
-    edit(q, "⏳ Fetching calendar…")
-    data   = gas({"note": "get_calendar"})
-    events = data.get("events", [])
-
-    if not events:
-        msg = "📅 *Family Calendar*\n\n_No events in the next 14 days._"
-    else:
-        lines = ["📅 *Family Calendar — Next 14 Days*\n"]
-        last_date = ""
-        for ev in events:
-            if ev.get("date") != last_date:
-                lines.append(f"\n*{ev['date']}*")
-                last_date = ev["date"]
-            t = f" — {ev['time']}" if ev.get("time") else ""
-            lines.append(f"  • {ev['title']}{t}")
-        msg = "\n".join(lines)
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Event",    callback_data="cal:add"),
-         InlineKeyboardButton("🗑 Delete Event", callback_data="cal:delete")],
-        [InlineKeyboardButton("🏠 Home",          callback_data="h:home")],
-    ])
-    edit(q, msg, kb)
-
-
-def cb_calendar(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        context.user_data["awaiting"] = "cal_title"
-        edit(q, "📅 Enter event title:", CANCEL_KB)
-
-    elif parts[1] == "delete":
-        edit(q, "⏳ Loading events…")
-        data   = gas({"note": "get_calendar"})
-        events = data.get("events", [])
-        if not events:
-            edit(q, "No events to delete.", HOME_KB); return
-        context.user_data["cal_events"] = events
-        rows = [[InlineKeyboardButton(f"{ev['date']} — {ev['title']}", callback_data=f"cal:dc:{i}")]
-                for i, ev in enumerate(events[:15])]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select event to delete:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "dc":
-        idx = int(parts[2])
-        ev  = context.user_data.get("cal_events", [])[idx]
-        context.user_data["del_event"] = ev
-        edit(q, f"Delete this event?\n*{ev['date']}* — {ev['title']}", InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="cal:do"),
-             InlineKeyboardButton("❌ Cancel",  callback_data="cancel")],
-        ]))
-
-    elif parts[1] == "do":
-        ev   = context.user_data.get("del_event", {})
-        data = gas({"note": "delete_calendar_event",
-                    "event_id": ev.get("event_id"), "row": ev.get("row")})
-        edit(q, "✅ Event deleted." if data.get("status") == "ok" else "❌ Could not delete.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TO-DO
-# ─────────────────────────────────────────────────────────────────────────────
-def _todo_show(q, context):
-    edit(q, "⏳ Fetching to-do list…")
-    data    = gas({"note": "get_todo"})
-    pending = [t for t in data.get("tasks", []) if t.get("status", "").lower() != "done"]
-
-    if not pending:
-        msg = "✅ *To-Do List*\n\n_All done! 🎉_"
-    else:
-        grouped = {}
-        for t in pending:
-            grouped.setdefault(t.get("assignee", "Unassigned"), []).append(t)
-        lines = ["✅ *To-Do List*\n"]
-        for assignee in sorted(grouped):
-            lines.append(f"*{assignee}:*")
-            for t in grouped[assignee]:
-                due = f" _(due: {t['due_date']})_" if t.get("due_date") else ""
-                lines.append(f"  • {t['task']}{due}")
-            lines.append("")
-        msg = "\n".join(lines)
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Task",  callback_data="todo:add"),
-         InlineKeyboardButton("✅ Complete",  callback_data="todo:complete")],
-        [InlineKeyboardButton("🗑 Delete",    callback_data="todo:delete")],
-        [InlineKeyboardButton("🏠 Home",      callback_data="h:home")],
-    ])
-    edit(q, msg, kb)
-
-
-def cb_todo(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        context.user_data["awaiting"] = "todo_task"
-        edit(q, "✅ Enter task description:", CANCEL_KB)
-
-    elif parts[1] == "assignee":
-        idx = int(parts[2])
-        context.user_data.update({"todo_assignee": FAMILY_MEMBERS[idx], "awaiting": "todo_due"})
-        edit(q, "📅 Enter due date (e.g. 25 May) or type `skip`:", CANCEL_KB)
-
-    elif parts[1] == "complete":
-        data  = gas({"note": "get_todo"})
-        tasks = [t for t in data.get("tasks", []) if t.get("status", "").lower() != "done"]
-        if not tasks:
-            edit(q, "No pending tasks!", HOME_KB); return
-        context.user_data["comp_tasks"] = tasks
-        rows = [[InlineKeyboardButton(t["task"][:45], callback_data=f"todo:cdo:{i}")]
-                for i, t in enumerate(tasks[:15])]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select task to mark complete:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "cdo":
-        idx   = int(parts[2])
-        tasks = context.user_data.get("comp_tasks", [])
-        if idx < len(tasks):
-            t = tasks[idx]
-            gas({"note": "complete_todo", "row": t.get("row")})
-            edit(q, f"✅ *{t['task']}* marked as done!", HOME_KB)
-
-    elif parts[1] == "delete":
-        data  = gas({"note": "get_todo"})
-        tasks = [t for t in data.get("tasks", []) if t.get("status", "").lower() != "done"]
-        if not tasks:
-            edit(q, "No tasks to delete!", HOME_KB); return
-        context.user_data["del_tasks"] = tasks
-        rows = [[InlineKeyboardButton(t["task"][:45], callback_data=f"todo:dc:{i}")]
-                for i, t in enumerate(tasks[:15])]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "Select task to delete:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "dc":
-        idx   = int(parts[2])
-        tasks = context.user_data.get("del_tasks", [])
-        t     = tasks[idx]
-        context.user_data["del_task"] = t
-        edit(q, f"Delete task?\n*{t['task']}*", InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="todo:do"),
-             InlineKeyboardButton("❌ Cancel",  callback_data="cancel")],
-        ]))
-
-    elif parts[1] == "do":
-        t = context.user_data.get("del_task", {})
-        gas({"note": "delete_todo", "row": t.get("row")})
-        edit(q, "🗑 Task deleted.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FERTILITY
-# ─────────────────────────────────────────────────────────────────────────────
-def _fertility_menu(q, context):
-    data   = gas({"note": "get_fertility"})
-    recent = data.get("recent", [])
-    lines  = ["🌸 *Fertility Tracker*\n"]
-    for r in recent[:5]:
-        lines.append(f"  {r.get('date','')} — {r.get('type','')}  {str(r.get('notes',''))[:30]}")
-    rows = [[InlineKeyboardButton(t, callback_data=f"fert:{i}")]
-            for i, t in enumerate(FERTILITY_TYPES)]
-    rows.append([InlineKeyboardButton("🏠 Home", callback_data="h:home")])
-    edit(q, "\n".join(lines) + "\n\nWhat would you like to log?", InlineKeyboardMarkup(rows))
-
-
-def cb_fertility(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    idx = int(q.data.split(":")[1])
-    context.user_data.update({"fert_type": FERTILITY_TYPES[idx], "awaiting": "fert_notes"})
-    edit(q, f"🌸 Logging: *{FERTILITY_TYPES[idx]}*\n\nAdd notes (or `skip`):", CANCEL_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# BIRTHDAYS
-# ─────────────────────────────────────────────────────────────────────────────
-def _birthdays_show(q, context):
-    edit(q, "⏳ Fetching birthdays…")
-    data    = gas({"note": "get_birthdays"})
-    entries = data.get("entries", [])
-
-    if not entries:
-        msg = "🎂 *Birthdays & Anniversaries*\n\n_None added yet._"
-    else:
-        lines = ["🎂 *Upcoming Birthdays & Anniversaries*\n"]
-        for e in entries[:15]:
-            icon    = "🎂" if e.get("type") == "Birthday" else "💍"
-            age_str = f" _({e['age']})_" if e.get("age") else ""
-            days    = e.get("days_away", "?")
-            lines.append(f"{icon} *{e['name']}*{age_str} — {e['date']}  _{days} days_")
-        msg = "\n".join(lines)
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Entry", callback_data="bd:add")],
-        [InlineKeyboardButton("🏠 Home",      callback_data="h:home")],
-    ])
-    edit(q, msg, kb)
-
-
-def cb_birthday(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        context.user_data["awaiting"] = "bd_name"
-        edit(q, "🎂 Enter name:", CANCEL_KB)
-
-    elif parts[1] == "type":
-        idx = int(parts[2])
-        context.user_data.update({"bd_type": BIRTHDAY_TYPES[idx], "awaiting": "bd_date"})
-        edit(q, "📅 Enter date (MM-DD, e.g. `03-15`):", CANCEL_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MEMORIES
-# ─────────────────────────────────────────────────────────────────────────────
-def _memories_menu(q, context):
-    data   = gas({"note": "get_memories"})
-    recent = data.get("memories", [])[:5]
-    lines  = ["💛 *Family Memories*\n"]
-    for m in recent:
-        emoji = m.get("type", "💛").split(" ")[0]
-        lines.append(f"{emoji} *{m.get('person','')}*: {str(m.get('memory',''))[:60]}")
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Memory",  callback_data="mem:add"),
-         InlineKeyboardButton("👀 Browse",      callback_data="mem:browse")],
-        [InlineKeyboardButton("🏠 Home",        callback_data="h:home")],
-    ])
-    edit(q, "\n".join(lines) or "💛 *Family Memories*", kb)
-
-
-def cb_memory(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "add":
-        rows = [[InlineKeyboardButton(t, callback_data=f"mem:mtype:{i}")] for i, t in enumerate(MEMORY_TYPES)]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        edit(q, "💛 What type of memory?", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "mtype":
-        idx = int(parts[2])
-        context.user_data["mem_type"] = MEMORY_TYPES[idx]
-        edit(q, "Who is this memory about?", member_kb("mem:person"))
-
-    elif parts[1] == "person":
-        idx = int(parts[2])
-        context.user_data.update({"mem_person": FAMILY_MEMBERS[idx], "awaiting": "mem_text"})
-        edit(q, "💛 Write the memory:", CANCEL_KB)
-
-    elif parts[1] == "browse":
-        rows = [[InlineKeyboardButton(m, callback_data=f"mem:vp:{i}")] for i, m in enumerate(FAMILY_MEMBERS)]
-        rows.append([InlineKeyboardButton("📋 All Recent", callback_data="mem:all")])
-        rows.append([InlineKeyboardButton("🏠 Home",       callback_data="h:home")])
-        edit(q, "Browse memories by person:", InlineKeyboardMarkup(rows))
-
-    elif parts[1] == "vp":
-        idx    = int(parts[2])
-        person = FAMILY_MEMBERS[idx]
-        data   = gas({"note": "get_memories", "person": person})
-        mems   = data.get("memories", [])[:10]
-        lines  = [f"💛 *Memories — {person}*\n"]
-        for m in mems:
-            emoji = m.get("type", "💛").split(" ")[0]
-            lines.append(f"{emoji} {m.get('date','')}: {str(m.get('memory',''))[:80]}")
-        edit(q, "\n".join(lines) or f"_No memories for {person}._", HOME_KB)
-
-    elif parts[1] == "all":
-        data  = gas({"note": "get_memories"})
-        mems  = data.get("memories", [])[:10]
-        lines = ["💛 *Recent Memories*\n"]
-        for m in mems:
-            emoji = m.get("type", "💛").split(" ")[0]
-            lines.append(f"{emoji} *{m.get('person','')}* ({m.get('date','')}): {str(m.get('memory',''))[:60]}")
-        edit(q, "\n".join(lines), HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MEAL PLANNER
-# ─────────────────────────────────────────────────────────────────────────────
-def _meal_menu(q, context):
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Plan Meals", callback_data="meal:plan"),
-         InlineKeyboardButton("👀 View Plan",  callback_data="meal:view")],
-        [InlineKeyboardButton("🏠 Home",       callback_data="h:home")],
-    ])
-    edit(q, "🗓 *Meal Planner*\nWhat would you like to do?", kb)
-
-
-def _meal_selector_kb(context) -> InlineKeyboardMarkup:
-    selected = context.user_data.get("meal_selected", set())
-    rows = [[InlineKeyboardButton(
-        f"{'✅' if m in selected else '☐'} {MEAL_EMOJI[m]} {m}",
-        callback_data=f"meal:wm:{i}")] for i, m in enumerate(MEAL_TYPES)]
-    rows.append([InlineKeyboardButton("✅ Done selecting", callback_data="meal:mdone")])
-    rows.append([InlineKeyboardButton("❌ Cancel",         callback_data="cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-def cb_meal(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    parts = q.data.split(":")
-
-    if parts[1] == "plan":
-        context.user_data["awaiting"] = "meal_days"
-        edit(q, "📅 How many days to plan? (1–14):", CANCEL_KB)
-
-    elif parts[1] == "view":
-        context.user_data["awaiting"] = "meal_view_days"
-        edit(q, "👀 View how many days ahead? (1–30):", CANCEL_KB)
-
-    elif parts[1] == "wm":                               # toggle meal
-        m        = MEAL_TYPES[int(parts[2])]
-        selected = context.user_data.get("meal_selected", set())
-        selected.discard(m) if m in selected else selected.add(m)
-        context.user_data["meal_selected"] = selected
-        day = context.user_data.get("meal_cur_day", 0) + 1
-        tot = context.user_data.get("meal_total",   0)
-        try:
-            q.edit_message_text(f"Day {day} of {tot}: Select meals to plan:",
-                                reply_markup=_meal_selector_kb(context))
-        except Exception:
-            pass
-
-    elif parts[1] == "mdone":
-        selected = context.user_data.get("meal_selected", set())
-        if not selected:
-            ack(q, "Select at least one meal!", alert=True); return
-        context.user_data.update({
-            "meal_slots":    list(selected),
-            "meal_slot_idx": 0,
-        })
-        _ask_slot_cb(q, context)
-
-
-def _ask_slot_cb(q, context):
-    """Ask for a dish via inline (called from callback handler)."""
-    slots    = context.user_data.get("meal_slots", [])
-    slot_idx = context.user_data.get("meal_slot_idx", 0)
-    if slot_idx >= len(slots):
-        _next_meal_day_cb(q, context); return
-    meal = slots[slot_idx]
-    context.user_data.update({"meal_cur_slot": meal, "awaiting": "meal_dish"})
-    day = context.user_data.get("meal_cur_day", 0) + 1
-    tot = context.user_data.get("meal_total",   0)
-    edit(q, f"Day {day}/{tot} — {MEAL_EMOJI[meal]} *{meal}*\nEnter dish name:", CANCEL_KB)
-
-
-def _next_meal_day_cb(q, context):
-    context.user_data["meal_cur_day"] = context.user_data.get("meal_cur_day", 0) + 1
-    total = context.user_data.get("meal_total", 0)
-    if context.user_data["meal_cur_day"] >= total:
-        _save_meal_plan_cb(q, context)
-    else:
-        context.user_data.update({"meal_selected": set(), "meal_slot_idx": 0, "meal_slots": []})
-        day = context.user_data["meal_cur_day"] + 1
-        try:
-            q.edit_message_text(f"Day {day} of {total}: Select meals to plan:",
-                                reply_markup=_meal_selector_kb(context))
-        except Exception:
-            pass
-
-
-def _save_meal_plan_cb(q, context):
-    plan = context.user_data.get("meal_plan", [])
-    data = gas({"note": "save_meal_plan", "plan": plan,
-                "by": context.user_data.get("meal_by", "Bot")})
-    edit(q, "✅ Meal plan saved! 🗓" if data.get("status") == "ok"
-         else "❌ Error saving meal plan.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DASHBOARD
-# ─────────────────────────────────────────────────────────────────────────────
-def _dashboard_link(q, context):
-    edit(q,
-        f"📊 *Family Dashboard*\n\n"
-        f"[Open Dashboard]({RAILWAY_URL}/dashboard)\n\n"
-        f"Password: `familyisLOVE`",
-        HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CANCEL
-# ─────────────────────────────────────────────────────────────────────────────
-def cb_cancel(update: Update, context: CallbackContext):
-    q = update.callback_query; ack(q)
-    context.user_data.clear()
-    edit(q, "❌ Cancelled.", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# UNIVERSAL TEXT HANDLER  (state machine via user_data["awaiting"])
-# ─────────────────────────────────────────────────────────────────────────────
-def handle_text(update: Update, context: CallbackContext):
-    text     = update.message.text.strip()
-    awaiting = context.user_data.pop("awaiting", None)
-
-    if not awaiting:
-        reply(update, "What would you like to do?", HOME_KB); return
-
-    # ── Budget amount ─────────────────────────────────────────────────────────
-    if awaiting == "budget_amount":
-        try:
-            amount = float(text.replace("$", "").replace(",", ""))
-        except ValueError:
-            reply(update, "❌ Please enter a valid number.", HOME_KB); return
-        group = context.user_data.get("bgt_group", "")
-        data  = gas({"note": "set_budget", "group": group,
-                     "amount": amount, "by": sender_name(update)})
-        reply(update,
-              f"✅ Budget for *{group}* set to {fmt_money(amount)}/month" if data.get("status") == "ok"
-              else "❌ Error setting budget.", HOME_KB)
-
-    # ── Grocery ───────────────────────────────────────────────────────────────
-    elif awaiting == "gro_item":
-        data = gas({"note": "add_grocery", "item": text, "by": sender_name(update)})
-        reply(update, f"✅ *{text}* added to grocery list!" if data.get("status") == "ok"
-              else "❌ Error adding item.", HOME_KB)
-
-    # ── Fridge add ────────────────────────────────────────────────────────────
-    elif awaiting == "fridge_add":
-        parts = text.rsplit(" ", 1)
-        if len(parts) == 2 and parts[1].isdigit():
-            fruit, qty = parts[0], int(parts[1])
-        else:
-            fruit, qty = text, 1
-        data = gas({"note": "add_fruit_stock", "fruit": fruit, "qty": qty, "by": sender_name(update)})
-        reply(update, f"✅ Added {qty}× {fruit} to fridge!" if data.get("status") == "ok"
-              else "❌ Error adding stock.", HOME_KB)
-
-    # ── Calendar ──────────────────────────────────────────────────────────────
-    elif awaiting == "cal_title":
-        context.user_data.update({"cal_title": text, "awaiting": "cal_date"})
-        reply(update, "📅 Enter date (e.g. `25 May 2025`):")
-    elif awaiting == "cal_date":
-        context.user_data.update({"cal_date": text, "awaiting": "cal_time"})
-        reply(update, "🕐 Enter time (e.g. `3pm` or `10.30am to 11.15am`) or `skip`:")
-    elif awaiting == "cal_time":
-        context.user_data.update({"cal_time": "" if text.lower() == "skip" else text,
-                                   "awaiting": "cal_notes"})
-        reply(update, "📝 Any notes? (or `skip`):")
-    elif awaiting == "cal_notes":
-        data = gas({
-            "note":  "add_calendar_event",
-            "title": context.user_data.get("cal_title", ""),
-            "date":  context.user_data.get("cal_date",  ""),
-            "time":  context.user_data.get("cal_time",  ""),
-            "notes": "" if text.lower() == "skip" else text,
-            "by":    sender_name(update),
-        })
-        reply(update, "✅ Event added to calendar!" if data.get("status") == "ok"
-              else "❌ Error adding event.", HOME_KB)
-
-    # ── To-Do ─────────────────────────────────────────────────────────────────
-    elif awaiting == "todo_task":
-        context.user_data["todo_task"] = text
-        rows = [[InlineKeyboardButton(m, callback_data=f"todo:assignee:{i}")]
-                for i, m in enumerate(FAMILY_MEMBERS)]
-        rows.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        reply(update, "👤 Assign to:", InlineKeyboardMarkup(rows))
-    elif awaiting == "todo_due":
-        data = gas({
-            "note":      "add_todo",
-            "task":      context.user_data.get("todo_task",     ""),
-            "assignee":  context.user_data.get("todo_assignee", ""),
-            "due_date":  "" if text.lower() == "skip" else text,
-            "by":        sender_name(update),
-        })
-        reply(update, "✅ Task added!" if data.get("status") == "ok"
-              else "❌ Error adding task.", HOME_KB)
-
-    # ── Fertility ─────────────────────────────────────────────────────────────
-    elif awaiting == "fert_notes":
-        ftype = context.user_data.get("fert_type", "")
-        data  = gas({"note": "log_fertility", "type": ftype,
-                     "notes": "" if text.lower() == "skip" else text,
-                     "by": sender_name(update)})
-        reply(update, f"✅ *{ftype}* logged!" if data.get("status") == "ok"
-              else "❌ Error logging.", HOME_KB)
-
-    # ── Birthday ──────────────────────────────────────────────────────────────
-    elif awaiting == "bd_name":
-        context.user_data["bd_name"] = text
-        rows = [[InlineKeyboardButton(t, callback_data=f"bd:type:{i}")] for i, t in enumerate(BIRTHDAY_TYPES)]
-        reply(update, "What type?", InlineKeyboardMarkup(rows))
-    elif awaiting == "bd_date":
-        context.user_data.update({"bd_date": text, "awaiting": "bd_year"})
-        reply(update, "Enter year (e.g. `1990`) or `skip`:")
-    elif awaiting == "bd_year":
-        context.user_data.update({"bd_year": "" if text.lower() == "skip" else text,
-                                   "awaiting": "bd_notes"})
-        reply(update, "📝 Any notes? (or `skip`):")
-    elif awaiting == "bd_notes":
-        data = gas({
-            "note":  "add_birthday",
-            "name":  context.user_data.get("bd_name", ""),
-            "type":  context.user_data.get("bd_type", ""),
-            "date":  context.user_data.get("bd_date", ""),
-            "year":  context.user_data.get("bd_year", ""),
-            "notes": "" if text.lower() == "skip" else text,
-            "by":    sender_name(update),
-        })
-        reply(update, "✅ Entry added!" if data.get("status") == "ok"
-              else "❌ Error adding.", HOME_KB)
-
-    # ── Memories ──────────────────────────────────────────────────────────────
-    elif awaiting == "mem_text":
-        context.user_data.update({"mem_text": text, "awaiting": "mem_date"})
-        reply(update, "📅 Enter date (e.g. `23 May 2025`) or `today`:")
-    elif awaiting == "mem_date":
-        data = gas({
-            "note":   "add_memory",
-            "type":   context.user_data.get("mem_type",   ""),
-            "person": context.user_data.get("mem_person", ""),
-            "memory": context.user_data.get("mem_text",   ""),
-            "date":   text,
-            "by":     sender_name(update),
-        })
-        reply(update, "✅ Memory saved! 💛" if data.get("status") == "ok"
-              else "❌ Error saving.", HOME_KB)
-
-    # ── Meal planner ──────────────────────────────────────────────────────────
-    elif awaiting == "meal_days":
-        try:
-            days = int(text)
-            assert 1 <= days <= 14
-        except Exception:
-            reply(update, "❌ Enter a number between 1 and 14.")
-            context.user_data["awaiting"] = "meal_days"; return
-        context.user_data.update({
-            "meal_total":    days,
-            "meal_cur_day":  0,
-            "meal_plan":     [],
-            "meal_selected": set(),
-            "meal_slots":    [],
-            "meal_slot_idx": 0,
-            "meal_by":       sender_name(update),
-        })
-        reply(update, f"Day 1 of {days}: Select meals to plan:", _meal_selector_kb(context))
-
-    elif awaiting == "meal_view_days":
-        try:
-            days = int(text)
-            assert 1 <= days <= 30
-        except Exception:
-            reply(update, "❌ Enter a number between 1 and 30.")
-            context.user_data["awaiting"] = "meal_view_days"; return
-        data = gas({"note": "get_meal_plan", "days": days})
-        plan = data.get("plan", [])
-        if not plan:
-            reply(update, f"_No meal plan for the next {days} days._", HOME_KB); return
-        lines = [f"🗓 *Meal Plan — Next {days} Days*\n"]
-        for entry in plan:
-            lines.append(f"\n*{entry['date']}*")
-            for slot in entry.get("meals", []):
-                e = MEAL_EMOJI.get(slot["meal"], "🍽")
-                lines.append(f"  {e} {slot['meal']}: {slot['dish']}")
-                if slot.get("ingredients"):
-                    lines.append(f"    _Ingredients: {slot['ingredients']}_")
-        reply(update, "\n".join(lines), HOME_KB)
-
-    elif awaiting == "meal_dish":
-        context.user_data.update({"meal_dish": text, "awaiting": "meal_ingredients"})
-        reply(update, "🥕 Enter ingredients (comma-separated) or `skip`:")
-
-    elif awaiting == "meal_ingredients":
-        dish  = context.user_data.get("meal_dish", "")
-        meal  = context.user_data.get("meal_cur_slot", "")
-        day   = context.user_data.get("meal_cur_day", 0)
-        ingr  = "" if text.lower() == "skip" else text
-        plan  = context.user_data.get("meal_plan", [])
-        while len(plan) <= day:
-            plan.append({"day_offset": len(plan), "meals": []})
-        plan[day]["meals"].append({"meal": meal, "dish": dish, "ingredients": ingr})
-        context.user_data["meal_plan"] = plan
-
-        # Advance slot
-        context.user_data["meal_slot_idx"] += 1
-        slots    = context.user_data.get("meal_slots", [])
-        slot_idx = context.user_data.get("meal_slot_idx", 0)
-
-        if slot_idx >= len(slots):
-            # Advance day
-            context.user_data["meal_cur_day"] = day + 1
-            total = context.user_data.get("meal_total", 0)
-            if context.user_data["meal_cur_day"] >= total:
-                data = gas({"note": "save_meal_plan", "plan": plan,
-                            "by": context.user_data.get("meal_by", "Bot")})
-                reply(update, "✅ Meal plan saved! 🗓" if data.get("status") == "ok"
-                      else "❌ Error saving.", HOME_KB)
-            else:
-                context.user_data.update({"meal_selected": set(), "meal_slot_idx": 0, "meal_slots": []})
-                next_day = context.user_data["meal_cur_day"] + 1
-                reply(update, f"Day {next_day} of {total}: Select meals:",
-                      _meal_selector_kb(context))
-        else:
-            # Next dish in same day
-            next_meal = slots[slot_idx]
-            context.user_data.update({"meal_cur_slot": next_meal, "awaiting": "meal_dish"})
-            day_n = context.user_data.get("meal_cur_day", 0) + 1
-            total = context.user_data.get("meal_total", 0)
-            reply(update, f"Day {day_n}/{total} — {MEAL_EMOJI[next_meal]} *{next_meal}*\nEnter dish name:")
-
-    else:
-        reply(update, "🤔 Not sure what you meant. Here's the menu:", HOME_KB)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FLASK APP
-# ─────────────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
-
-GAS_DASHBOARD_KEYS = [
-    "get_calendar", "get_todo", "get_grocery", "get_expenses",
-    "get_fertility", "get_birthdays", "get_budgets", "get_memories",
-    "get_meal_plan", "get_fruits",
+# --- CONFIGURATION ---
+TOKEN             = os.environ.get('TELEGRAM_TOKEN')
+GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
+SHEET_URL         = "https://docs.google.com/spreadsheets/d/17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I"
+RAILWAY_URL       = "https://familylog-production.up.railway.app"
+SGT               = timezone(timedelta(hours=8))
+
+NOTIFY_CHAT_IDS = [
+    486455062,   # Eleanor
+    # 987654321, # Marcus — uncomment and add ID when ready
 ]
 
+FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"]
 
-@app.route("/")
-def index():
-    return "Wong Family Bot is running! 🏠", 200
+EXPENSE_GROUPS = {
+    "👶 Children":     ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
+    "👕 Clothing":     ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
+    "🍽 Eating Out":   ["Eating Out - Beverages", "Eating Out - Breakfast", "Eating Out - Dinner", "Eating Out - Lunch", "Eating Out - Snacks"],
+    "📚 Education":    ["Education - Books", "Education - Courses & Enrichment", "Education - Subscription"],
+    "🎭 Entertainment":["Entertainment - Experiences", "Entertainment - Subscriptions", "Entertainment - Objects (toys, etc)"],
+    "🎁 Gifts/Giving": ["Gifts & Treats - CNY", "Gifts & Treats - Family", "Gifts & Treats - Friends", "Gifts & Treats - Wedding", "Giving - Church", "Giving - Charity", "Giving - Parents"],
+    "🏥 Health":       ["Health & Fitness - Dental + Medical", "Health & Fitness - Events + Subscription", "Health & Fitness - Equipment + Supplements"],
+    "🏠 Household":    ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet"],
+    "🐾 Pets":         ["Pets - Pet Food", "Pets - Grooming", "Pets - Pet Misc"],
+    "💆 Self Care":    ["Self Care - Massage", "Self Care - Personal Care", "Utilities - Mobile"],
+    "✈️ Travel":       ["Travel - Hotels", "Travel - Transport", "Travel - Expenses"],
+    "🚗 Transport":    ["Transportation - Bus/MRT", "Transportation - Taxi/Grab", "Transportation - Auto: Service", "Transportation - Auto: Loan", "Transportation - Auto: Gas"],
+    "📈 Finance":      ["Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
+    "🌍 Others":       ["Electronics", "Misc", "Missions"]
+}
 
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        if request.form.get("password") == DASHBOARD_PASSWORD:
-            session["logged_in"] = True
-            return redirect(url_for("dashboard"))
-        return render_template("login.html", error="Wrong password")
-    return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    session.pop("logged_in", None)
-    return redirect(url_for("login"))
-
-
-@app.route("/dashboard")
-def dashboard():
-    if not session.get("logged_in"):
-        return redirect(url_for("login"))
-    return render_template("dashboard.html")
+ACCOUNT_TYPES      = ["Personal Account", "Family"]
+BIRTHDAY_TYPES     = ["Birthday", "Wedding Anniversary"]
+FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
+BUDGET_ACCOUNT     = "Family"
+MEMORY_TYPES       = ["🏆 Milestone", "💬 Quote", "💛 Moment"]
+MEAL_TYPES         = ["Breakfast", "Lunch", "Dinner"]
 
 
-@app.route("/dashboard-data")
-def dashboard_data():
-    if not session.get("logged_in"):
-        return jsonify({"error": "Unauthorized"}), 401
+# --- HELPERS ---
+def home_keyboard():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 home", callback_data='home')]])
 
-    results = {}
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        futures = {pool.submit(gas, {"note": k}): k for k in GAS_DASHBOARD_KEYS}
-        for fut in as_completed(futures):
-            k = futures[fut]
-            try:
-                results[k] = fut.result(timeout=15)
-            except Exception as exc:
-                results[k] = {"error": str(exc)}
-    return jsonify(results)
-
-
-@app.route("/notify", methods=["POST"])
-def notify():
-    data = request.json or {}
-    msg  = data.get("message", "").strip()
-    if not msg:
-        return jsonify({"status": "error", "message": "No message"}), 400
-
-    sent = 0
+async def send_to_all(text, parse_mode='Markdown'):
     for chat_id in NOTIFY_CHAT_IDS:
         try:
-            _updater.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-            sent += 1
-        except Exception as exc:
-            log.error("Notify error for %s: %s", chat_id, exc)
-    return jsonify({"status": "ok", "sent": sent})
+            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        except Exception as e:
+            print(f"Failed to send to {chat_id}: {e}")
 
 
-@app.route("/set_webhook", methods=["GET", "POST"])
-def set_webhook():
-    url    = f"{RAILWAY_URL}/webhook"
-    result = _updater.bot.set_webhook(url=url)
-    return jsonify({"status": "ok", "webhook": url, "result": result})
+# --- TIME RANGE PARSER ---
+_TIME_PART = r'(\d{1,2})(?:[:\.](\d{2}))?\s*(am|pm)'
+_RANGE_RE  = re.compile(rf'^{_TIME_PART}\s*(?:to|-)\s*{_TIME_PART}$', re.IGNORECASE)
+
+def parse_time_range(raw: str):
+    raw = raw.strip()
+    m = _RANGE_RE.match(raw)
+    if not m:
+        return raw, ''
+    h1, m1, mer1, h2, m2, mer2 = m.groups()
+    start = _normalise_time(h1, m1 or '00', mer1)
+    end   = _normalise_time(h2, m2 or '00', mer2)
+    return start, end
+
+def _normalise_time(h, m, meridiem):
+    return f"{int(h)}:{m.zfill(2)}{meridiem.lower()}"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BOT SETUP
-# ─────────────────────────────────────────────────────────────────────────────
-def build_dispatcher(dp):
-    dp.add_handler(CommandHandler("start", cmd_start))
-    dp.add_handler(CommandHandler("home",  cmd_start))
-    dp.add_handler(CommandHandler("help",  cmd_help))
-
-    # Callback handlers — most specific patterns first
-    dp.add_handler(CallbackQueryHandler(cb_cancel,   pattern=r"^cancel$"))
-    dp.add_handler(CallbackQueryHandler(cb_home,     pattern=r"^h:"))
-    dp.add_handler(CallbackQueryHandler(cb_expense,  pattern=r"^exp:"))
-    dp.add_handler(CallbackQueryHandler(cb_budget,   pattern=r"^bgt:"))
-    dp.add_handler(CallbackQueryHandler(cb_grocery,  pattern=r"^gro:"))
-    dp.add_handler(CallbackQueryHandler(cb_shopping, pattern=r"^shop:"))
-    dp.add_handler(CallbackQueryHandler(cb_fridge,   pattern=r"^fridge:"))
-    dp.add_handler(CallbackQueryHandler(cb_calendar, pattern=r"^cal:"))
-    dp.add_handler(CallbackQueryHandler(cb_todo,     pattern=r"^todo:"))
-    dp.add_handler(CallbackQueryHandler(cb_fertility,pattern=r"^fert:"))
-    dp.add_handler(CallbackQueryHandler(cb_birthday, pattern=r"^bd:"))
-    dp.add_handler(CallbackQueryHandler(cb_memory,   pattern=r"^mem:"))
-    dp.add_handler(CallbackQueryHandler(cb_meal,     pattern=r"^meal:"))
-
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+# --- SHOPPING MODE HELPER ---
+async def _render_shopping_list(query, context):
+    items   = context.user_data.get('shop_items', [])
+    checked = context.user_data.get('shop_checked', [])
+    keyboard = []
+    for item in items:
+        label = f"✅ {item}" if item in checked else f"⬜ {item}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"shop_toggle:{item}")])
+    keyboard.append([
+        InlineKeyboardButton(f"🛒 done ({len(checked)} checked)", callback_data='shop_confirm'),
+        InlineKeyboardButton("❌ cancel", callback_data='shop_cancel')
+    ])
+    await query.edit_message_text(
+        "🛒 *Shopping Mode*\n\ntap items to check them off, then tap Done.",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BOT THREAD WITH WATCHDOG RESTART
-# ─────────────────────────────────────────────────────────────────────────────
-_updater: Updater = None   # noqa: set by run_bot before Flask needs it
+# --- MEAL PLANNER HELPER ---
+async def _meal_next_day_or_finish(query, context, user):
+    days_queue = context.user_data.get('meal_days_queue', [])
+    if not days_queue:
+        plan  = context.user_data.get('meal_plan', [])
+        total = sum(len(d.get('meals', [])) for d in plan)
+        context.user_data.clear()
+        await query.edit_message_text(
+            f"✅ *Meal plan saved!*\n\n🍽 {total} meal{'s' if total != 1 else ''} planned across {len(plan)} day{'s' if len(plan) != 1 else ''}.\n\n_view it anytime from the Meal Planner menu._",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📅 view meal plan", callback_data='meals_view')],
+                [InlineKeyboardButton("🏠 home",           callback_data='home')]
+            ])
+        )
+        return
+    next_date, next_label = days_queue.pop(0)
+    context.user_data['meal_days_queue']        = days_queue
+    context.user_data['meal_current_day']       = next_date
+    context.user_data['meal_current_day_label'] = next_label
+    context.user_data['meal_day_types']         = []
+    keyboard = []
+    for mt in MEAL_TYPES:
+        keyboard.append([InlineKeyboardButton(f"⬜ {mt}", callback_data=f"meal_toggle_type:{mt}")])
+    keyboard.append([InlineKeyboardButton("➡️ confirm (0 selected)", callback_data='meal_confirm_types')])
+    keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_meals')])
+    await query.edit_message_text(
+        f"📅 *{next_label}*\n\nwhich meals are you planning for this day?",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
-def run_bot():
-    global _updater
-    while True:
+# --- HOME ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar'),
+         InlineKeyboardButton("✅ to-do list",        callback_data='view_todos')],
+        [InlineKeyboardButton("💛 memories",         callback_data='view_memories'),
+         InlineKeyboardButton("🎂 birthdays",        callback_data='view_birthdays')],
+        [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
+         InlineKeyboardButton("📊 budgets",          callback_data='view_budgets')],
+        [InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries'),
+         InlineKeyboardButton("🛍 shopping mode",    callback_data='shopping_mode')],
+        [InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge'),
+         InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
+        [InlineKeyboardButton("🍽 meal planner",     callback_data='view_meals'),
+         InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
+        [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
+    ]
+    text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+
+# --- HELP COMMAND ---
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "🏠 *Wong Family Bot — Commands & Buttons*\n\n"
+        "*🏠 Main Menu*\n"
+        "Type /start — open the main menu\n"
+        "Type /help — show this help message\n\n"
+        "*📅 Family Calendar*\n"
+        "• *Family calendar* button — view next 14 days\n"
+        "• *Add event* — title → date → time (or range e.g. `10.30am to 11.15am`) → notes\n"
+        "• *Delete event* — pick from list with confirmation\n\n"
+        "*✅ To-Do List*\n"
+        "• *To-do list* button — view all open tasks grouped by person\n"
+        "• *Add task* — task name → assign to family member → due date\n"
+        "• *Complete a task* — mark done\n"
+        "• *Delete a task* — remove with confirmation\n\n"
+        "*💛 Family Memories*\n"
+        "• *Memories* button — view recent or browse by person\n"
+        "• *Log a memory* — type (Milestone / Quote / Moment) → person → write it → date\n"
+        "• *Recent memories* — shows last 5 entries\n"
+        "• *Browse by person* — shows last 10 entries for that person\n\n"
+        "*🎂 Birthdays & Anniversaries*\n"
+        "• *Birthdays* button — view upcoming\n"
+        "• *Add birthday/anniversary* — name → type → date (MM-DD) → year → notes\n"
+        "• Reminders sent automatically at 7 days, 1 day, and on the day\n\n"
+        "*💰 Expenses*\n"
+        "• *Expenses* button — view this month's summary\n"
+        "• *Delete expense* — pick from recent entries with confirmation\n"
+        "• Expenses are added via Google Form\n\n"
+        "*📊 Budget Alerts*\n"
+        "• *Budgets* button — view all group budgets and current spend\n"
+        "• *Set / update a budget* — pick group → enter monthly limit\n"
+        "• Alerts sent automatically at 80% and 100% of budget\n"
+        "• Budget is tracked at group level (e.g. 🍽 Eating Out covers all eating out categories)\n\n"
+        "*🛒 Grocery List*\n"
+        "• *Grocery list* button — view items to buy\n"
+        "• Tap any item to mark it as bought\n"
+        "• Type `+item name` — add an item (e.g. `+milk`)\n"
+        "• Type `buy item name` — same as above\n\n"
+        "*🛍 Shopping Mode*\n"
+        "• *Shopping mode* button — see full grocery list with checkboxes\n"
+        "• Tap items to check them off, then tap Done to mark all as bought\n\n"
+        "*🍎 Fridge & Fruit*\n"
+        "• *Check fridge* button — see current fruit stock\n"
+        "• *Log eating fruit* button — deduct from stock\n"
+        "• Type `+fruits name qty` — add fruit stock (e.g. `+fruits apple 6`)\n\n"
+        "*🍽 Meal Planner*\n"
+        "• *Meal planner* button — view plan or add new meals\n"
+        "• *View meal plan* — enter how many days ahead to show\n"
+        "• *Plan a meal* — pick days → select meals (Breakfast/Lunch/Dinner) → dish name → ingredients\n"
+        "• Missing ingredients can be added to the grocery list in one tap\n\n"
+        "*🌸 Fertility Tracker*\n"
+        "• *Fertility* button — view cycle summary\n"
+        "• *Log period start / end* — enter date\n"
+        "• *Log ovulation* — enter date\n"
+        "• *Log symptoms* — pick from list\n\n"
+        "*📊 Dashboard*\n"
+        "• *View dashboard* button — opens the family web dashboard\n\n"
+        "_Tip: tap 🏠 home at any time to return to the main menu._"
+    )
+    if update.message:
+        await update.message.reply_text(text, parse_mode='Markdown')
+    else:
+        await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=home_keyboard())
+
+
+# --- BUTTON HANDLER ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user  = query.from_user.first_name
+    await query.answer()
+
+    if query.data == 'home':
+        context.user_data.clear()
+        await start(update, context)
+        return
+
+    # ------------------------------------------------------------------ GROCERY
+    if query.data == 'view_groceries':
+        payload = {"user": user, "note": "get_checklist"}
         try:
-            log.info("Starting bot…")
-            _updater = Updater(TOKEN, use_context=True, workers=8)
-            build_dispatcher(_updater.dispatcher)
-            _updater.start_polling(
-                poll_interval=0.5,
-                timeout=10,
-                drop_pending_updates=True,
-                allowed_updates=["message", "callback_query"],
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            items    = [i.strip() for i in response.text.split(",") if i.strip()]
+            if not items:
+                await query.edit_message_text("nothing to buy right now! 🛒", reply_markup=home_keyboard())
+                return
+            keyboard = [[InlineKeyboardButton(f"✅ {i}", callback_data=f"check_item:{i}")] for i in items]
+            keyboard.append([InlineKeyboardButton("🏠 home", callback_data='home')])
+            await query.edit_message_text("tap an item to mark it as bought:", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't fetch the checklist. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('check_item:'):
+        item_name = query.data.split(":", 1)[1]
+        payload   = {"user": user, "note": f"bought {item_name}"}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.answer(f"marked {item_name} as bought!")
+            await start(update, context)
+        except:
+            await query.answer("failed to update.")
+        return
+
+    # ------------------------------------------------------------------ SHOPPING MODE
+    if query.data == 'shopping_mode':
+        payload = {"user": user, "note": "get_checklist"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            items    = [i.strip() for i in response.text.split(",") if i.strip()]
+            if not items:
+                await query.edit_message_text(
+                    "🛒 *Shopping Mode*\n\nthe grocery list is empty! nothing to buy.",
+                    parse_mode='Markdown', reply_markup=home_keyboard()
+                )
+                return
+            context.user_data['shop_items']   = items
+            context.user_data['shop_checked'] = []
+            await _render_shopping_list(query, context)
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load grocery list. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('shop_toggle:'):
+        item    = query.data.split(":", 1)[1]
+        checked = context.user_data.get('shop_checked', [])
+        if item in checked:
+            checked.remove(item)
+        else:
+            checked.append(item)
+        context.user_data['shop_checked'] = checked
+        await _render_shopping_list(query, context)
+        return
+
+    if query.data == 'shop_confirm':
+        items   = context.user_data.get('shop_items', [])
+        checked = context.user_data.get('shop_checked', [])
+        if not checked:
+            await query.answer("you haven't checked anything off yet!", show_alert=True)
+            return
+        for item in checked:
+            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": f"bought {item}"}, timeout=10)
+        context.user_data.pop('shop_items',   None)
+        context.user_data.pop('shop_checked', None)
+        remaining = [i for i in items if i not in checked]
+        msg = f"✅ marked *{len(checked)}* item{'s' if len(checked) != 1 else ''} as bought!"
+        if remaining:
+            msg += f"\n\n🛒 *{len(remaining)}* item{'s' if len(remaining) != 1 else ''} still on the list."
+        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=home_keyboard())
+        return
+
+    if query.data == 'shop_cancel':
+        context.user_data.pop('shop_items',   None)
+        context.user_data.pop('shop_checked', None)
+        await start(update, context)
+        return
+
+    # ------------------------------------------------------------------ FRIDGE
+    if query.data == 'check_fridge':
+        payload = {"user": user, "note": "check fridge"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text(response.text or "fridge is empty ❄️", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't connect to fridge data.", reply_markup=home_keyboard())
+        return
+
+    # ------------------------------------------------------------------ FRUIT
+    if query.data == 'eat_fruit':
+        payload = {"user": user, "note": "get_fruit_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            fruits   = [f.strip() for f in response.text.split(",") if f.strip()]
+            if not fruits:
+                await query.edit_message_text("the fridge is empty of fruit! 🧊", reply_markup=home_keyboard())
+                return
+            keyboard = [[InlineKeyboardButton(f, callback_data=f"select_fruit:{f}")] for f in fruits]
+            keyboard.append([InlineKeyboardButton("🏠 home", callback_data='home')])
+            await query.edit_message_text("what did you eat? 🍎", reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("error connecting to fridge data.", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('select_fruit:'):
+        fruit_name = query.data.split(":", 1)[1]
+        context.user_data['selected_fruit'] = fruit_name
+        context.user_data['awaiting']       = 'fruit_qty'
+        await query.edit_message_text(f"how many {fruit_name}s did you have? (type the number)")
+        return
+
+    # ------------------------------------------------------------------ CALENDAR
+    if query.data == 'view_calendar':
+        payload = {"user": user, "note": "get_events"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("➕ add event",    callback_data='add_event')],
+                [InlineKeyboardButton("🗑 delete event", callback_data='delete_event')],
+                [InlineKeyboardButton("🏠 home",         callback_data='home')]
+            ]
+            display = text if text and text != "no_events" else "no upcoming events! add one below 📅"
+            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load calendar.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_event':
+        context.user_data['awaiting'] = 'event_title'
+        await query.edit_message_text(
+            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')\n\n💡 include a family member's name to auto-tag them\n(e.g. 'Mikaela swimming', 'Meaghan violin')",
+            parse_mode='Markdown'
+        )
+        return
+
+    if query.data == 'delete_event':
+        payload = {"user": user, "note": "get_event_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_events":
+                await query.edit_message_text("no upcoming events to delete! 📅", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 2:
+                    eid, title = parts[0], parts[1]
+                    date_str   = parts[2] if len(parts) > 2 else ''
+                    label      = f"🗑 {title}" + (f" ({date_str})" if date_str else "")
+                    keyboard.append([InlineKeyboardButton(label, callback_data=f"confirm_del_event:{eid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_calendar")])
+            await query.edit_message_text("which event do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load events. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_event:'):
+        eid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_event:{eid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_calendar")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this event?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_event:'):
+        eid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_event", "event_id": eid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ event deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete event.", reply_markup=home_keyboard())
+        return
+
+    # ------------------------------------------------------------------ EXPENSES (view + delete only)
+    if query.data == 'view_expenses':
+        payload = {"user": user, "note": "get_expenses"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("🗑 delete expense", callback_data='delete_expense')],
+                [InlineKeyboardButton("🏠 home",            callback_data='home')]
+            ]
+            display = text if text and text != "no_expenses" else "no expenses logged yet!"
+            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load expenses.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'delete_expense':
+        payload = {"user": user, "note": "get_expense_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_expenses":
+                await query.edit_message_text("no recent expenses to delete!", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    rid, label_text = parts[0], " · ".join(parts[1:])
+                    keyboard.append([InlineKeyboardButton(f"🗑 {label_text}", callback_data=f"confirm_del_exp:{rid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_expenses")])
+            await query.edit_message_text("which expense do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load expenses. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_exp:'):
+        rid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_exp:{rid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_expenses")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this expense?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_exp:'):
+        rid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_expense", "row_id": rid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ expense deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete expense.", reply_markup=home_keyboard())
+        return
+
+    # ------------------------------------------------------------------ TO-DO
+    if query.data == 'view_todos':
+        payload = {"user": user, "note": "get_todos"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("➕ add task",       callback_data='add_todo')],
+                [InlineKeyboardButton("✅ complete a task", callback_data='complete_todo'),
+                 InlineKeyboardButton("🗑 delete a task",  callback_data='delete_todo')],
+                [InlineKeyboardButton("🏠 home",            callback_data='home')]
+            ]
+            display = text if text and text != "no_todos" else "no tasks yet! add one below ✅"
+            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load to-do list.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_todo':
+        context.user_data['awaiting'] = 'todo_task'
+        await query.edit_message_text("✅ *add a task*\n\nwhat needs to be done?", parse_mode='Markdown')
+        return
+
+    if query.data.startswith('todo_assign:'):
+        member = query.data.split(":", 1)[1]
+        context.user_data['todo_assignee'] = member
+        context.user_data['awaiting']      = 'todo_due'
+        await query.edit_message_text(
+            f"assigned to: *{member}*\n\nany due date? (e.g. '20 May')\ntype 'skip' for none",
+            parse_mode='Markdown'
+        )
+        return
+
+    if query.data == 'complete_todo':
+        payload = {"user": user, "note": "get_todo_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_todos":
+                await query.edit_message_text("no open tasks to complete! 🎉", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    tid, task, assignee = parts[0], parts[1], parts[2]
+                    keyboard.append([InlineKeyboardButton(f"✅ {task} ({assignee})", callback_data=f"done_todo:{tid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
+            await query.edit_message_text("tap a task to mark it done:", reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load tasks.", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('done_todo:'):
+        tid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "complete_todo", "todo_id": tid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.answer("task marked done! 🎉")
+            await start(update, context)
+        except:
+            await query.answer("couldn't update task.")
+        return
+
+    if query.data == 'delete_todo':
+        payload = {"user": user, "note": "get_todo_list"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            raw      = response.text.strip()
+            if not raw or raw == "no_todos":
+                await query.edit_message_text("no open tasks to delete!", reply_markup=home_keyboard())
+                return
+            items    = [i.strip() for i in raw.split("||") if i.strip()]
+            keyboard = []
+            for item in items:
+                parts = item.split("|")
+                if len(parts) >= 3:
+                    tid, task, assignee = parts[0], parts[1], parts[2]
+                    keyboard.append([InlineKeyboardButton(f"🗑 {task} ({assignee})", callback_data=f"confirm_del_todo:{tid}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
+            await query.edit_message_text("which task do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load tasks.", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_todo:'):
+        tid = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_todo:{tid}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_todos")]
+        ]
+        await query.edit_message_text("are you sure you want to delete this task?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_todo:'):
+        tid     = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_todo", "todo_id": tid}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ task deleted!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't delete task.", reply_markup=home_keyboard())
+        return
+
+    # ------------------------------------------------------------------ FERTILITY
+    if query.data == 'view_fertility':
+        payload = {"user": user, "note": "get_fertility"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            text     = response.text.strip()
+            keyboard = [
+                [InlineKeyboardButton("🩸 log period start", callback_data='log_period_start'),
+                 InlineKeyboardButton("⏹ log period end",   callback_data='log_period_end')],
+                [InlineKeyboardButton("🥚 log ovulation",   callback_data='log_ovulation'),
+                 InlineKeyboardButton("🌡 log symptoms",    callback_data='log_symptoms')],
+                [InlineKeyboardButton("🏠 home",            callback_data='home')]
+            ]
+            display = text if text and text != "no_fertility" else "no fertility data yet. start logging below 🌸"
+            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
+        except:
+            await query.edit_message_text("couldn't load fertility data.", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'log_period_start':
+        context.user_data['awaiting']       = 'fertility_date'
+        context.user_data['fertility_type'] = 'Period Start'
+        await query.edit_message_text("🩸 *log period start*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
+        return
+
+    if query.data == 'log_period_end':
+        context.user_data['awaiting']       = 'fertility_date'
+        context.user_data['fertility_type'] = 'Period End'
+        await query.edit_message_text("⏹ *log period end*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
+        return
+
+    if query.data == 'log_ovulation':
+        context.user_data['awaiting']       = 'fertility_date'
+        context.user_data['fertility_type'] = 'Ovulation'
+        await query.edit_message_text("🥚 *log ovulation*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
+        return
+
+    if query.data == 'log_symptoms':
+        keyboard = [[InlineKeyboardButton(s, callback_data=f"fertility_symptom:{s}")] for s in FERTILITY_SYMPTOMS]
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_fertility")])
+        await query.edit_message_text("🌡 *what are you experiencing today?*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+
+    if query.data.startswith('fertility_symptom:'):
+        symptom = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "add_fertility", "fertility_type": "Symptom", "fertility_date": "", "fertility_notes": symptom}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text(f"✅ symptom logged: *{symptom}*", parse_mode='Markdown', reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
+        return
+
+    # ------------------------------------------------------------------ BIRTHDAYS
+    if query.data == 'view_birthdays':
+        payload = {"user": user, "note": "get_birthdays"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = []
+            try:
+                entries = _json.loads(response.text)
+            except:
+                pass
+            if not entries:
+                await query.edit_message_text(
+                    "no birthdays or anniversaries saved yet! 🎂\ntap *Add* to add one.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
+                        [InlineKeyboardButton("🏠 home", callback_data='home')]
+                    ])
+                )
+                return
+            today = _dt.now(SGT).date()
+            def days_away(e):
+                try:
+                    m, d = e['date'].split('-')
+                    ev = _date(today.year, int(m), int(d))
+                    if ev < today:
+                        ev = _date(today.year + 1, int(m), int(d))
+                    return (ev - today).days
+                except:
+                    return 999
+            entries.sort(key=days_away)
+            lines = ["🎂 *Birthdays & Anniversaries*\n"]
+            for e in entries:
+                diff = days_away(e)
+                if diff == 0:   when = "Today! 🥳"
+                elif diff == 1: when = "Tomorrow!"
+                else:           when = f"In {diff} days"
+                emoji = "🎂" if e.get('type') == 'Birthday' else "💍"
+                try:
+                    m, d = e['date'].split('-')
+                    month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                    date_label  = f"{month_names[int(m)-1]} {int(d)}"
+                except:
+                    date_label = e.get('date', '')
+                age_str = ""
+                if e.get('year'):
+                    try:
+                        ev_year = today.year if days_away(e) < 365 else today.year + 1
+                        if e.get('type') == 'Birthday':
+                            age_str = f" · turning {ev_year - int(e['year'])}"
+                        else:
+                            age_str = f" · {ev_year - int(e['year'])} years"
+                    except:
+                        pass
+                line = f"{emoji} *{e['name']}* — {e['type']}\n   {when} · {date_label}{age_str}"
+                if e.get('notes'):
+                    line += f"\n   _{e['notes']}_"
+                lines.append(line)
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
+                    [InlineKeyboardButton("🏠 home", callback_data='home')]
+                ])
             )
-            log.info("Bot polling started.")
-            _updater.idle()
-        except Exception:
-            log.error("Bot crashed:\n%s", traceback.format_exc())
-            time.sleep(5)
-            log.info("Restarting bot…")
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load birthdays. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_birthday':
+        context.user_data.clear()
+        context.user_data['awaiting'] = 'bday_name'
+        await query.edit_message_text(
+            "🎂 *add birthday / anniversary*\n\nwhat's the person's name?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    if query.data.startswith('bday_type:'):
+        btype = query.data.split(":", 1)[1]
+        context.user_data['bday_type'] = btype
+        context.user_data['awaiting']  = 'bday_date'
+        await query.edit_message_text(
+            f"type: *{btype}*\n\n📅 what's the date?\nsend as *MM-DD* (e.g. `05-23` for 23 May)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    # ------------------------------------------------------------------ BUDGETS
+    if query.data == 'view_budgets':
+        payload = {"user": user, "note": "get_budgets"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            budgets  = []
+            try:
+                budgets = _json.loads(response.text)
+            except:
+                pass
+            keyboard = [
+                [InlineKeyboardButton("➕ set / update a budget", callback_data='set_budget_start')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ]
+            if not budgets:
+                await query.edit_message_text(
+                    "📊 *Budget Tracker*\n\nno budgets set yet!\ntap below to add your first one.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+            lines = ["📊 *Budget Tracker — Family Account*\n"]
+            for b in sorted(budgets, key=lambda x: x['group']):
+                group = b['group']
+                limit = b['budget']
+                spent = b.get('spent', 0)
+                pct   = int(spent / limit * 100) if limit > 0 else 0
+                bar   = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
+                emoji = '🚨' if spent > limit else '⚠️' if pct >= 80 else '✅'
+                lines.append(f"{emoji} *{group}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load budgets. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'set_budget_start':
+        context.user_data.clear()
+        group_keys = list(EXPENSE_GROUPS.keys())
+        keyboard   = []
+        for i in range(0, len(group_keys), 2):
+            row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_grp:{i}")]
+            if i + 1 < len(group_keys):
+                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_grp:{i+1}"))
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
+        await query.edit_message_text(
+            "📊 *set a group budget*\n\nwhich category group?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith('budget_grp:'):
+        try:
+            idx        = int(query.data.split(":", 1)[1])
+            group_name = list(EXPENSE_GROUPS.keys())[idx]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong.", show_alert=True)
+            return
+        context.user_data['budget_group'] = group_name
+        context.user_data['awaiting']     = 'budget_amount'
+        cats     = EXPENSE_GROUPS[group_name]
+        cat_list = "\n".join([f"  · {c}" for c in cats])
+        await query.edit_message_text(
+            f"📂 *{group_name}*\n\n_covers:_\n{cat_list}\n\nwhat's the monthly budget for this group?\n(e.g. `500` for $500/month)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    # ------------------------------------------------------------------ MEMORIES
+    if query.data == 'view_memories':
+        keyboard = [
+            [InlineKeyboardButton("🕐 recent memories",  callback_data='memories_recent')],
+            [InlineKeyboardButton("👤 browse by person", callback_data='memories_by_person')],
+            [InlineKeyboardButton("➕ log a memory",     callback_data='add_memory')],
+            [InlineKeyboardButton("🏠 home",              callback_data='home')]
+        ]
+        await query.edit_message_text(
+            "💛 *Family Memories*\n\nwhat would you like to do?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data == 'memories_recent':
+        payload = {"user": user, "note": "get_memories_recent"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = _json.loads(response.text)
+            if not entries:
+                await query.edit_message_text(
+                    "💛 *Family Memories*\n\nno memories logged yet!\ntap below to add your first one. 🌟",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
+                        [InlineKeyboardButton("⬅️ back",         callback_data='view_memories')]
+                    ])
+                )
+                return
+            lines = ["💛 *Recent Family Memories*\n"]
+            for e in entries:
+                emoji = "🏆" if "Milestone" in e['type'] else "💬" if "Quote" in e['type'] else "💛"
+                lines.append(
+                    f"{emoji} *{e['type'].split(' ',1)[-1]}* — {e['person']}\n"
+                    f"   _{e['memory']}_\n"
+                    f"   📅 {e['date']} · logged by {e['loggedBy']}"
+                )
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
+                    [InlineKeyboardButton("⬅️ back",         callback_data='view_memories')],
+                    [InlineKeyboardButton("🏠 home",          callback_data='home')]
+                ])
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load memories. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'memories_by_person':
+        keyboard = [[InlineKeyboardButton(m, callback_data=f"memories_person:{m}")] for m in FAMILY_MEMBERS]
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data='view_memories')])
+        await query.edit_message_text("👤 *whose memories?*", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('memories_person:'):
+        person  = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "get_memories_by_person", "person": person}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = _json.loads(response.text)
+            if not entries:
+                await query.edit_message_text(
+                    f"💛 *{person}'s Memories*\n\nno memories logged for {person} yet!",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
+                        [InlineKeyboardButton("⬅️ back",         callback_data='memories_by_person')]
+                    ])
+                )
+                return
+            lines = [f"💛 *{person}'s Memories*\n"]
+            for e in entries:
+                emoji = "🏆" if "Milestone" in e['type'] else "💬" if "Quote" in e['type'] else "💛"
+                lines.append(
+                    f"{emoji} *{e['type'].split(' ',1)[-1]}*\n"
+                    f"   _{e['memory']}_\n"
+                    f"   📅 {e['date']} · logged by {e['loggedBy']}"
+                )
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
+                    [InlineKeyboardButton("⬅️ back",         callback_data='memories_by_person')],
+                    [InlineKeyboardButton("🏠 home",          callback_data='home')]
+                ])
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load memories. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_memory':
+        context.user_data.clear()
+        context.user_data['awaiting'] = 'memory_type'
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"memory_type:{t}")] for t in MEMORY_TYPES]
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_memories')])
+        await query.edit_message_text(
+            "💛 *log a memory*\n\nwhat kind of memory is this?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith('memory_type:'):
+        mtype = query.data.split(":", 1)[1]
+        context.user_data['memory_type'] = mtype
+        context.user_data.pop('awaiting', None)
+        keyboard = [[InlineKeyboardButton(m, callback_data=f"memory_person:{m}")] for m in FAMILY_MEMBERS]
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_memories')])
+        await query.edit_message_text(
+            f"type: *{mtype}*\n\nwho is this memory about?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith('memory_person:'):
+        person = query.data.split(":", 1)[1]
+        context.user_data['memory_person'] = person
+        context.user_data['awaiting']      = 'memory_text'
+        await query.edit_message_text(
+            f"about: *{person}*\n\n✏️ write the memory:\n_(e.g. 'Mikaela said her first full sentence today!')_",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_memories')]])
+        )
+        return
+
+    # ------------------------------------------------------------------ MEAL PLANNER
+    if query.data == 'view_meals':
+        keyboard = [
+            [InlineKeyboardButton("📅 view meal plan", callback_data='meals_view')],
+            [InlineKeyboardButton("➕ plan a meal",    callback_data='meals_add_start')],
+            [InlineKeyboardButton("🏠 home",           callback_data='home')]
+        ]
+        await query.edit_message_text(
+            "🍽 *Meal Planner*\n\nwhat would you like to do?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data == 'meals_view':
+        context.user_data['awaiting'] = 'meals_view_days'
+        await query.edit_message_text(
+            "🍽 *View Meal Plan*\n\nhow many days ahead? (e.g. `3`, `7`, `14`)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_meals')]])
+        )
+        return
+
+    if query.data == 'meals_add_start':
+        context.user_data.clear()
+        context.user_data['meal_plan'] = []
+        context.user_data['awaiting']  = 'meal_days_count'
+        await query.edit_message_text(
+            "🍽 *Plan Meals*\n\nhow many days would you like to plan for? (e.g. `3`, `7`)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_meals')]])
+        )
+        return
+
+    if query.data.startswith('meal_toggle_type:'):
+        mtype    = query.data.split(":", 1)[1]
+        selected = context.user_data.get('meal_day_types', [])
+        if mtype in selected:
+            selected.remove(mtype)
+        else:
+            selected.append(mtype)
+        context.user_data['meal_day_types'] = selected
+        day_label = context.user_data.get('meal_current_day_label', '')
+        keyboard  = []
+        for mt in MEAL_TYPES:
+            checked = "✅" if mt in selected else "⬜"
+            keyboard.append([InlineKeyboardButton(f"{checked} {mt}", callback_data=f"meal_toggle_type:{mt}")])
+        keyboard.append([InlineKeyboardButton(
+            f"➡️ confirm ({len(selected)} selected)" if selected else "➡️ confirm",
+            callback_data='meal_confirm_types'
+        )])
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_meals')])
+        await query.edit_message_text(
+            f"📅 *{day_label}*\n\nwhich meals are you planning?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data == 'meal_confirm_types':
+        selected = context.user_data.get('meal_day_types', [])
+        if not selected:
+            await query.answer("please select at least one meal!", show_alert=True)
+            return
+        context.user_data['meal_types_queue'] = [m for m in MEAL_TYPES if m in selected]
+        context.user_data['meal_types_done']  = []
+        context.user_data.pop('meal_day_types', None)
+        context.user_data['awaiting'] = 'meal_dish_name'
+        next_meal = context.user_data['meal_types_queue'][0]
+        day_label = context.user_data.get('meal_current_day_label', '')
+        await query.edit_message_text(
+            f"📅 *{day_label} — {next_meal}*\n\nwhat's the dish?\n_(e.g. 'chicken rice', 'pasta')_\ntype `skip` to leave blank.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_meals')]])
+        )
+        return
+
+    if query.data == 'meal_ingredients_yes':
+        missing = context.user_data.pop('meal_missing_ingredients', [])
+        if missing:
+            requests.post(GOOGLE_SCRIPT_URL, json={
+                "user":        user,
+                "note":        "add_meal_ingredients",
+                "ingredients": ",".join(missing)
+            }, timeout=10)
+        context.user_data.pop('meal_pending_check', None)
+        await _meal_next_day_or_finish(query, context, user)
+        return
+
+    if query.data == 'meal_ingredients_no':
+        context.user_data.pop('meal_missing_ingredients', None)
+        context.user_data.pop('meal_pending_check', None)
+        await _meal_next_day_or_finish(query, context, user)
+        return
+
+    # FALLBACK
+    await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
 
 
-def start_bot_thread():
-    t = threading.Thread(target=run_bot, daemon=True, name="BotWatchdog")
-    t.start()
-    return t
+# --- MESSAGE HANDLER ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user     = update.message.from_user.first_name
+    text     = update.message.text.strip()
+    awaiting = context.user_data.get('awaiting')
+
+    # FRUIT
+    if awaiting == 'fruit_qty':
+        fruit = context.user_data.pop('selected_fruit', '')
+        context.user_data.pop('awaiting', None)
+        if text.isdigit():
+            payload  = {"user": user, "note": f"-fruits {fruit} {text}"}
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text("please send a valid number.")
+        return
+
+    # CALENDAR FLOW
+    if awaiting == 'event_title':
+        context.user_data['event_title'] = text
+        context.user_data['awaiting']    = 'event_date'
+        await update.message.reply_text("📆 what date?\n(e.g. '15 Jun' or '15/06/2026')")
+        return
+
+    if awaiting == 'event_date':
+        context.user_data['event_date'] = text
+        context.user_data['awaiting']   = 'event_time'
+        await update.message.reply_text(
+            "🕐 what time?\n"
+            "• Single time: '3pm' or '14:30'\n"
+            "• Time range: '10.30am to 11.15am' or '2pm-3.30pm'\n"
+            "• Type 'skip' for all-day"
+        )
+        return
+
+    if awaiting == 'event_time':
+        raw_time = text if text.lower() != 'skip' else ''
+        if raw_time:
+            start_time, end_time = parse_time_range(raw_time)
+        else:
+            start_time, end_time = '', ''
+        context.user_data['event_time']     = start_time
+        context.user_data['event_end_time'] = end_time
+        context.user_data['awaiting']       = 'event_notes'
+        await update.message.reply_text("📝 any notes?\ntype 'skip' to leave blank")
+        return
+
+    if awaiting == 'event_notes':
+        notes    = text if text.lower() != 'skip' else ''
+        title    = context.user_data.pop('event_title', '')
+        date     = context.user_data.pop('event_date', '')
+        time_str = context.user_data.pop('event_time', '')
+        end_time = context.user_data.pop('event_end_time', '')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user": user, "note": "add_event",
+            "event_title": title, "event_date": date,
+            "event_time": time_str, "event_end_time": end_time,
+            "event_notes": notes
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            time_display = time_str
+            if end_time:
+                time_display = f"{time_str} – {end_time}"
+            elif not time_str:
+                time_display = "all day"
+            await update.message.reply_text(
+                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time_display}\n📝 {notes or '—'}".strip(),
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save the event.")
+        return
+
+    # TO-DO FLOW
+    if awaiting == 'todo_task':
+        context.user_data['todo_task'] = text
+        context.user_data.pop('awaiting', None)
+        keyboard = [[InlineKeyboardButton(m, callback_data=f"todo_assign:{m}")] for m in FAMILY_MEMBERS]
+        await update.message.reply_text(
+            f"📋 task: *{text}*\n\nwho is this for?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        return
+
+    if awaiting == 'todo_due':
+        due      = text if text.lower() != 'skip' else ''
+        task     = context.user_data.pop('todo_task', '')
+        assignee = context.user_data.pop('todo_assignee', 'Everyone')
+        context.user_data.pop('awaiting', None)
+        payload  = {
+            "user": user, "note": "add_todo",
+            "todo_task": task, "todo_assignee": assignee,
+            "todo_due": due, "todo_added_by": user
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            due_text = f"\n📅 due: {due}" if due else ""
+            await update.message.reply_text(
+                f"✅ task added!\n\n📋 *{task}*\n👤 assigned to: {assignee}{due_text}",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save the task.")
+        return
+
+    # FERTILITY FLOW
+    if awaiting == 'fertility_date':
+        fertility_type = context.user_data.pop('fertility_type', '')
+        context.user_data.pop('awaiting', None)
+        payload = {"user": user, "note": "add_fertility", "fertility_type": fertility_type, "fertility_date": text, "fertility_notes": ""}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            emoji = "🩸" if "Period" in fertility_type else "🥚"
+            await update.message.reply_text(f"✅ logged!\n\n{emoji} *{fertility_type}*\n📆 {text}", parse_mode='Markdown')
+        except:
+            await update.message.reply_text("couldn't save. please try again.")
+        return
+
+    # BIRTHDAY FLOW
+    if awaiting == 'bday_name':
+        context.user_data['bday_name'] = text.strip()
+        context.user_data.pop('awaiting', None)
+        keyboard = [[InlineKeyboardButton(t, callback_data=f"bday_type:{t}")] for t in BIRTHDAY_TYPES]
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
+        await update.message.reply_text(
+            f"name: *{text.strip()}*\n\nwhat type?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if awaiting == 'bday_date':
+        raw = text.strip()
+        if not re.match(r'^\d{2}-\d{2}$', raw):
+            await update.message.reply_text("please use MM-DD format, e.g. `05-23`.", parse_mode='Markdown')
+            return
+        try:
+            m_part, d_part = raw.split('-')
+            _dt(2000, int(m_part), int(d_part))
+        except ValueError:
+            await update.message.reply_text("that doesn't look like a valid date. try again (MM-DD).")
+            return
+        context.user_data['bday_date'] = raw
+        context.user_data['awaiting']  = 'bday_year'
+        await update.message.reply_text(
+            "what year were they born / married?\nthis lets me calculate age or years together.\nsend the year (e.g. `1990`) or type `skip`.",
+            parse_mode='Markdown'
+        )
+        return
+
+    if awaiting == 'bday_year':
+        if text.strip().lower() == 'skip':
+            context.user_data['bday_year'] = ''
+        else:
+            try:
+                yr = int(text.strip())
+                if yr < 1900 or yr > _dt.now(SGT).year:
+                    raise ValueError
+                context.user_data['bday_year'] = str(yr)
+            except ValueError:
+                await update.message.reply_text("please enter a valid year (e.g. `1990`) or type `skip`.", parse_mode='Markdown')
+                return
+        context.user_data['awaiting'] = 'bday_notes'
+        await update.message.reply_text("any notes? (e.g. gift ideas, favourite cake)\ntype `skip` to leave blank.", parse_mode='Markdown')
+        return
+
+    if awaiting == 'bday_notes':
+        notes   = '' if text.strip().lower() == 'skip' else text.strip()
+        name    = context.user_data.pop('bday_name', '')
+        btype   = context.user_data.pop('bday_type', 'Birthday')
+        bdate   = context.user_data.pop('bday_date', '')
+        byear   = context.user_data.pop('bday_year', '')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user": user, "note": "add_birthday",
+            "name": name, "type": btype, "date": bdate,
+            "year": byear, "notes": notes, "addedBy": user
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+            m_p, d_p    = bdate.split('-')
+            date_pretty = f"{month_names[int(m_p)-1]} {int(d_p)}"
+            year_part   = f" ({byear})" if byear else ""
+            await update.message.reply_text(
+                f"✅ saved!\n\n"
+                f"{'🎂' if btype == 'Birthday' else '💍'} *{name}* — {btype}\n"
+                f"📅 {date_pretty}{year_part}"
+                + (f"\n📝 {notes}" if notes else ""),
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save. please try again.")
+        return
+
+    # BUDGET FLOW
+    if awaiting == 'budget_amount':
+        try:
+            amount = float(text.replace('$', '').replace(',', ''))
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("please enter a valid amount (e.g. `500`).", parse_mode='Markdown')
+            return
+        group = context.user_data.pop('budget_group', '')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user":   user,
+            "note":   "set_budget",
+            "group":  group,
+            "budget": amount
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            cats     = EXPENSE_GROUPS.get(group, [])
+            cat_list = "\n".join([f"  · {c}" for c in cats])
+            await update.message.reply_text(
+                f"✅ budget set!\n\n📊 *{group}*\n💰 ${amount:.2f} / month\n\n_covers:_\n{cat_list}\n\nyou'll be notified at 80% and 100%.",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save the budget. please try again.")
+        return
+
+    # MEMORY FLOW
+    if awaiting == 'memory_text':
+        context.user_data['memory_text'] = text.strip()
+        context.user_data['awaiting']    = 'memory_date'
+        await update.message.reply_text(
+            "📅 when did this happen?\n(e.g. `14 May` or `14/05/2026`)\ntype `today` for today.",
+            parse_mode='Markdown'
+        )
+        return
+
+    if awaiting == 'memory_date':
+        memory_date   = '' if text.strip().lower() == 'today' else text.strip()
+        memory_text   = context.user_data.pop('memory_text',  '')
+        memory_type   = context.user_data.pop('memory_type',  '💛 Moment')
+        memory_person = context.user_data.pop('memory_person','Everyone')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user":          user,
+            "note":          "add_memory",
+            "memory_type":   memory_type,
+            "memory_person": memory_person,
+            "memory_text":   memory_text,
+            "memory_date":   memory_date
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            emoji        = "🏆" if "Milestone" in memory_type else "💬" if "Quote" in memory_type else "💛"
+            date_display = memory_date if memory_date else "today"
+            await update.message.reply_text(
+                f"✅ memory saved!\n\n"
+                f"{emoji} *{memory_type.split(' ',1)[-1]}* — {memory_person}\n"
+                f"_{memory_text}_\n"
+                f"📅 {date_display}",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save the memory. please try again.")
+        return
+
+    # MEAL PLANNER — view days
+    if awaiting == 'meals_view_days':
+        try:
+            days = int(text.strip())
+            if days < 1 or days > 30:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("please enter a number between 1 and 30.")
+            return
+        context.user_data.pop('awaiting', None)
+        payload  = {"user": user, "note": "get_meal_plan", "days": days}
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+        try:
+            entries = _json.loads(response.text)
+        except:
+            entries = []
+        if not entries:
+            await update.message.reply_text(
+                f"🍽 *Meal Plan — next {days} day{'s' if days != 1 else ''}*\n\nnothing planned yet!",
+                parse_mode='Markdown'
+            )
+            return
+        grouped     = OrderedDict()
+        meal_emojis = {"Breakfast": "🌅", "Lunch": "☀️", "Dinner": "🌙"}
+        for e in entries:
+            grouped.setdefault(e['date'], []).append(e)
+        lines = [f"🍽 *Meal Plan — next {days} day{'s' if days != 1 else ''}*\n"]
+        for date_label, meals in grouped.items():
+            lines.append(f"📅 *{date_label}*")
+            for m in meals:
+                emoji = meal_emojis.get(m['meal'], "🍽")
+                dish  = m['dish'] if m['dish'] else "—"
+                lines.append(f"  {emoji} {m['meal']}: {dish}")
+            lines.append("")
+        await update.message.reply_text("\n".join(lines).strip(), parse_mode='Markdown')
+        return
+
+    # MEAL PLANNER — how many days to plan
+    if awaiting == 'meal_days_count':
+        try:
+            days = int(text.strip())
+            if days < 1 or days > 14:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("please enter a number between 1 and 14.")
+            return
+        context.user_data.pop('awaiting', None)
+        today      = _dt.now(SGT).date()
+        days_queue = []
+        for i in range(days):
+            d     = today + timedelta(days=i)
+            label = d.strftime("%-d %b") + (" (Today)" if i == 0 else f" ({d.strftime('%A')})")
+            days_queue.append((d.strftime("%-d %b %Y"), label))
+        context.user_data['meal_days_queue']        = days_queue[1:]
+        first_date, first_label                     = days_queue[0]
+        context.user_data['meal_current_day']       = first_date
+        context.user_data['meal_current_day_label'] = first_label
+        context.user_data['meal_day_types']         = []
+        context.user_data['meal_plan']              = []
+        keyboard = []
+        for mt in MEAL_TYPES:
+            keyboard.append([InlineKeyboardButton(f"⬜ {mt}", callback_data=f"meal_toggle_type:{mt}")])
+        keyboard.append([InlineKeyboardButton("➡️ confirm (0 selected)", callback_data='meal_confirm_types')])
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_meals')])
+        await update.message.reply_text(
+            f"📅 *{first_label}*\n\nwhich meals are you planning for this day?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    # MEAL PLANNER — dish name
+    if awaiting == 'meal_dish_name':
+        dish         = '' if text.strip().lower() == 'skip' else text.strip()
+        queue        = context.user_data.get('meal_types_queue', [])
+        done         = context.user_data.get('meal_types_done', [])
+        day_label    = context.user_data.get('meal_current_day_label', '')
+        current_meal = queue.pop(0)
+        done.append({'meal': current_meal, 'dish': dish})
+        context.user_data['meal_types_queue'] = queue
+        context.user_data['meal_types_done']  = done
+        if queue:
+            next_meal = queue[0]
+            await update.message.reply_text(
+                f"📅 *{day_label} — {next_meal}*\n\nwhat's the dish?\ntype `skip` to leave blank.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_meals')]])
+            )
+            return
+        context.user_data['awaiting'] = 'meal_ingredients'
+        all_dishes = ", ".join([d['dish'] for d in done if d['dish']]) or "—"
+        await update.message.reply_text(
+            f"📅 *{day_label}* — meals set!\n\n"
+            f"dishes: _{all_dishes}_\n\n"
+            f"any ingredients to note?\n_(e.g. `chicken, broccoli, garlic`)_\ntype `skip` to leave blank.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_meals')]])
+        )
+        return
+
+    # MEAL PLANNER — ingredients
+    if awaiting == 'meal_ingredients':
+        ingredients = '' if text.strip().lower() == 'skip' else text.strip()
+        done        = context.user_data.get('meal_types_done', [])
+        day_date    = context.user_data.get('meal_current_day', '')
+        day_label   = context.user_data.get('meal_current_day_label', '')
+        for entry in done:
+            requests.post(GOOGLE_SCRIPT_URL, json={
+                "user":             user,
+                "note":             "add_meal",
+                "meal_date":        day_date,
+                "meal_type":        entry['meal'],
+                "meal_dish":        entry['dish'],
+                "meal_ingredients": ingredients
+            }, timeout=10)
+        plan = context.user_data.get('meal_plan', [])
+        plan.append({'date': day_date, 'label': day_label, 'meals': done, 'ingredients': ingredients})
+        context.user_data['meal_plan']       = plan
+        context.user_data['meal_types_done'] = []
+        context.user_data.pop('awaiting', None)
+        if ingredients:
+            check_resp = requests.post(GOOGLE_SCRIPT_URL, json={
+                "user":        user,
+                "note":        "check_meal_ingredients",
+                "ingredients": ingredients
+            }, timeout=10)
+            try:
+                missing = _json.loads(check_resp.text)
+            except:
+                missing = []
+            if missing:
+                context.user_data['meal_missing_ingredients'] = missing
+                missing_str = "\n".join([f"  • {m}" for m in missing])
+                await update.message.reply_text(
+                    f"🛒 *Missing from grocery list:*\n\n{missing_str}\n\nadd these to the grocery list?",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✅ yes, add them", callback_data='meal_ingredients_yes'),
+                         InlineKeyboardButton("❌ no thanks",     callback_data='meal_ingredients_no')]
+                    ])
+                )
+                return
+        days_queue = context.user_data.get('meal_days_queue', [])
+        if not days_queue:
+            plan  = context.user_data.get('meal_plan', [])
+            total = sum(len(d.get('meals', [])) for d in plan)
+            context.user_data.clear()
+            await update.message.reply_text(
+                f"✅ *Meal plan saved!*\n\n🍽 {total} meal{'s' if total != 1 else ''} planned across {len(plan)} day{'s' if len(plan) != 1 else ''}.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📅 view meal plan", callback_data='meals_view')],
+                    [InlineKeyboardButton("🏠 home",           callback_data='home')]
+                ])
+            )
+            return
+        next_date, next_label = days_queue.pop(0)
+        context.user_data['meal_days_queue']        = days_queue
+        context.user_data['meal_current_day']       = next_date
+        context.user_data['meal_current_day_label'] = next_label
+        context.user_data['meal_day_types']         = []
+        keyboard = []
+        for mt in MEAL_TYPES:
+            keyboard.append([InlineKeyboardButton(f"⬜ {mt}", callback_data=f"meal_toggle_type:{mt}")])
+        keyboard.append([InlineKeyboardButton("➡️ confirm (0 selected)", callback_data='meal_confirm_types')])
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_meals')])
+        await update.message.reply_text(
+            f"📅 *{next_label}*\n\nwhich meals are you planning for this day?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    # DEFAULT — pass to GAS catch-all
+    payload  = {"user": user, "note": text}
+    response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+    await update.message.reply_text(response.text)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────────────────────────────────────
+# --- PHOTO HANDLER ---
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user        = update.message.from_user.first_name
+    photo_file  = await update.message.photo[-1].get_file()
+    image_bytes = await photo_file.download_as_bytearray()
+    payload     = {
+        "user": user, "note": update.message.caption or "",
+        "fileData": base64.b64encode(image_bytes).decode('utf-8'),
+        "fileName": f"{user}_{photo_file.file_id}.jpg"
+    }
+    response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
+    await update.message.reply_text(response.text)
+
+
+# --- NOTIFICATION HANDLER ---
+async def handle_notify(notify_type: str, data: dict):
+    if notify_type == "morning_digest":
+        await send_to_all(data.get("message", ""))
+    elif notify_type == "expense_summary":
+        await send_to_all(f"💰 *Wong Family — Monthly Expense Summary*\n\n{data.get('message', '')}")
+    elif notify_type == "expense_report":
+        await send_to_all(f"📊 *Wong Family — Last Month's Full Report*\n\n{data.get('message', '')}")
+    elif notify_type == "birthday_reminder":
+        await send_to_all(data.get("message", ""))
+    elif notify_type == "budget_alert":
+        await send_to_all(data.get("message", ""))
+    elif notify_type == "fertile_soon":
+        await send_to_all(f"🌸 *Fertile Window in 3 Days*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nPlan accordingly 💕")
+    elif notify_type == "fertile_tomorrow":
+        await send_to_all(f"🌸 *Fertile Window Starts Tomorrow!*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nYou've got this! 💕")
+    elif notify_type == "period_due":
+        await send_to_all(f"🩸 *Period Due Soon*\n\nEstimated next period: *{data.get('next_period')}*\nMake sure you're prepared! 🌺")
+
+
+# --- BUILD APPLICATION ---
+application = ApplicationBuilder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(CallbackQueryHandler(button_handler))
+application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+
+loop = asyncio.new_event_loop()
+
+async def start_bot():
+    await application.initialize()
+    await application.start()
+    await application.bot.set_webhook(f"{RAILWAY_URL}/")
+    print("✅ Wong Family bot initialized + webhook registered")
+
+def start_bot_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(start_bot())
+    loop.run_forever()
+
+def watchdog():
+    while True:
+        time.sleep(60)
+        if not bot_thread.is_alive():
+            print("⚠️ Bot thread died — restarting")
+            new_thread = threading.Thread(target=start_bot_loop, daemon=True)
+            new_thread.start()
+
+bot_thread      = threading.Thread(target=start_bot_loop, daemon=True)
+bot_thread.start()
+watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+watchdog_thread.start()
+time.sleep(2)
+
+
+# --- FLASK ---
+app = Flask(__name__)
+
+@app.route('/dashboard', methods=['GET'])
+def dashboard():
+    return send_file('templates/dashboard.html')
+
+
+def _gas_post(payload, timeout=15):
+    return requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=timeout)
+
+
+@app.route('/dashboard-data', methods=['GET'])
+def dashboard_data():
+    tasks = {
+        "expenses":    {"user": "dashboard", "note": "get_expenses_raw"},
+        "events":      {"user": "dashboard", "note": "get_events"},
+        "todos":       {"user": "dashboard", "note": "get_todos_by_person"},
+        "groceries":   {"user": "dashboard", "note": "get_checklist"},
+        "fertility":   {"user": "dashboard", "note": "get_fertility"},
+        "kid_Mikaela": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Mikaela"},
+        "kid_Meaghan": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Meaghan"},
+        "kid_Eleanor": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Eleanor"},
+        "birthdays":   {"user": "dashboard", "note": "get_birthdays_dashboard"},
+        "budgets":     {"user": "dashboard", "note": "get_budgets"},
+        "memories":    {"user": "dashboard", "note": "get_memories_dashboard"},
+        "meals":       {"user": "dashboard", "note": "get_meal_plan_dashboard"},
+    }
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        future_to_key = {executor.submit(_gas_post, payload): key for key, payload in tasks.items()}
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            try:
+                results[key] = future.result()
+            except Exception as exc:
+                print(f"GAS fetch failed [{key}]: {exc}")
+                results[key] = None
+
+    def safe_text(key):
+        r = results.get(key)
+        return r.text.strip() if r and r.ok else ''
+
+    try:
+        # EXPENSES
+        exp_text = safe_text("expenses")
+        try:
+            rows = _json.loads(exp_text) if exp_text else []
+        except:
+            rows = []
+        expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
+        for r in rows:
+            expenses['month_total'] += r.get('amount', 0)
+            cat    = r.get('category', 'Other')
+            person = r.get('account', 'unknown')
+            expenses['by_category'][cat]  = expenses['by_category'].get(cat, 0)  + r.get('amount', 0)
+            expenses['by_person'][person] = expenses['by_person'].get(person, 0) + r.get('amount', 0)
+
+        # CALENDAR
+        cal_raw = safe_text("events")
+        events  = []
+        if cal_raw and cal_raw != "no_events":
+            blocks = cal_raw.split('\n\n')
+            for block in blocks:
+                lines = block.strip().split('\n')
+                if len(lines) >= 2:
+                    title    = lines[0].replace('📅','').replace('*','').strip()
+                    detail   = lines[1].strip()
+                    parts    = detail.split('·')
+                    date_str = parts[0].strip() if len(parts) > 0 else '—'
+                    time_str = parts[1].strip() if len(parts) > 1 else '—'
+                    combined = ' '.join(lines).lower()
+                    tags = [m for m in FAMILY_MEMBERS if m != 'Everyone' and m.lower() in combined]
+                    if title and 'upcoming' not in title.lower():
+                        events.append({"title": title, "date": date_str, "time": time_str, "tags": tags})
+
+        # TO-DO
+        todo_raw = safe_text("todos")
+        todos_by_person = {}
+        if todo_raw and todo_raw != "no_todos":
+            try:
+                todos_by_person = _json.loads(todo_raw)
+            except:
+                todos_by_person = {}
+
+        # GROCERY
+        groc_raw  = safe_text("groceries")
+        groceries = []
+        if groc_raw:
+            for item in groc_raw.split(','):
+                item = item.strip()
+                if item:
+                    groceries.append({"name": item})
+
+        # FERTILITY
+        fert_raw  = safe_text("fertility")
+        fertility = {}
+        if fert_raw and fert_raw != "no_fertility":
+            for line in fert_raw.split('\n'):
+                line = line.strip().replace('*','')
+                if 'last period start:' in line.lower():
+                    fertility['last_period_start'] = line.split(':',1)[1].strip()
+                elif 'next period' in line.lower():
+                    fertility['next_period'] = line.split(':',1)[1].strip()
+                elif 'fertile window' in line.lower():
+                    fertility['fertile_window'] = line.split(':',1)[1].strip()
+                elif 'last ovulation' in line.lower():
+                    fertility['last_ovulation'] = line.split(':',1)[1].strip()
+                elif 'duration' in line.lower():
+                    fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
+
+        # KIDS CALENDAR
+        kids_calendar = {}
+        for kid in ['Mikaela', 'Meaghan', 'Eleanor']:
+            kid_raw    = safe_text(f"kid_{kid}")
+            kid_events = []
+            if kid_raw and kid_raw != "no_kid_events":
+                for block in kid_raw.split('\n\n'):
+                    block_lines = block.strip().split('\n')
+                    if len(block_lines) >= 2:
+                        t        = block_lines[0].replace('📅','').replace('*','').strip()
+                        detail   = block_lines[1].strip()
+                        bparts   = detail.split('·')
+                        date_str = bparts[0].strip() if len(bparts) > 0 else '—'
+                        time_str = bparts[1].strip() if len(bparts) > 1 else '—'
+                        if t and 'upcoming' not in t.lower():
+                            kid_events.append({"title": t, "date": date_str, "time": time_str})
+            kids_calendar[kid] = kid_events
+
+        # BIRTHDAYS
+        bd_raw    = safe_text("birthdays")
+        birthdays = []
+        if bd_raw:
+            try:
+                birthdays = _json.loads(bd_raw)
+            except:
+                birthdays = []
+
+        # BUDGETS
+        bdg_raw = safe_text("budgets")
+        budgets = []
+        if bdg_raw:
+            try:
+                budgets = _json.loads(bdg_raw)
+            except:
+                budgets = []
+
+        # MEMORIES
+        mem_raw  = safe_text("memories")
+        memories = []
+        if mem_raw:
+            try:
+                memories = _json.loads(mem_raw)
+            except:
+                memories = []
+
+        # MEAL PLAN
+        meals_raw = safe_text("meals")
+        meals     = []
+        if meals_raw:
+            try:
+                meals = _json.loads(meals_raw)
+            except:
+                meals = []
+
+        return _json.dumps({
+            "expenses":        expenses,
+            "events":          events,
+            "todos_by_person": todos_by_person,
+            "groceries":       groceries,
+            "fertility":       fertility,
+            "kids_calendar":   kids_calendar,
+            "birthdays":       birthdays,
+            "budgets":         budgets,
+            "memories":        memories,
+            "meals":           meals,
+        }), 200, {'Content-Type': 'application/json'}
+
+    except Exception as e:
+        print(f"DASHBOARD ERROR: {e}")
+        return _json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
+
+
+@app.route('/', methods=['GET'])
+def healthcheck():
+    return "ok", 200
+
+@app.route('/', methods=['POST'])
+def webhook():
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return "ignored", 200
+        future = asyncio.run_coroutine_threadsafe(
+            application.process_update(Update.de_json(data, application.bot)), loop
+        )
+        future.result(timeout=30)
+        return "ok", 200
+    except Exception as e:
+        print(f"WEBHOOK ERROR: {e}")
+        return "ok", 200
+
+@app.route('/notify', methods=['POST'])
+def notify():
+    try:
+        data        = request.get_json(silent=True)
+        notify_type = data.get("type", "")
+        future      = asyncio.run_coroutine_threadsafe(handle_notify(notify_type, data), loop)
+        future.result(timeout=30)
+        return "ok", 200
+    except Exception as e:
+        print(f"NOTIFY ERROR: {e}")
+        return "error", 200
+
+@app.route('/set_webhook', methods=['GET'])
+def set_webhook():
+    url      = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
+    response = requests.post(url, json={"url": f"{RAILWAY_URL}/"})
+    return response.json()
+
 if __name__ == "__main__":
-    start_bot_thread()
-    time.sleep(2)                            # let updater initialise
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
