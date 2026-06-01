@@ -141,6 +141,100 @@ async def _meal_next_day_or_finish(query, context, user):
     )
 
 
+# --- BOUGHT ITEMS HELPERS ---
+def _parse_bought_text(raw: str) -> list:
+    items = []
+    for line in raw.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r'^(.+?)\s*[-–]\s*(\d+)\s*$', line)
+        if match:
+            items.append({
+                "name": match.group(1).strip(),
+                "qty":  int(match.group(2))
+            })
+    return items
+
+async def _process_bought_text(update_or_query, context, raw: str):
+    items = _parse_bought_text(raw)
+    if not items:
+        msg = "⚠️ couldn't parse that. use this format:\n\n`Apples - 4\nMilk - 2`"
+        if hasattr(update_or_query, 'message') and update_or_query.message:
+            await update_or_query.message.reply_text(msg, parse_mode='Markdown')
+        else:
+            await update_or_query.edit_message_text(msg, parse_mode='Markdown', reply_markup=home_keyboard())
+        return
+
+    context.user_data['bought_items'] = items
+
+    lines = ["🛍 *Here's what I'll add:*\n"]
+    for it in items:
+        lines.append(f"  • {it['name']} × {it['qty']}")
+    lines.append("\nwhere should these go?")
+
+    keyboard = [
+        [InlineKeyboardButton("🧊 fridge only",    callback_data='bought_save:fridge')],
+        [InlineKeyboardButton("🛒 groceries only", callback_data='bought_save:grocery')],
+        [InlineKeyboardButton("🧊🛒 both",         callback_data='bought_save:both')],
+        [InlineKeyboardButton("❌ cancel",         callback_data='home')]
+    ]
+    msg_text = "\n".join(lines)
+    if hasattr(update_or_query, 'message') and update_or_query.message:
+        await update_or_query.message.reply_text(msg_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update_or_query.edit_message_text(msg_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def _ask_conflict(query, context, item, existing_names):
+    existing_qty = existing_names.get(item['name'].lower(), {}).get('stock', 0)
+    total_conflicts = len(context.user_data.get('fridge_conflicts', []))
+    current_idx     = context.user_data.get('conflict_index', 0)
+    keyboard = [
+        [InlineKeyboardButton(
+            f"➕ add ({existing_qty} + {item['qty']} = {existing_qty + item['qty']})",
+            callback_data='receipt_qty:add'
+        )],
+        [InlineKeyboardButton(
+            f"🔄 replace with {item['qty']}",
+            callback_data='receipt_qty:replace'
+        )]
+    ]
+    await query.edit_message_text(
+        f"🧊 *{item['name']}* is already in the fridge (stock: {existing_qty}).\n\n"
+        f"you bought {item['qty']} more. what should i do?\n\n"
+        f"_{current_idx + 1} of {total_conflicts} conflict(s)_",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def _save_bought_items(query, context, user_name, items, destination, fridge_override=None):
+    results = []
+
+    if destination in ('fridge', 'both'):
+        fridge_items = fridge_override if fridge_override is not None else items
+        try:
+            payload = {"user": user_name, "note": "update_fridge_batch", "items": fridge_items}
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
+            results.append(f"🧊 fridge updated: {len(fridge_items)} item(s)")
+        except Exception as e:
+            results.append(f"⚠️ fridge update failed: {str(e)}")
+
+    if destination in ('grocery', 'both'):
+        try:
+            payload = {"user": user_name, "note": "add_grocery_batch", "items": items}
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
+            results.append(f"🛒 groceries logged: {len(items)} item(s)")
+        except Exception as e:
+            results.append(f"⚠️ grocery update failed: {str(e)}")
+
+    context.user_data.clear()
+    await query.edit_message_text(
+        "✅ *Done!*\n\n" + "\n".join(results),
+        parse_mode='Markdown',
+        reply_markup=home_keyboard()
+    )
+
+
 # --- HOME ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -197,8 +291,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*📊 Budget Alerts*\n"
         "• *Budgets* button — view all group budgets and current spend\n"
         "• *Set / update a budget* — pick group → enter monthly limit\n"
-        "• Alerts sent automatically at 80% and 100% of budget\n"
-        "• Budget is tracked at group level (e.g. 🍽 Eating Out covers all eating out categories)\n\n"
+        "• Alerts sent automatically at 80% and 100% of budget\n\n"
         "*🛒 Grocery List*\n"
         "• *Grocery list* button — view items to buy\n"
         "• Tap any item to mark it as bought\n"
@@ -207,14 +300,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*🛍 Shopping Mode*\n"
         "• *Shopping mode* button — see full grocery list with checkboxes\n"
         "• Tap items to check them off, then tap Done to mark all as bought\n\n"
-        "*🍎 Fridge & Fruit*\n"
+        "*🍎 Fridge & Fruit Stock*\n"
         "• *Check fridge* button — see current fruit stock\n"
         "• *Log eating fruit* button — deduct from stock\n"
-        "• Type `+fruits name qty` — add fruit stock (e.g. `+fruits apple 6`)\n\n"
+        "• Type `+fruits name qty` — add fruit stock (e.g. `+fruits apple 6`)\n"
+        "• Send a list (one item per line, `Name - qty`) to update fridge & groceries\n\n"
         "*🍽 Meal Planner*\n"
         "• *Meal planner* button — view plan or add new meals\n"
         "• *View meal plan* — enter how many days ahead to show\n"
-        "• *Plan a meal* — pick days → select meals (Breakfast/Lunch/Dinner) → dish name → ingredients\n"
+        "• *Plan a meal* — pick days → select meals → dish name → ingredients\n"
         "• Missing ingredients can be added to the grocery list in one tap\n\n"
         "*🌸 Fertility Tracker*\n"
         "• *Fertility* button — view cycle summary\n"
@@ -422,7 +516,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("couldn't delete event.", reply_markup=home_keyboard())
         return
 
-    # ------------------------------------------------------------------ EXPENSES (view + delete only)
+    # ------------------------------------------------------------------ EXPENSES
     if query.data == 'view_expenses':
         payload = {"user": user, "note": "get_expenses"}
         try:
@@ -1026,20 +1120,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _meal_next_day_or_finish(query, context, user)
         return
 
-# ------------------------------------------------------------------ BOUGHT ITEMS
+    # ------------------------------------------------------------------ BOUGHT ITEMS
     if query.data.startswith('bought_save:'):
-        destination = query.data.split(':')[1]  # 'fridge', 'grocery', or 'both'
+        destination = query.data.split(':')[1]
         items       = context.user_data.get('bought_items', [])
         if not items:
             await query.edit_message_text("⚠️ no items found. please try again.", reply_markup=home_keyboard())
             return
 
-        # For fridge — check conflicts first
         if destination in ('fridge', 'both'):
             try:
-                res = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_fridge"}, timeout=10)
-                import json as _json
-                existing = _json.loads(res.text) if res.text.strip().startswith('[') else []
+                res            = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_fridge"}, timeout=10)
+                existing       = _json.loads(res.text) if res.text.strip().startswith('[') else []
                 existing_names = {e['name'].lower(): e for e in existing}
             except:
                 existing_names = {}
@@ -1047,18 +1139,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conflicts     = [it for it in items if it['name'].lower() in existing_names]
             non_conflicts = [it for it in items if it['name'].lower() not in existing_names]
 
-            context.user_data['fridge_conflicts']    = conflicts
+            context.user_data['fridge_conflicts']     = conflicts
             context.user_data['fridge_non_conflicts'] = non_conflicts
-            context.user_data['fridge_resolved']     = []
-            context.user_data['conflict_index']      = 0
-            context.user_data['existing_names']      = existing_names
-            context.user_data['bought_destination']  = destination
+            context.user_data['fridge_resolved']      = []
+            context.user_data['conflict_index']       = 0
+            context.user_data['existing_names']       = existing_names
+            context.user_data['bought_destination']   = destination
 
             if conflicts:
                 await _ask_conflict(query, context, conflicts[0], existing_names)
                 return
 
-        # No fridge conflicts (or grocery-only) — save directly
         await _save_bought_items(query, context, user, items, destination)
         return
 
@@ -1070,8 +1161,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         resolved  = context.user_data.get('fridge_resolved', [])
         existing  = context.user_data.get('existing_names', {})
 
-        existing_qty = existing.get(item['name'].lower(), {}).get('stock', 0)
-        item['qty']  = existing_qty + item['qty'] if action == 'add' else item['qty']
+        existing_qty   = existing.get(item['name'].lower(), {}).get('stock', 0)
+        item['qty']    = existing_qty + item['qty'] if action == 'add' else item['qty']
         item['action'] = 'replace' if action == 'replace' else 'add'
         resolved.append(item)
         context.user_data['fridge_resolved'] = resolved
@@ -1088,7 +1179,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _save_bought_items(query, context, user, all_items, destination, fridge_override=all_fridge)
         return
 
-    
     # FALLBACK
     await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
 
@@ -1111,22 +1201,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("please send a valid number.")
         return
 
-    # ── ADD THIS BLOCK 1: explicit +bought trigger ──────────────────────
+    # BOUGHT ITEMS — explicit trigger
     if text.startswith('+bought') or text.lower().startswith('bought:'):
         raw = text.replace('+bought', '').replace('bought:', '').strip()
         context.user_data['bought_raw'] = raw
         await _process_bought_text(update, context, raw)
         return
 
-    # ── ADD THIS BLOCK 2: auto-detect "Item - qty" list ────────────────
-    import re as _re
-    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-    bought_pattern = _re.compile(r'^(.+?)\s*[-–]\s*(\d+)\s*$')
+    # BOUGHT ITEMS — auto-detect "Item - qty" list
+    lines          = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    bought_pattern = re.compile(r'^(.+?)\s*[-–]\s*(\d+)\s*$')
     if len(lines) >= 1 and all(bought_pattern.match(l) for l in lines):
         context.user_data['bought_raw'] = text
         await _process_bought_text(update, context, text)
         return
-        
+
     # CALENDAR FLOW
     if awaiting == 'event_title':
         context.user_data['event_title'] = text
@@ -1555,20 +1644,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response.text)
 
 
-# --- PHOTO HANDLER ---
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user        = update.message.from_user.first_name
-    photo_file  = await update.message.photo[-1].get_file()
-    image_bytes = await photo_file.download_as_bytearray()
-    payload     = {
-        "user": user, "note": update.message.caption or "",
-        "fileData": base64.b64encode(image_bytes).decode('utf-8'),
-        "fileName": f"{user}_{photo_file.file_id}.jpg"
-    }
-    response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
-    await update.message.reply_text(response.text)
-
-
 # --- NOTIFICATION HANDLER ---
 async def handle_notify(notify_type: str, data: dict):
     if notify_type == "morning_digest":
@@ -1594,7 +1669,6 @@ application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(CallbackQueryHandler(button_handler))
-application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
 loop = asyncio.new_event_loop()
@@ -1845,80 +1919,6 @@ def set_webhook():
     url      = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     response = requests.post(url, json={"url": f"{RAILWAY_URL}/"})
     return response.json()
-
-def _parse_bought_text(raw: str) -> list:
-    """Parse 'Item - qty' lines into a list of dicts."""
-    import re
-    items = []
-    for line in raw.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        match = re.match(r'^(.+?)\s*[-–]\s*(\d+)\s*$', line)
-        if match:
-            items.append({
-                "name": match.group(1).strip(),
-                "qty": int(match.group(2))
-            })
-    return items
-
-async def _process_bought_text(update_or_query, context, raw: str):
-    """Show parsed preview and ask for confirmation."""
-    items = _parse_bought_text(raw)
-    if not items:
-        msg = "⚠️ couldn't parse that. use this format:\n\n`Apples - 4\nMilk - 2`"
-        if hasattr(update_or_query, 'message') and update_or_query.message:
-            await update_or_query.message.reply_text(msg, parse_mode='Markdown')
-        else:
-            await update_or_query.edit_message_text(msg, parse_mode='Markdown', reply_markup=home_keyboard())
-        return
-
-    context.user_data['bought_items'] = items
-
-    lines = ["🛍 *Here's what I'll add:*\n"]
-    for it in items:
-        lines.append(f"  • {it['name']} × {it['qty']}")
-    lines.append("\nwhere should these go?")
-
-    keyboard = [
-        [InlineKeyboardButton("🧊 fridge only",        callback_data='bought_save:fridge')],
-        [InlineKeyboardButton("🛒 groceries only",     callback_data='bought_save:grocery')],
-        [InlineKeyboardButton("🧊🛒 both",             callback_data='bought_save:both')],
-        [InlineKeyboardButton("❌ cancel",             callback_data='home')]
-    ]
-    msg_text = "\n".join(lines)
-    if hasattr(update_or_query, 'message') and update_or_query.message:
-        await update_or_query.message.reply_text(msg_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update_or_query.edit_message_text(msg_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def _save_bought_items(query, context, user_name, items, destination, fridge_override=None):
-    """Save bought items to fridge and/or groceries sheet."""
-    results = []
-
-    if destination in ('fridge', 'both'):
-        fridge_items = fridge_override if fridge_override is not None else items
-        try:
-            payload = {"user": user_name, "note": "update_fridge_batch", "items": fridge_items}
-            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
-            results.append(f"🧊 fridge updated: {len(fridge_items)} item(s)")
-        except Exception as e:
-            results.append(f"⚠️ fridge update failed: {str(e)}")
-
-    if destination in ('grocery', 'both'):
-        try:
-            payload = {"user": user_name, "note": "add_grocery_batch", "items": items}
-            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=15)
-            results.append(f"🛒 groceries logged: {len(items)} item(s)")
-        except Exception as e:
-            results.append(f"⚠️ grocery update failed: {str(e)}")
-
-    context.user_data.clear()
-    await query.edit_message_text(
-        "✅ *Done!*\n\n" + "\n".join(results),
-        parse_mode='Markdown',
-        reply_markup=home_keyboard()
-    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
