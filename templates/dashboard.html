@@ -879,6 +879,40 @@ function renderTables(data) {
   document.getElementById('tables-grid').innerHTML = html;
 }
 
+  // ------------------------------------------------------------------ 14. RECURRING EXPENSES
+  const recurring = data.recurring || [];
+
+  html += `
+  <div class="table-card">
+    <div class="table-header">
+      <h3>🔄 Recurring Expenses</h3>
+      <span class="badge badge-brown">${recurring.length} active</span>
+    </div>
+    <div class="table-body">`;
+
+  if (recurring.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">🔄</div>No recurring expenses set up — add them via the bot!</div>`;
+  } else {
+    html += `<table><thead><tr><th>Name</th><th>Amount</th><th>Due</th><th>Next</th></tr></thead><tbody>`;
+    recurring.forEach(e => {
+      const suffix  = e.day === 1 ? 'st' : e.day === 2 ? 'nd' : e.day === 3 ? 'rd' : 'th';
+      const when    = e.daysLeft === 0 ? '🔴 Today'
+                    : e.daysLeft === 1 ? '🟡 Tomorrow'
+                    : e.daysLeft <= 5  ? `🟡 In ${e.daysLeft} days`
+                    : `🟢 In ${e.daysLeft} days`;
+      html += `<tr>
+        <td><strong>${e.name}</strong><br><span style="font-size:11px;color:var(--text-soft);">${e.category}</span></td>
+        <td>$${e.amount.toFixed(2)}</td>
+        <td style="color:var(--text-soft);">${e.day}${suffix}</td>
+        <td style="font-weight:500;">${when}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    const monthlyTotal = recurring.reduce((s, e) => s + e.amount, 0);
+    html += `<div class="overflow-note">total committed: $${monthlyTotal.toFixed(2)} / month</div>`;
+  }
+  html += `</div></div>`;
+  
 // ---- KID CARD BUILDER ----
 function buildKidCard(kid, kidEvents, kidTasks, colour) {
   let html = `
