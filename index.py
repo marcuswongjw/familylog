@@ -244,13 +244,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🎂 birthdays",        callback_data='view_birthdays')],
         [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
          InlineKeyboardButton("📊 budgets",          callback_data='view_budgets')],
-        [InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries'),
-         InlineKeyboardButton("🛍 shopping mode",    callback_data='shopping_mode')],
-        [InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge'),
-         InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit')],
-        [InlineKeyboardButton("🍽 meal planner",     callback_data='view_meals'),
-         InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
-        [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
+        [InlineKeyboardButton("🔄 recurring",        callback_data='view_recurring'),   # ← NEW
+         InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries')],
+        [InlineKeyboardButton("🛍 shopping mode",    callback_data='shopping_mode'),
+         InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge')],
+        [InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit'),
+         InlineKeyboardButton("🍽 meal planner",     callback_data='view_meals')],
+        [InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility'),
+         InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
     ]
     text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
     if update.message:
@@ -288,6 +289,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• *Expenses* button — view this month's summary\n"
         "• *Delete expense* — pick from recent entries with confirmation\n"
         "• Expenses are added via Google Form\n\n"
+        "*🔄 Recurring Expenses*\n"
+        "• *Recurring* button — view all recurring expenses with days until next charge\n"
+        "• *Add recurring* — name → amount → category → account → day of month\n"
+        "• Day must be 1–28 (avoids month-end issues)\n"
+        "• Auto-logged to Expenses sheet each month on the due date\n"
+        "• Notification sent on the day it's logged\n\n"
         "*📊 Budget Alerts*\n"
         "• *Budgets* button — view all group budgets and current spend\n"
         "• *Set / update a budget* — pick group → enter monthly limit\n"
@@ -1179,6 +1186,160 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _save_bought_items(query, context, user, all_items, destination, fridge_override=all_fridge)
         return
 
+    # ------------------------------------------------------------------ RECURRING EXPENSES
+    if query.data == 'view_recurring':
+        payload = {"user": user, "note": "get_recurring"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = []
+            try:
+                entries = _json.loads(response.text)
+            except:
+                pass
+
+            keyboard = [
+                [InlineKeyboardButton("➕ add recurring expense", callback_data='add_recurring_start')],
+                [InlineKeyboardButton("🗑 delete recurring expense", callback_data='delete_recurring_start')],
+                [InlineKeyboardButton("🏠 home", callback_data='home')]
+            ]
+
+            if not entries:
+                await query.edit_message_text(
+                    "🔄 *Recurring Expenses*\n\nno recurring expenses set up yet!\ntap below to add one.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+
+            today = _dt.now(SGT).day
+            lines = ["🔄 *Recurring Expenses*\n"]
+            for e in entries:
+                day      = e['day']
+                days_left = day - today if day >= today else (31 - today + day)
+                if days_left == 0:
+                    when = "today!"
+                elif days_left == 1:
+                    when = "tomorrow"
+                else:
+                    when = f"in {days_left} days"
+                suffix = 'st' if day == 1 else 'nd' if day == 2 else 'rd' if day == 3 else 'th'
+                lines.append(
+                    f"• *{e['name']}* — ${e['amount']:.2f}\n"
+                    f"   📅 {day}{suffix} of month · due {when}\n"
+                    f"   🏦 {e['account']} · 🏷 {e['category']}"
+                )
+
+            await query.edit_message_text(
+                "\n\n".join(lines),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load recurring expenses. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data == 'add_recurring_start':
+        context.user_data.clear()
+        context.user_data['awaiting'] = 'rec_name'
+        await query.edit_message_text(
+            "🔄 *Add Recurring Expense*\n\nwhat's the name of this expense?\n(e.g. 'Netflix', 'Car insurance', 'Tuition')",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    if query.data.startswith('rec_account:'):
+        account = query.data.split(":", 1)[1]
+        context.user_data['rec_account'] = account
+        context.user_data['awaiting']    = 'rec_day'
+        await query.edit_message_text(
+            f"account: *{account}*\n\nwhich day of the month does this get charged?\n(e.g. `1` for the 1st, `15` for the 15th)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    if query.data == 'delete_recurring_start':
+        payload = {"user": user, "note": "get_recurring"}
+        try:
+            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            entries  = []
+            try:
+                entries = _json.loads(response.text)
+            except:
+                pass
+            if not entries:
+                await query.edit_message_text("no recurring expenses to delete!", reply_markup=home_keyboard())
+                return
+            keyboard = []
+            for e in entries:
+                label = f"🗑 {e['name']} · ${e['amount']:.2f} · {e['day']}th"
+                keyboard.append([InlineKeyboardButton(label, callback_data=f"confirm_del_rec:{e['rowNum']}")])
+            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_recurring")])
+            await query.edit_message_text(
+                "which recurring expense do you want to remove?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as ex:
+            await query.edit_message_text(f"couldn't load. ({ex})", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('confirm_del_rec:'):
+        row_num = query.data.split(":", 1)[1]
+        keyboard = [
+            [InlineKeyboardButton("✅ yes, remove it", callback_data=f"do_del_rec:{row_num}"),
+             InlineKeyboardButton("❌ cancel",          callback_data="view_recurring")]
+        ]
+        await query.edit_message_text("are you sure you want to remove this recurring expense?", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if query.data.startswith('do_del_rec:'):
+        row_num = query.data.split(":", 1)[1]
+        payload = {"user": user, "note": "delete_recurring", "row_num": row_num}
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            await query.edit_message_text("✅ recurring expense removed!", reply_markup=home_keyboard())
+        except:
+            await query.edit_message_text("couldn't remove it.", reply_markup=home_keyboard())
+        return
+
+    if query.data.startswith('rec_group:'):
+        try:
+            idx        = int(query.data.split(":", 1)[1])
+            group_name = list(EXPENSE_GROUPS.keys())[idx]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong.", show_alert=True)
+            return
+        cats     = EXPENSE_GROUPS[group_name]
+        keyboard = []
+        for ci, cat in enumerate(cats):
+            keyboard.append([InlineKeyboardButton(cat, callback_data=f"rec_cat:{idx}|{ci}")])
+        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="add_recurring_start")])
+        await query.edit_message_text(
+            f"📂 *{group_name}*\npick a category:",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith('rec_cat:'):
+        payload_str = query.data.split(":", 1)[1]
+        group_idx, cat_idx = payload_str.split("|")
+        try:
+            group_name = list(EXPENSE_GROUPS.keys())[int(group_idx)]
+            category   = EXPENSE_GROUPS[group_name][int(cat_idx)]
+        except (ValueError, IndexError):
+            await query.answer("something went wrong.", show_alert=True)
+            return
+        context.user_data['rec_category'] = category
+        keyboard = [[InlineKeyboardButton(acc, callback_data=f"rec_account:{acc}")] for acc in ACCOUNT_TYPES]
+        await query.edit_message_text(
+            f"category: *{category}*\n\nwhich account?",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
     # FALLBACK
     await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
 
@@ -1638,6 +1799,81 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # RECURRING EXPENSE FLOW
+    if awaiting == 'rec_name':
+        context.user_data['rec_name'] = text.strip()
+        context.user_data['awaiting'] = 'rec_amount'
+        await update.message.reply_text(
+            f"name: *{text.strip()}*\n\nhow much is it each month? (e.g. `25.90`)",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
+        )
+        return
+
+    if awaiting == 'rec_amount':
+        try:
+            amount = float(text.replace('$', '').replace(',', ''))
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("please enter a valid amount (e.g. `25.90`).", parse_mode='Markdown')
+            return
+        context.user_data['rec_amount'] = amount
+        context.user_data.pop('awaiting', None)
+        # Show group picker
+        group_keys = list(EXPENSE_GROUPS.keys())
+        keyboard   = []
+        for i in range(0, len(group_keys), 2):
+            row = [InlineKeyboardButton(group_keys[i], callback_data=f"rec_group:{i}")]
+            if i + 1 < len(group_keys):
+                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"rec_group:{i+1}"))
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
+        await update.message.reply_text(
+            f"amount: *${amount:.2f}/month*\n\nselect a category group:",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if awaiting == 'rec_day':
+        try:
+            day = int(text.strip())
+            if day < 1 or day > 28:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("please enter a day between 1 and 28.")
+            return
+        name     = context.user_data.pop('rec_name', '')
+        amount   = context.user_data.pop('rec_amount', 0)
+        category = context.user_data.pop('rec_category', 'Other')
+        account  = context.user_data.pop('rec_account', 'Family')
+        context.user_data.pop('awaiting', None)
+        payload = {
+            "user":         user,
+            "note":         "add_recurring",
+            "rec_name":     name,
+            "rec_amount":   amount,
+            "rec_category": category,
+            "rec_account":  account,
+            "rec_day":      day
+        }
+        try:
+            requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
+            suffix = 'st' if day == 1 else 'nd' if day == 2 else 'rd' if day == 3 else 'th'
+            await update.message.reply_text(
+                f"✅ recurring expense saved!\n\n"
+                f"🔄 *{name}*\n"
+                f"💰 ${amount:.2f} / month\n"
+                f"📅 charged on the {day}{suffix} of each month\n"
+                f"🏦 {account} · 🏷 {category}\n\n"
+                f"_it will be auto-logged and you'll get a notification each month._",
+                parse_mode='Markdown'
+            )
+        except:
+            await update.message.reply_text("couldn't save. please try again.")
+        return
+        
     # DEFAULT — pass to GAS catch-all
     payload  = {"user": user, "note": text}
     response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
@@ -1655,6 +1891,8 @@ async def handle_notify(notify_type: str, data: dict):
     elif notify_type == "birthday_reminder":
         await send_to_all(data.get("message", ""))
     elif notify_type == "budget_alert":
+        await send_to_all(data.get("message", ""))
+    elif notify_type == "recurring_logged":
         await send_to_all(data.get("message", ""))
     elif notify_type == "fertile_soon":
         await send_to_all(f"🌸 *Fertile Window in 3 Days*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nPlan accordingly 💕")
@@ -1715,6 +1953,7 @@ def _gas_post(payload, timeout=15):
 def dashboard_data():
     tasks = {
         "expenses":    {"user": "dashboard", "note": "get_expenses_raw"},
+        "recurring": {"user": "dashboard", "note": "get_recurring_dashboard"},
         "events":      {"user": "dashboard", "note": "get_events"},
         "todos":       {"user": "dashboard", "note": "get_todos_by_person"},
         "groceries":   {"user": "dashboard", "note": "get_checklist"},
@@ -1878,6 +2117,15 @@ def dashboard_data():
             "meals":           meals,
         }), 200, {'Content-Type': 'application/json'}
 
+        # RECURRING EXPENSES
+        rec_raw   = safe_text("recurring")
+        recurring = []
+        if rec_raw:
+            try:
+                recurring = _json.loads(rec_raw)
+            except:
+                recurring = []
+                
     except Exception as e:
         print(f"DASHBOARD ERROR: {e}")
         return _json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
