@@ -1,1468 +1,1616 @@
-import os
-import asyncio
-import threading
-import requests
-import base64
-import time
-import re
-import json as _json
-from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date as _date, datetime as _dt, timedelta, timezone
-from flask import Flask, request, jsonify, send_file
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    ApplicationBuilder,
-    MessageHandler,
-    filters,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes
-)
-
-# --- CONFIGURATION ---
-TOKEN             = os.environ.get('TELEGRAM_TOKEN')
-GOOGLE_SCRIPT_URL = os.environ.get('GOOGLE_SCRIPT_URL')
-RAILWAY_URL       = "https://familylog-production.up.railway.app"
-SGT               = timezone(timedelta(hours=8))
-
-NOTIFY_CHAT_IDS = [
-    486455062,   # Eleanor
-    # 987654321, # Marcus — uncomment and add ID when ready
-]
-
-FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"]
-
-EXPENSE_GROUPS = {
-    "👶 Children":      ["Children - Books", "Children - Enrichment", "Children - School", "Children - Toys", "Mikaela - Sailing"],
-    "👕 Clothing":      ["Clothing - Accessories", "Clothing - Clothes", "Clothing - Shoes"],
-    "🍽 Eating Out":    ["Eating Out - Beverages", "Eating Out - Breakfast", "Eating Out - Dinner", "Eating Out - Lunch", "Eating Out - Snacks"],
-    "📚 Education":     ["Education - Books", "Education - Courses & Enrichment", "Education - Subscription"],
-    "🎭 Entertainment": ["Entertainment - Experiences", "Entertainment - Subscriptions", "Entertainment - Objects (toys, etc)"],
-    "🎁 Gifts/Giving":  ["Gifts & Treats - CNY", "Gifts & Treats - Family", "Gifts & Treats - Friends", "Gifts & Treats - Wedding", "Giving - Church", "Giving - Charity", "Giving - Parents"],
-    "🏥 Health":        ["Health & Fitness - Dental + Medical", "Health & Fitness - Events + Subscription", "Health & Fitness - Equipment + Supplements"],
-    "🏠 Household":     ["Household - Appliances", "Household - Groceries", "Household - Helper", "Household - Household Misc", "Household - Renovation", "Household - Utilities (electric, gas, water)", "Household - Internet"],
-    "🐾 Pets":          ["Pets - Pet Food", "Pets - Grooming", "Pets - Pet Misc"],
-    "💆 Self Care":     ["Self Care - Massage", "Self Care - Personal Care", "Utilities - Mobile"],
-    "✈️ Travel":        ["Travel - Hotels", "Travel - Transport", "Travel - Expenses"],
-    "🚗 Transport":     ["Transportation - Bus/MRT", "Transportation - Taxi/Grab", "Transportation - Auto: Service", "Transportation - Auto: Loan", "Transportation - Auto: Gas"],
-    "📈 Finance":       ["Endowment", "Insurance", "Investing", "Taxes - Income Tax", "Taxes - Property Tax"],
-    "🌍 Others":        ["Electronics", "Misc", "Missions"]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wong Family">
+<meta name="theme-color" content="#4f86c6">
+<title>Wong Family</title>
+<link rel="manifest" href="manifest.json">
+<style>
+/* ── TOKENS ───────────────────────────────────────────── */
+:root {
+  --blue:       #4f86c6;
+  --blue-dark:  #3a6fa8;
+  --blue-light: #e8f0fb;
+  --green:      #3aaa75;
+  --green-light:#e6f7ee;
+  --red:        #e05252;
+  --red-light:  #fdeaea;
+  --amber:      #d4861e;
+  --amber-light:#fdf3e3;
+  --purple:     #7c5cbf;
+  --purple-light:#f0ebfa;
+  --ink:        #1a1a2e;
+  --ink-soft:   #5a5a72;
+  --ink-faint:  #9898aa;
+  --surface:    #ffffff;
+  --surface-2:  #f5f6fa;
+  --border:     #e4e6ef;
+  --radius-sm:  8px;
+  --radius:     14px;
+  --radius-lg:  20px;
+  --shadow-sm:  0 1px 4px rgba(0,0,0,.07);
+  --shadow:     0 4px 16px rgba(0,0,0,.10);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,.14);
+  --font:       'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --nav-h:      64px;
+  --header-h:   56px;
 }
 
-ACCOUNT_TYPES      = ["Personal Account", "Family"]
-BIRTHDAY_TYPES     = ["Birthday", "Wedding Anniversary"]
-FERTILITY_SYMPTOMS = ["🤢 Nausea", "💧 Spotting", "😴 Fatigue", "🤕 Cramps", "😤 Mood swings", "🌡 Hot flashes", "💊 Medication taken", "✅ None"]
-MEMORY_TYPES       = ["🏆 Milestone", "💬 Quote", "💛 Moment"]
-
-
-# --- HELPERS ---
-def home_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 home", callback_data='home')]])
-
-async def send_to_all(text, parse_mode='Markdown'):
-    for chat_id in NOTIFY_CHAT_IDS:
-        try:
-            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
-        except Exception as e:
-            print(f"Failed to send to {chat_id}: {e}")
-
-
-# --- TIME RANGE PARSER ---
-_TIME_PART = r'(\d{1,2})(?:[:\.](\d{2}))?\s*(am|pm)'
-_RANGE_RE  = re.compile(rf'^{_TIME_PART}\s*(?:to|-)\s*{_TIME_PART}$', re.IGNORECASE)
-
-def parse_time_range(raw: str):
-    raw = raw.strip()
-    m = _RANGE_RE.match(raw)
-    if not m:
-        return raw, ''
-    h1, m1, mer1, h2, m2, mer2 = m.groups()
-    return _normalise_time(h1, m1 or '00', mer1), _normalise_time(h2, m2 or '00', mer2)
-
-def _normalise_time(h, m, meridiem):
-    return f"{int(h)}:{m.zfill(2)}{meridiem.lower()}"
-
-
-# --- SHOPPING MODE HELPER ---
-async def _render_shopping_list(query, context):
-    items   = context.user_data.get('shop_items', [])
-    checked = context.user_data.get('shop_checked', [])
-    keyboard = []
-    for item in items:
-        label = f"✅ {item}" if item in checked else f"⬜ {item}"
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"shop_toggle:{item}")])
-    keyboard.append([
-        InlineKeyboardButton(f"🛒 done ({len(checked)} checked)", callback_data='shop_confirm'),
-        InlineKeyboardButton("❌ cancel", callback_data='shop_cancel')
-    ])
-    await query.edit_message_text(
-        "🛒 *Shopping Mode*\n\ntap items to check them off, then tap Done.",
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-
-# --- HOME ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📅 family calendar",  callback_data='view_calendar'),
-         InlineKeyboardButton("✅ to-do list",        callback_data='view_todos')],
-        [InlineKeyboardButton("💛 memories",         callback_data='view_memories'),
-         InlineKeyboardButton("🎂 birthdays",        callback_data='view_birthdays')],
-        [InlineKeyboardButton("💰 expenses",         callback_data='view_expenses'),
-         InlineKeyboardButton("📊 budgets",          callback_data='view_budgets')],
-        [InlineKeyboardButton("🔄 recurring",        callback_data='view_recurring'),
-         InlineKeyboardButton("🛒 grocery list",     callback_data='view_groceries')],
-        [InlineKeyboardButton("🛍 shopping mode",    callback_data='shopping_mode'),
-         InlineKeyboardButton("🍎 check fridge",     callback_data='check_fridge')],
-        [InlineKeyboardButton("🍽 log eating fruit", callback_data='eat_fruit'),
-         InlineKeyboardButton("🌸 fertility",        callback_data='view_fertility')],
-        [InlineKeyboardButton("📊 view dashboard",   url=f"{RAILWAY_URL}/dashboard")]
-    ]
-    text = "welcome to the *Wong Family* dashboard! 🏠\nwhat would you like to do today?"
-    if update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-    else:
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-
-
-# --- HELP COMMAND ---
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "🏠 *Wong Family Bot — Commands & Buttons*\n\n"
-        "*🏠 Main Menu*\n"
-        "Type /start — open the main menu\n"
-        "Type /help — show this help message\n\n"
-        "*📅 Family Calendar*\n"
-        "• *Family calendar* button — view next 14 days\n"
-        "• *Add event* — title → date → time (or range e.g. `10.30am to 11.15am`) → notes\n"
-        "• *Delete event* — pick from list with confirmation\n\n"
-        "*✅ To-Do List*\n"
-        "• *To-do list* button — view all open tasks grouped by person\n"
-        "• *Add task* — task name → assign to family member → due date\n"
-        "• *Complete a task* — mark done\n"
-        "• *Delete a task* — remove with confirmation\n\n"
-        "*💛 Family Memories*\n"
-        "• *Memories* button — view recent or browse by person\n"
-        "• *Log a memory* — type (Milestone / Quote / Moment) → person → write it → date\n"
-        "• *Recent memories* — shows last 5 entries\n"
-        "• *Browse by person* — shows last 10 entries for that person\n\n"
-        "*🎂 Birthdays & Anniversaries*\n"
-        "• *Birthdays* button — view upcoming\n"
-        "• *Add birthday/anniversary* — name → type → date (MM-DD) → year → notes\n"
-        "• Reminders sent automatically at 7 days, 1 day, and on the day\n\n"
-        "*💰 Expenses*\n"
-        "• *Expenses* button — view this month's summary\n"
-        "• *Delete expense* — pick from recent entries with confirmation\n"
-        "• Expenses are added via Google Form\n\n"
-        "*🔄 Recurring Expenses*\n"
-        "• *Recurring* button — view all recurring expenses with days until next charge\n"
-        "• *Add recurring* — name → amount → category → account → day of month (1–28)\n"
-        "• Auto-logged to Expenses sheet each month on the due date\n"
-        "• Notification sent on the day it's logged\n\n"
-        "*📊 Budget Alerts*\n"
-        "• *Budgets* button — view all group budgets and current spend\n"
-        "• *Set / update a budget* — pick group → enter monthly limit\n"
-        "• Alerts sent automatically at 80% and 100% of budget\n\n"
-        "*🛒 Grocery List*\n"
-        "• *Grocery list* button — view items to buy\n"
-        "• Tap any item to mark it as bought\n"
-        "• Type `+item name` — add an item (e.g. `+milk`)\n\n"
-        "*🛍 Shopping Mode*\n"
-        "• *Shopping mode* button — full list with checkboxes, tap Done to mark all bought\n\n"
-        "*🍎 Fridge & Fruit*\n"
-        "• *Check fridge* button — see current fruit stock\n"
-        "• *Log eating fruit* button — deduct from stock\n"
-        "• Type `+fruits name qty` — add fruit stock (e.g. `+fruits apple 6`)\n\n"
-        "*🌸 Fertility Tracker*\n"
-        "• *Fertility* button — view cycle summary\n"
-        "• *Log period start / end* — enter date\n"
-        "• *Log ovulation* — enter date\n"
-        "• *Log symptoms* — pick from list\n\n"
-        "*📊 Dashboard*\n"
-        "• *View dashboard* button — opens the family web dashboard\n\n"
-        "_Tip: tap 🏠 home at any time to return to the main menu._"
-    )
-    if update.message:
-        await update.message.reply_text(text, parse_mode='Markdown')
-    else:
-        await update.callback_query.edit_message_text(text, parse_mode='Markdown', reply_markup=home_keyboard())
-
-
-# --- BUTTON HANDLER ---
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user  = query.from_user.first_name
-    await query.answer()
-
-    if query.data == 'home':
-        context.user_data.clear()
-        await start(update, context)
-        return
-
-    # ------------------------------------------------------------------ GROCERY
-    if query.data == 'view_groceries':
-        payload = {"user": user, "note": "get_checklist"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            items    = [i.strip() for i in response.text.split(",") if i.strip()]
-            if not items:
-                await query.edit_message_text("nothing to buy right now! 🛒", reply_markup=home_keyboard())
-                return
-            keyboard = [[InlineKeyboardButton(f"✅ {i}", callback_data=f"check_item:{i}")] for i in items]
-            keyboard.append([InlineKeyboardButton("🏠 home", callback_data='home')])
-            await query.edit_message_text("tap an item to mark it as bought:", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't fetch the checklist. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('check_item:'):
-        item_name = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": f"bought {item_name}"}, timeout=10)
-            await query.answer(f"marked {item_name} as bought!")
-            await start(update, context)
-        except:
-            await query.answer("failed to update.")
-        return
-
-    # ------------------------------------------------------------------ SHOPPING MODE
-    if query.data == 'shopping_mode':
-        payload = {"user": user, "note": "get_checklist"}
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-            items    = [i.strip() for i in response.text.split(",") if i.strip()]
-            if not items:
-                await query.edit_message_text(
-                    "🛒 *Shopping Mode*\n\nthe grocery list is empty!",
-                    parse_mode='Markdown', reply_markup=home_keyboard()
-                )
-                return
-            context.user_data['shop_items']   = items
-            context.user_data['shop_checked'] = []
-            await _render_shopping_list(query, context)
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load grocery list. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('shop_toggle:'):
-        item    = query.data.split(":", 1)[1]
-        checked = context.user_data.get('shop_checked', [])
-        if item in checked:
-            checked.remove(item)
-        else:
-            checked.append(item)
-        context.user_data['shop_checked'] = checked
-        await _render_shopping_list(query, context)
-        return
-
-    if query.data == 'shop_confirm':
-        items   = context.user_data.get('shop_items', [])
-        checked = context.user_data.get('shop_checked', [])
-        if not checked:
-            await query.answer("you haven't checked anything off yet!", show_alert=True)
-            return
-        for item in checked:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": f"bought {item}"}, timeout=10)
-        context.user_data.pop('shop_items',   None)
-        context.user_data.pop('shop_checked', None)
-        remaining = [i for i in items if i not in checked]
-        msg = f"✅ marked *{len(checked)}* item{'s' if len(checked) != 1 else ''} as bought!"
-        if remaining:
-            msg += f"\n\n🛒 *{len(remaining)}* item{'s' if len(remaining) != 1 else ''} still on the list."
-        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=home_keyboard())
-        return
-
-    if query.data == 'shop_cancel':
-        context.user_data.pop('shop_items',   None)
-        context.user_data.pop('shop_checked', None)
-        await start(update, context)
-        return
-
-    # ------------------------------------------------------------------ FRIDGE
-    if query.data == 'check_fridge':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "check fridge"}, timeout=10)
-            await query.edit_message_text(response.text or "fridge is empty ❄️", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't connect to fridge data.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ FRUIT
-    if query.data == 'eat_fruit':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_fruit_list"}, timeout=10)
-            fruits   = [f.strip() for f in response.text.split(",") if f.strip()]
-            if not fruits:
-                await query.edit_message_text("the fridge is empty of fruit! 🧊", reply_markup=home_keyboard())
-                return
-            keyboard = [[InlineKeyboardButton(f, callback_data=f"select_fruit:{f}")] for f in fruits]
-            keyboard.append([InlineKeyboardButton("🏠 home", callback_data='home')])
-            await query.edit_message_text("what did you eat? 🍎", reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("error connecting to fridge data.", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('select_fruit:'):
-        fruit_name = query.data.split(":", 1)[1]
-        context.user_data['selected_fruit'] = fruit_name
-        context.user_data['awaiting']       = 'fruit_qty'
-        await query.edit_message_text(f"how many {fruit_name}s did you have? (type the number)")
-        return
-
-    # ------------------------------------------------------------------ CALENDAR
-    if query.data == 'view_calendar':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_events"}, timeout=10)
-            text     = response.text.strip()
-            keyboard = [
-                [InlineKeyboardButton("➕ add event",    callback_data='add_event')],
-                [InlineKeyboardButton("🗑 delete event", callback_data='delete_event')],
-                [InlineKeyboardButton("🏠 home",         callback_data='home')]
-            ]
-            display = text if text and text != "no_events" else "no upcoming events! add one below 📅"
-            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load calendar.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_event':
-        context.user_data['awaiting'] = 'event_title'
-        await query.edit_message_text(
-            "📅 *add a new event*\n\nwhat's the event called?\n(e.g. 'dentist appointment')\n\n💡 include a family member's name to auto-tag them",
-            parse_mode='Markdown'
-        )
-        return
-
-    if query.data == 'delete_event':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_event_list"}, timeout=10)
-            raw      = response.text.strip()
-            if not raw or raw == "no_events":
-                await query.edit_message_text("no upcoming events to delete! 📅", reply_markup=home_keyboard())
-                return
-            keyboard = []
-            for item in [i.strip() for i in raw.split("||") if i.strip()]:
-                parts = item.split("|")
-                if len(parts) >= 2:
-                    eid, title = parts[0], parts[1]
-                    date_str   = parts[2] if len(parts) > 2 else ''
-                    label      = f"🗑 {title}" + (f" ({date_str})" if date_str else "")
-                    keyboard.append([InlineKeyboardButton(label, callback_data=f"confirm_del_event:{eid}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_calendar")])
-            await query.edit_message_text("which event do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load events. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('confirm_del_event:'):
-        eid = query.data.split(":", 1)[1]
-        keyboard = [
-            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_event:{eid}"),
-             InlineKeyboardButton("❌ cancel",          callback_data="view_calendar")]
-        ]
-        await query.edit_message_text("are you sure you want to delete this event?", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('do_del_event:'):
-        eid = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "delete_event", "event_id": eid}, timeout=10)
-            await query.edit_message_text("✅ event deleted!", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't delete event.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ EXPENSES
-    if query.data == 'view_expenses':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_expenses"}, timeout=10)
-            text     = response.text.strip()
-            keyboard = [
-                [InlineKeyboardButton("🗑 delete expense", callback_data='delete_expense')],
-                [InlineKeyboardButton("🏠 home",            callback_data='home')]
-            ]
-            display = text if text and text != "no_expenses" else "no expenses logged yet!"
-            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load expenses.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'delete_expense':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_expense_list"}, timeout=10)
-            raw      = response.text.strip()
-            if not raw or raw == "no_expenses":
-                await query.edit_message_text("no recent expenses to delete!", reply_markup=home_keyboard())
-                return
-            keyboard = []
-            for item in [i.strip() for i in raw.split("||") if i.strip()]:
-                parts = item.split("|")
-                if len(parts) >= 3:
-                    rid, label_text = parts[0], " · ".join(parts[1:])
-                    keyboard.append([InlineKeyboardButton(f"🗑 {label_text}", callback_data=f"confirm_del_exp:{rid}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_expenses")])
-            await query.edit_message_text("which expense do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load expenses. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('confirm_del_exp:'):
-        rid = query.data.split(":", 1)[1]
-        keyboard = [
-            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_exp:{rid}"),
-             InlineKeyboardButton("❌ cancel",          callback_data="view_expenses")]
-        ]
-        await query.edit_message_text("are you sure you want to delete this expense?", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('do_del_exp:'):
-        rid = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "delete_expense", "row_id": rid}, timeout=10)
-            await query.edit_message_text("✅ expense deleted!", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't delete expense.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ TO-DO
-    if query.data == 'view_todos':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_todos"}, timeout=10)
-            text     = response.text.strip()
-            keyboard = [
-                [InlineKeyboardButton("➕ add task",       callback_data='add_todo')],
-                [InlineKeyboardButton("✅ complete a task", callback_data='complete_todo'),
-                 InlineKeyboardButton("🗑 delete a task",  callback_data='delete_todo')],
-                [InlineKeyboardButton("🏠 home",            callback_data='home')]
-            ]
-            display = text if text and text != "no_todos" else "no tasks yet! add one below ✅"
-            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load to-do list.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_todo':
-        context.user_data['awaiting'] = 'todo_task'
-        await query.edit_message_text("✅ *add a task*\n\nwhat needs to be done?", parse_mode='Markdown')
-        return
-
-    if query.data.startswith('todo_assign:'):
-        member = query.data.split(":", 1)[1]
-        context.user_data['todo_assignee'] = member
-        context.user_data['awaiting']      = 'todo_due'
-        await query.edit_message_text(
-            f"assigned to: *{member}*\n\nany due date? (e.g. '20 May')\ntype 'skip' for none",
-            parse_mode='Markdown'
-        )
-        return
-
-    if query.data == 'complete_todo':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_todo_list"}, timeout=10)
-            raw      = response.text.strip()
-            if not raw or raw == "no_todos":
-                await query.edit_message_text("no open tasks to complete! 🎉", reply_markup=home_keyboard())
-                return
-            keyboard = []
-            for item in [i.strip() for i in raw.split("||") if i.strip()]:
-                parts = item.split("|")
-                if len(parts) >= 3:
-                    tid, task, assignee = parts[0], parts[1], parts[2]
-                    keyboard.append([InlineKeyboardButton(f"✅ {task} ({assignee})", callback_data=f"done_todo:{tid}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
-            await query.edit_message_text("tap a task to mark it done:", reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load tasks.", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('done_todo:'):
-        tid = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "complete_todo", "todo_id": tid}, timeout=10)
-            await query.answer("task marked done! 🎉")
-            await start(update, context)
-        except:
-            await query.answer("couldn't update task.")
-        return
-
-    if query.data == 'delete_todo':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_todo_list"}, timeout=10)
-            raw      = response.text.strip()
-            if not raw or raw == "no_todos":
-                await query.edit_message_text("no open tasks to delete!", reply_markup=home_keyboard())
-                return
-            keyboard = []
-            for item in [i.strip() for i in raw.split("||") if i.strip()]:
-                parts = item.split("|")
-                if len(parts) >= 3:
-                    tid, task, assignee = parts[0], parts[1], parts[2]
-                    keyboard.append([InlineKeyboardButton(f"🗑 {task} ({assignee})", callback_data=f"confirm_del_todo:{tid}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_todos")])
-            await query.edit_message_text("which task do you want to delete?", reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load tasks.", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('confirm_del_todo:'):
-        tid = query.data.split(":", 1)[1]
-        keyboard = [
-            [InlineKeyboardButton("✅ yes, delete it", callback_data=f"do_del_todo:{tid}"),
-             InlineKeyboardButton("❌ cancel",          callback_data="view_todos")]
-        ]
-        await query.edit_message_text("are you sure you want to delete this task?", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('do_del_todo:'):
-        tid = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "delete_todo", "todo_id": tid}, timeout=10)
-            await query.edit_message_text("✅ task deleted!", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't delete task.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ FERTILITY
-    if query.data == 'view_fertility':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_fertility"}, timeout=10)
-            text     = response.text.strip()
-            keyboard = [
-                [InlineKeyboardButton("🩸 log period start", callback_data='log_period_start'),
-                 InlineKeyboardButton("⏹ log period end",   callback_data='log_period_end')],
-                [InlineKeyboardButton("🥚 log ovulation",   callback_data='log_ovulation'),
-                 InlineKeyboardButton("🌡 log symptoms",    callback_data='log_symptoms')],
-                [InlineKeyboardButton("🏠 home",            callback_data='home')]
-            ]
-            display = text if text and text != "no_fertility" else "no fertility data yet. start logging below 🌸"
-            await query.edit_message_text(display, reply_markup=InlineKeyboardMarkup(keyboard))
-        except:
-            await query.edit_message_text("couldn't load fertility data.", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'log_period_start':
-        context.user_data['awaiting']       = 'fertility_date'
-        context.user_data['fertility_type'] = 'Period Start'
-        await query.edit_message_text("🩸 *log period start*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
-        return
-
-    if query.data == 'log_period_end':
-        context.user_data['awaiting']       = 'fertility_date'
-        context.user_data['fertility_type'] = 'Period End'
-        await query.edit_message_text("⏹ *log period end*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
-        return
-
-    if query.data == 'log_ovulation':
-        context.user_data['awaiting']       = 'fertility_date'
-        context.user_data['fertility_type'] = 'Ovulation'
-        await query.edit_message_text("🥚 *log ovulation*\n\nwhat date?\n(e.g. '13 May' or '13/05/2026')", parse_mode='Markdown')
-        return
-
-    if query.data == 'log_symptoms':
-        keyboard = [[InlineKeyboardButton(s, callback_data=f"fertility_symptom:{s}")] for s in FERTILITY_SYMPTOMS]
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_fertility")])
-        await query.edit_message_text("🌡 *what are you experiencing today?*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if query.data.startswith('fertility_symptom:'):
-        symptom = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_fertility", "fertility_type": "Symptom", "fertility_date": "", "fertility_notes": symptom}, timeout=10)
-            await query.edit_message_text(f"✅ symptom logged: *{symptom}*", parse_mode='Markdown', reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't save symptom.", reply_markup=home_keyboard())
-        return
-
-    # ------------------------------------------------------------------ BIRTHDAYS
-    if query.data == 'view_birthdays':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_birthdays"}, timeout=10)
-            entries  = []
-            try:
-                entries = _json.loads(response.text)
-            except:
-                pass
-            if not entries:
-                await query.edit_message_text(
-                    "no birthdays or anniversaries saved yet! 🎂\ntap *Add* to add one.",
-                    parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
-                        [InlineKeyboardButton("🏠 home", callback_data='home')]
-                    ])
-                )
-                return
-            today = _dt.now(SGT).date()
-            def days_away(e):
-                try:
-                    m, d = e['date'].split('-')
-                    ev = _date(today.year, int(m), int(d))
-                    if ev < today:
-                        ev = _date(today.year + 1, int(m), int(d))
-                    return (ev - today).days
-                except:
-                    return 999
-            entries.sort(key=days_away)
-            lines = ["🎂 *Birthdays & Anniversaries*\n"]
-            for e in entries:
-                diff  = days_away(e)
-                when  = "Today! 🥳" if diff == 0 else "Tomorrow!" if diff == 1 else f"In {diff} days"
-                emoji = "🎂" if e.get('type') == 'Birthday' else "💍"
-                try:
-                    m, d        = e['date'].split('-')
-                    month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-                    date_label  = f"{month_names[int(m)-1]} {int(d)}"
-                except:
-                    date_label = e.get('date', '')
-                age_str = ""
-                if e.get('year'):
-                    try:
-                        ev_year = today.year if diff < 365 else today.year + 1
-                        age_str = f" · turning {ev_year - int(e['year'])}" if e.get('type') == 'Birthday' else f" · {ev_year - int(e['year'])} years"
-                    except:
-                        pass
-                line = f"{emoji} *{e['name']}* — {e['type']}\n   {when} · {date_label}{age_str}"
-                if e.get('notes'):
-                    line += f"\n   _{e['notes']}_"
-                lines.append(line)
-            await query.edit_message_text(
-                "\n\n".join(lines),
-                parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ add birthday/anniversary", callback_data='add_birthday')],
-                    [InlineKeyboardButton("🏠 home", callback_data='home')]
-                ])
-            )
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load birthdays. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_birthday':
-        context.user_data.clear()
-        context.user_data['awaiting'] = 'bday_name'
-        await query.edit_message_text(
-            "🎂 *add birthday / anniversary*\n\nwhat's the person's name?",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    if query.data.startswith('bday_type:'):
-        btype = query.data.split(":", 1)[1]
-        context.user_data['bday_type'] = btype
-        context.user_data['awaiting']  = 'bday_date'
-        await query.edit_message_text(
-            f"type: *{btype}*\n\n📅 what's the date?\nsend as *MM-DD* (e.g. `05-23` for 23 May)",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    # ------------------------------------------------------------------ BUDGETS
-    if query.data == 'view_budgets':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_budgets"}, timeout=10)
-            budgets  = []
-            try:
-                budgets = _json.loads(response.text)
-            except:
-                pass
-            keyboard = [
-                [InlineKeyboardButton("➕ set / update a budget", callback_data='set_budget_start')],
-                [InlineKeyboardButton("🏠 home", callback_data='home')]
-            ]
-            if not budgets:
-                await query.edit_message_text(
-                    "📊 *Budget Tracker*\n\nno budgets set yet!\ntap below to add your first one.",
-                    parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                return
-            lines = ["📊 *Budget Tracker — Family Account*\n"]
-            for b in sorted(budgets, key=lambda x: x['group']):
-                spent = b.get('spent', 0)
-                limit = b['budget']
-                pct   = int(spent / limit * 100) if limit > 0 else 0
-                bar   = '█' * min(int(pct / 10), 10) + '░' * max(0, 10 - int(pct / 10))
-                emoji = '🚨' if spent > limit else '⚠️' if pct >= 80 else '✅'
-                lines.append(f"{emoji} *{b['group']}*\n   {bar} {pct}%\n   ${spent:.2f} / ${limit:.2f}")
-            await query.edit_message_text("\n\n".join(lines), parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load budgets. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'set_budget_start':
-        context.user_data.clear()
-        group_keys = list(EXPENSE_GROUPS.keys())
-        keyboard   = []
-        for i in range(0, len(group_keys), 2):
-            row = [InlineKeyboardButton(group_keys[i], callback_data=f"budget_grp:{i}")]
-            if i + 1 < len(group_keys):
-                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"budget_grp:{i+1}"))
-            keyboard.append(row)
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
-        await query.edit_message_text(
-            "📊 *set a group budget*\n\nwhich category group?",
-            parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data.startswith('budget_grp:'):
-        try:
-            idx        = int(query.data.split(":", 1)[1])
-            group_name = list(EXPENSE_GROUPS.keys())[idx]
-        except (ValueError, IndexError):
-            await query.answer("something went wrong.", show_alert=True)
-            return
-        context.user_data['budget_group'] = group_name
-        context.user_data['awaiting']     = 'budget_amount'
-        cat_list = "\n".join([f"  · {c}" for c in EXPENSE_GROUPS[group_name]])
-        await query.edit_message_text(
-            f"📂 *{group_name}*\n\n_covers:_\n{cat_list}\n\nwhat's the monthly budget?\n(e.g. `500` for $500/month)",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    # ------------------------------------------------------------------ MEMORIES
-    if query.data == 'view_memories':
-        keyboard = [
-            [InlineKeyboardButton("🕐 recent memories",  callback_data='memories_recent')],
-            [InlineKeyboardButton("👤 browse by person", callback_data='memories_by_person')],
-            [InlineKeyboardButton("➕ log a memory",     callback_data='add_memory')],
-            [InlineKeyboardButton("🏠 home",              callback_data='home')]
-        ]
-        await query.edit_message_text(
-            "💛 *Family Memories*\n\nwhat would you like to do?",
-            parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data == 'memories_recent':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_memories_recent"}, timeout=10)
-            entries  = _json.loads(response.text)
-            if not entries:
-                await query.edit_message_text(
-                    "💛 *Family Memories*\n\nno memories logged yet!",
-                    parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
-                        [InlineKeyboardButton("⬅️ back",         callback_data='view_memories')]
-                    ])
-                )
-                return
-            lines = ["💛 *Recent Family Memories*\n"]
-            for e in entries:
-                emoji = "🏆" if "Milestone" in e['type'] else "💬" if "Quote" in e['type'] else "💛"
-                lines.append(f"{emoji} *{e['type'].split(' ',1)[-1]}* — {e['person']}\n   _{e['memory']}_\n   📅 {e['date']} · logged by {e['loggedBy']}")
-            await query.edit_message_text(
-                "\n\n".join(lines), parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
-                    [InlineKeyboardButton("⬅️ back",         callback_data='view_memories')],
-                    [InlineKeyboardButton("🏠 home",          callback_data='home')]
-                ])
-            )
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load memories. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'memories_by_person':
-        keyboard = [[InlineKeyboardButton(m, callback_data=f"memories_person:{m}")] for m in FAMILY_MEMBERS]
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data='view_memories')])
-        await query.edit_message_text("👤 *whose memories?*", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('memories_person:'):
-        person = query.data.split(":", 1)[1]
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_memories_by_person", "person": person}, timeout=10)
-            entries  = _json.loads(response.text)
-            if not entries:
-                await query.edit_message_text(
-                    f"💛 *{person}'s Memories*\n\nno memories logged for {person} yet!",
-                    parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
-                        [InlineKeyboardButton("⬅️ back",         callback_data='memories_by_person')]
-                    ])
-                )
-                return
-            lines = [f"💛 *{person}'s Memories*\n"]
-            for e in entries:
-                emoji = "🏆" if "Milestone" in e['type'] else "💬" if "Quote" in e['type'] else "💛"
-                lines.append(f"{emoji} *{e['type'].split(' ',1)[-1]}*\n   _{e['memory']}_\n   📅 {e['date']} · logged by {e['loggedBy']}")
-            await query.edit_message_text(
-                "\n\n".join(lines), parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ log a memory", callback_data='add_memory')],
-                    [InlineKeyboardButton("⬅️ back",         callback_data='memories_by_person')],
-                    [InlineKeyboardButton("🏠 home",          callback_data='home')]
-                ])
-            )
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load memories. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_memory':
-        context.user_data.clear()
-        context.user_data['awaiting'] = 'memory_type'
-        keyboard = [[InlineKeyboardButton(t, callback_data=f"memory_type:{t}")] for t in MEMORY_TYPES]
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_memories')])
-        await query.edit_message_text(
-            "💛 *log a memory*\n\nwhat kind of memory is this?",
-            parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data.startswith('memory_type:'):
-        mtype = query.data.split(":", 1)[1]
-        context.user_data['memory_type'] = mtype
-        context.user_data.pop('awaiting', None)
-        keyboard = [[InlineKeyboardButton(m, callback_data=f"memory_person:{m}")] for m in FAMILY_MEMBERS]
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='view_memories')])
-        await query.edit_message_text(
-            f"type: *{mtype}*\n\nwho is this memory about?",
-            parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if query.data.startswith('memory_person:'):
-        person = query.data.split(":", 1)[1]
-        context.user_data['memory_person'] = person
-        context.user_data['awaiting']      = 'memory_text'
-        await query.edit_message_text(
-            f"about: *{person}*\n\n✏️ write the memory:",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='view_memories')]])
-        )
-        return
-
-    # ------------------------------------------------------------------ RECURRING EXPENSES
-    if query.data == 'view_recurring':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_recurring"}, timeout=10)
-            entries  = []
-            try:
-                entries = _json.loads(response.text)
-            except:
-                pass
-            keyboard = [
-                [InlineKeyboardButton("➕ add recurring expense",    callback_data='add_recurring_start')],
-                [InlineKeyboardButton("🗑 delete recurring expense", callback_data='delete_recurring_start')],
-                [InlineKeyboardButton("🏠 home", callback_data='home')]
-            ]
-            if not entries:
-                await query.edit_message_text(
-                    "🔄 *Recurring Expenses*\n\nno recurring expenses set up yet!",
-                    parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                return
-            today = _dt.now(SGT).day
-            lines = ["🔄 *Recurring Expenses*\n"]
-            for e in entries:
-                day       = e['day']
-                days_left = day - today if day >= today else (31 - today + day)
-                when      = "today!" if days_left == 0 else "tomorrow" if days_left == 1 else f"in {days_left} days"
-                suffix    = 'st' if day == 1 else 'nd' if day == 2 else 'rd' if day == 3 else 'th'
-                lines.append(f"• *{e['name']}* — ${e['amount']:.2f}\n   📅 {day}{suffix} of month · due {when}\n   🏦 {e['account']} · 🏷 {e['category']}")
-            await query.edit_message_text("\n\n".join(lines), parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load recurring expenses. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data == 'add_recurring_start':
-        context.user_data.clear()
-        context.user_data['awaiting'] = 'rec_name'
-        await query.edit_message_text(
-            "🔄 *Add Recurring Expense*\n\nwhat's the name?\n(e.g. 'Netflix', 'Car insurance')",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    if query.data.startswith('rec_group:'):
-        try:
-            idx        = int(query.data.split(":", 1)[1])
-            group_name = list(EXPENSE_GROUPS.keys())[idx]
-        except (ValueError, IndexError):
-            await query.answer("something went wrong.", show_alert=True)
-            return
-        keyboard = []
-        for ci, cat in enumerate(EXPENSE_GROUPS[group_name]):
-            keyboard.append([InlineKeyboardButton(cat, callback_data=f"rec_cat:{idx}|{ci}")])
-        keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="add_recurring_start")])
-        await query.edit_message_text(f"📂 *{group_name}*\npick a category:", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('rec_cat:'):
-        group_idx, cat_idx = query.data.split(":", 1)[1].split("|")
-        try:
-            group_name = list(EXPENSE_GROUPS.keys())[int(group_idx)]
-            category   = EXPENSE_GROUPS[group_name][int(cat_idx)]
-        except (ValueError, IndexError):
-            await query.answer("something went wrong.", show_alert=True)
-            return
-        context.user_data['rec_category'] = category
-        keyboard = [[InlineKeyboardButton(acc, callback_data=f"rec_account:{acc}")] for acc in ACCOUNT_TYPES]
-        await query.edit_message_text(f"category: *{category}*\n\nwhich account?", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('rec_account:'):
-        account = query.data.split(":", 1)[1]
-        context.user_data['rec_account'] = account
-        context.user_data['awaiting']    = 'rec_day'
-        await query.edit_message_text(
-            f"account: *{account}*\n\nwhich day of the month? (1–28)",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    if query.data == 'delete_recurring_start':
-        try:
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "get_recurring"}, timeout=10)
-            entries  = []
-            try:
-                entries = _json.loads(response.text)
-            except:
-                pass
-            if not entries:
-                await query.edit_message_text("no recurring expenses to delete!", reply_markup=home_keyboard())
-                return
-            keyboard = []
-            for e in entries:
-                keyboard.append([InlineKeyboardButton(f"🗑 {e['name']} · ${e['amount']:.2f}", callback_data=f"confirm_del_rec:{e['rowNum']}")])
-            keyboard.append([InlineKeyboardButton("⬅️ back", callback_data="view_recurring")])
-            await query.edit_message_text("which recurring expense do you want to remove?", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as ex:
-            await query.edit_message_text(f"couldn't load. ({ex})", reply_markup=home_keyboard())
-        return
-
-    if query.data.startswith('confirm_del_rec:'):
-        row_num = query.data.split(":", 1)[1]
-        keyboard = [
-            [InlineKeyboardButton("✅ yes, remove it", callback_data=f"do_del_rec:{row_num}"),
-             InlineKeyboardButton("❌ cancel",          callback_data="view_recurring")]
-        ]
-        await query.edit_message_text("are you sure you want to remove this recurring expense?", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if query.data.startswith('do_del_rec:'):
-        row_num = query.data.split(":", 1)[1]
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "delete_recurring", "row_num": row_num}, timeout=10)
-            await query.edit_message_text("✅ recurring expense removed!", reply_markup=home_keyboard())
-        except:
-            await query.edit_message_text("couldn't remove it.", reply_markup=home_keyboard())
-        return
-
-    # FALLBACK
-    await query.edit_message_text(f"'{query.data}' is not set up yet.", reply_markup=home_keyboard())
-
-
-# --- MESSAGE HANDLER ---
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user     = update.message.from_user.first_name
-    text     = update.message.text.strip()
-    awaiting = context.user_data.get('awaiting')
-
-    # FRUIT
-    if awaiting == 'fruit_qty':
-        fruit = context.user_data.pop('selected_fruit', '')
-        context.user_data.pop('awaiting', None)
-        if text.isdigit():
-            response = requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": f"-fruits {fruit} {text}"}, timeout=10)
-            await update.message.reply_text(response.text)
-        else:
-            await update.message.reply_text("please send a valid number.")
-        return
-
-    # CALENDAR FLOW
-    if awaiting == 'event_title':
-        context.user_data['event_title'] = text
-        context.user_data['awaiting']    = 'event_date'
-        await update.message.reply_text("📆 what date?\n(e.g. '15 Jun' or '15/06/2026')")
-        return
-
-    if awaiting == 'event_date':
-        context.user_data['event_date'] = text
-        context.user_data['awaiting']   = 'event_time'
-        await update.message.reply_text(
-            "🕐 what time?\n• Single: '3pm' or '14:30'\n• Range: '10.30am to 11.15am'\n• Type 'skip' for all-day"
-        )
-        return
-
-    if awaiting == 'event_time':
-        raw_time = text if text.lower() != 'skip' else ''
-        start_time, end_time = parse_time_range(raw_time) if raw_time else ('', '')
-        context.user_data['event_time']     = start_time
-        context.user_data['event_end_time'] = end_time
-        context.user_data['awaiting']       = 'event_notes'
-        await update.message.reply_text("📝 any notes?\ntype 'skip' to leave blank")
-        return
-
-    if awaiting == 'event_notes':
-        notes    = text if text.lower() != 'skip' else ''
-        title    = context.user_data.pop('event_title', '')
-        date     = context.user_data.pop('event_date', '')
-        time_str = context.user_data.pop('event_time', '')
-        end_time = context.user_data.pop('event_end_time', '')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={
-                "user": user, "note": "add_event",
-                "event_title": title, "event_date": date,
-                "event_time": time_str, "event_end_time": end_time, "event_notes": notes
-            }, timeout=10)
-            time_display = f"{time_str} – {end_time}" if end_time else time_str if time_str else "all day"
-            await update.message.reply_text(
-                f"✅ event added!\n\n📅 *{title}*\n📆 {date} {time_display}\n📝 {notes or '—'}".strip(),
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save the event.")
-        return
-
-    # TO-DO FLOW
-    if awaiting == 'todo_task':
-        context.user_data['todo_task'] = text
-        context.user_data.pop('awaiting', None)
-        keyboard = [[InlineKeyboardButton(m, callback_data=f"todo_assign:{m}")] for m in FAMILY_MEMBERS]
-        await update.message.reply_text(f"📋 task: *{text}*\n\nwho is this for?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-
-    if awaiting == 'todo_due':
-        due      = text if text.lower() != 'skip' else ''
-        task     = context.user_data.pop('todo_task', '')
-        assignee = context.user_data.pop('todo_assignee', 'Everyone')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_todo", "todo_task": task, "todo_assignee": assignee, "todo_due": due, "todo_added_by": user}, timeout=10)
-            due_text = f"\n📅 due: {due}" if due else ""
-            await update.message.reply_text(f"✅ task added!\n\n📋 *{task}*\n👤 assigned to: {assignee}{due_text}", parse_mode='Markdown')
-        except:
-            await update.message.reply_text("couldn't save the task.")
-        return
-
-    # FERTILITY FLOW
-    if awaiting == 'fertility_date':
-        fertility_type = context.user_data.pop('fertility_type', '')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_fertility", "fertility_type": fertility_type, "fertility_date": text, "fertility_notes": ""}, timeout=10)
-            emoji = "🩸" if "Period" in fertility_type else "🥚"
-            await update.message.reply_text(f"✅ logged!\n\n{emoji} *{fertility_type}*\n📆 {text}", parse_mode='Markdown')
-        except:
-            await update.message.reply_text("couldn't save. please try again.")
-        return
-
-    # BIRTHDAY FLOW
-    if awaiting == 'bday_name':
-        context.user_data['bday_name'] = text.strip()
-        context.user_data.pop('awaiting', None)
-        keyboard = [[InlineKeyboardButton(t, callback_data=f"bday_type:{t}")] for t in BIRTHDAY_TYPES]
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
-        await update.message.reply_text(f"name: *{text.strip()}*\n\nwhat type?", parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    if awaiting == 'bday_date':
-        raw = text.strip()
-        if not re.match(r'^\d{2}-\d{2}$', raw):
-            await update.message.reply_text("please use MM-DD format, e.g. `05-23`.", parse_mode='Markdown')
-            return
-        try:
-            m_part, d_part = raw.split('-')
-            _dt(2000, int(m_part), int(d_part))
-        except ValueError:
-            await update.message.reply_text("that doesn't look like a valid date. try again (MM-DD).")
-            return
-        context.user_data['bday_date'] = raw
-        context.user_data['awaiting']  = 'bday_year'
-        await update.message.reply_text("what year were they born / married?\nsend the year (e.g. `1990`) or type `skip`.", parse_mode='Markdown')
-        return
-
-    if awaiting == 'bday_year':
-        if text.strip().lower() == 'skip':
-            context.user_data['bday_year'] = ''
-        else:
-            try:
-                yr = int(text.strip())
-                if yr < 1900 or yr > _dt.now(SGT).year:
-                    raise ValueError
-                context.user_data['bday_year'] = str(yr)
-            except ValueError:
-                await update.message.reply_text("please enter a valid year (e.g. `1990`) or type `skip`.", parse_mode='Markdown')
-                return
-        context.user_data['awaiting'] = 'bday_notes'
-        await update.message.reply_text("any notes? type `skip` to leave blank.", parse_mode='Markdown')
-        return
-
-    if awaiting == 'bday_notes':
-        notes   = '' if text.strip().lower() == 'skip' else text.strip()
-        name    = context.user_data.pop('bday_name', '')
-        btype   = context.user_data.pop('bday_type', 'Birthday')
-        bdate   = context.user_data.pop('bday_date', '')
-        byear   = context.user_data.pop('bday_year', '')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_birthday", "name": name, "type": btype, "date": bdate, "year": byear, "notes": notes, "addedBy": user}, timeout=10)
-            month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-            m_p, d_p    = bdate.split('-')
-            date_pretty = f"{month_names[int(m_p)-1]} {int(d_p)}"
-            year_part   = f" ({byear})" if byear else ""
-            await update.message.reply_text(
-                f"✅ saved!\n\n{'🎂' if btype == 'Birthday' else '💍'} *{name}* — {btype}\n📅 {date_pretty}{year_part}" + (f"\n📝 {notes}" if notes else ""),
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save. please try again.")
-        return
-
-    # BUDGET FLOW
-    if awaiting == 'budget_amount':
-        try:
-            amount = float(text.replace('$', '').replace(',', ''))
-            if amount <= 0:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("please enter a valid amount (e.g. `500`).", parse_mode='Markdown')
-            return
-        group = context.user_data.pop('budget_group', '')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "set_budget", "group": group, "budget": amount}, timeout=10)
-            cat_list = "\n".join([f"  · {c}" for c in EXPENSE_GROUPS.get(group, [])])
-            await update.message.reply_text(
-                f"✅ budget set!\n\n📊 *{group}*\n💰 ${amount:.2f} / month\n\n_covers:_\n{cat_list}\n\nyou'll be notified at 80% and 100%.",
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save the budget. please try again.")
-        return
-
-    # MEMORY FLOW
-    if awaiting == 'memory_text':
-        context.user_data['memory_text'] = text.strip()
-        context.user_data['awaiting']    = 'memory_date'
-        await update.message.reply_text("📅 when did this happen?\n(e.g. `14 May`)\ntype `today` for today.", parse_mode='Markdown')
-        return
-
-    if awaiting == 'memory_date':
-        memory_date   = '' if text.strip().lower() == 'today' else text.strip()
-        memory_text   = context.user_data.pop('memory_text',  '')
-        memory_type   = context.user_data.pop('memory_type',  '💛 Moment')
-        memory_person = context.user_data.pop('memory_person','Everyone')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_memory", "memory_type": memory_type, "memory_person": memory_person, "memory_text": memory_text, "memory_date": memory_date}, timeout=10)
-            emoji        = "🏆" if "Milestone" in memory_type else "💬" if "Quote" in memory_type else "💛"
-            date_display = memory_date if memory_date else "today"
-            await update.message.reply_text(
-                f"✅ memory saved!\n\n{emoji} *{memory_type.split(' ',1)[-1]}* — {memory_person}\n_{memory_text}_\n📅 {date_display}",
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save the memory. please try again.")
-        return
-
-    # RECURRING EXPENSE FLOW
-    if awaiting == 'rec_name':
-        context.user_data['rec_name'] = text.strip()
-        context.user_data['awaiting'] = 'rec_amount'
-        await update.message.reply_text(
-            f"name: *{text.strip()}*\n\nhow much per month? (e.g. `25.90`)",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ cancel", callback_data='home')]])
-        )
-        return
-
-    if awaiting == 'rec_amount':
-        try:
-            amount = float(text.replace('$', '').replace(',', ''))
-            if amount <= 0:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("please enter a valid amount (e.g. `25.90`).", parse_mode='Markdown')
-            return
-        context.user_data['rec_amount'] = amount
-        context.user_data.pop('awaiting', None)
-        group_keys = list(EXPENSE_GROUPS.keys())
-        keyboard   = []
-        for i in range(0, len(group_keys), 2):
-            row = [InlineKeyboardButton(group_keys[i], callback_data=f"rec_group:{i}")]
-            if i + 1 < len(group_keys):
-                row.append(InlineKeyboardButton(group_keys[i + 1], callback_data=f"rec_group:{i+1}"))
-            keyboard.append(row)
-        keyboard.append([InlineKeyboardButton("❌ cancel", callback_data='home')])
-        await update.message.reply_text(
-            f"amount: *${amount:.2f}/month*\n\nselect a category group:",
-            parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-
-    if awaiting == 'rec_day':
-        try:
-            day = int(text.strip())
-            if day < 1 or day > 28:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("please enter a day between 1 and 28.")
-            return
-        name     = context.user_data.pop('rec_name', '')
-        amount   = context.user_data.pop('rec_amount', 0)
-        category = context.user_data.pop('rec_category', 'Other')
-        account  = context.user_data.pop('rec_account', 'Family')
-        context.user_data.pop('awaiting', None)
-        try:
-            requests.post(GOOGLE_SCRIPT_URL, json={"user": user, "note": "add_recurring", "rec_name": name, "rec_amount": amount, "rec_category": category, "rec_account": account, "rec_day": day}, timeout=10)
-            suffix = 'st' if day == 1 else 'nd' if day == 2 else 'rd' if day == 3 else 'th'
-            await update.message.reply_text(
-                f"✅ recurring expense saved!\n\n🔄 *{name}*\n💰 ${amount:.2f} / month\n📅 {day}{suffix} of each month\n🏦 {account} · 🏷 {category}\n\n_auto-logged monthly with a notification._",
-                parse_mode='Markdown'
-            )
-        except:
-            await update.message.reply_text("couldn't save. please try again.")
-        return
-
-    # DEFAULT — pass to GAS catch-all
-    payload  = {"user": user, "note": text}
-    response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=10)
-    await update.message.reply_text(response.text)
-
-
-# --- NOTIFICATION HANDLER ---
-async def handle_notify(notify_type: str, data: dict):
-    if notify_type == "morning_digest":
-        await send_to_all(data.get("message", ""))
-    elif notify_type == "expense_summary":
-        await send_to_all(f"💰 *Wong Family — Monthly Expense Summary*\n\n{data.get('message', '')}")
-    elif notify_type == "expense_report":
-        await send_to_all(f"📊 *Wong Family — Last Month's Full Report*\n\n{data.get('message', '')}")
-    elif notify_type == "birthday_reminder":
-        await send_to_all(data.get("message", ""))
-    elif notify_type == "budget_alert":
-        await send_to_all(data.get("message", ""))
-    elif notify_type == "recurring_logged":
-        await send_to_all(data.get("message", ""))
-    elif notify_type == "fertile_soon":
-        await send_to_all(f"🌸 *Fertile Window in 3 Days*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nPlan accordingly 💕")
-    elif notify_type == "fertile_tomorrow":
-        await send_to_all(f"🌸 *Fertile Window Starts Tomorrow!*\n\n🗓 *{data.get('fertile_start')} – {data.get('fertile_end')}*\n\nYou've got this! 💕")
-    elif notify_type == "period_due":
-        await send_to_all(f"🩸 *Period Due Soon*\n\nEstimated next period: *{data.get('next_period')}*\nMake sure you're prepared! 🌺")
-
-
-# --- BUILD APPLICATION ---
-application = ApplicationBuilder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(CallbackQueryHandler(button_handler))
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-loop = asyncio.new_event_loop()
-
-async def start_bot():
-    await application.initialize()
-    await application.start()
-    await application.bot.set_webhook(f"{RAILWAY_URL}/")
-    print("✅ Wong Family bot initialized + webhook registered")
-
-def start_bot_loop():
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_bot())
-    loop.run_forever()
-
-def watchdog():
-    while True:
-        time.sleep(60)
-        if not bot_thread.is_alive():
-            print("⚠️ Bot thread died — restarting")
-            new_thread = threading.Thread(target=start_bot_loop, daemon=True)
-            new_thread.start()
-
-bot_thread      = threading.Thread(target=start_bot_loop, daemon=True)
-bot_thread.start()
-watchdog_thread = threading.Thread(target=watchdog, daemon=True)
-watchdog_thread.start()
-time.sleep(2)
-
-
-# --- FLASK ---
-app = Flask(__name__)
-
-@app.route('/dashboard', methods=['GET'])
-def dashboard():
-    return send_file('templates/dashboard.html')
-
-def _gas_post(payload, timeout=15):
-    return requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=timeout)
-
-@app.route('/dashboard-data', methods=['GET'])
-def dashboard_data():
-    tasks = {
-        "expenses":    {"user": "dashboard", "note": "get_expenses_raw"},
-        "events":      {"user": "dashboard", "note": "get_events"},
-        "todos":       {"user": "dashboard", "note": "get_todos_by_person"},
-        "groceries":   {"user": "dashboard", "note": "get_checklist"},
-        "fertility":   {"user": "dashboard", "note": "get_fertility"},
-        "kid_Mikaela": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Mikaela"},
-        "kid_Meaghan": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Meaghan"},
-        "kid_Eleanor": {"user": "dashboard", "note": "get_kid_calendar", "kid_name": "Eleanor"},
-        "birthdays":   {"user": "dashboard", "note": "get_birthdays_dashboard"},
-        "budgets":     {"user": "dashboard", "note": "get_budgets"},
-        "memories":    {"user": "dashboard", "note": "get_memories_dashboard"},
-        "recurring":   {"user": "dashboard", "note": "get_recurring_dashboard"},
-    }
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=12) as executor:
-        future_to_key = {executor.submit(_gas_post, payload): key for key, payload in tasks.items()}
-        for future in as_completed(future_to_key):
-            key = future_to_key[future]
-            try:
-                results[key] = future.result()
-            except Exception as exc:
-                print(f"GAS fetch failed [{key}]: {exc}")
-                results[key] = None
-
-    def safe_text(key):
-        r = results.get(key)
-        return r.text.strip() if r and r.ok else ''
-
-    def safe_json(key):
-        raw = safe_text(key)
-        try:
-            return _json.loads(raw) if raw else []
-        except:
-            return []
-
-    try:
-        # EXPENSES
-        rows     = safe_json("expenses")
-        expenses = {"month_total": 0, "entry_count": len(rows), "by_category": {}, "by_person": {}, "recent": rows}
-        for r in rows:
-            expenses['month_total'] += r.get('amount', 0)
-            expenses['by_category'][r.get('category', 'Other')]  = expenses['by_category'].get(r.get('category', 'Other'), 0)  + r.get('amount', 0)
-            expenses['by_person'][r.get('account', 'unknown')]   = expenses['by_person'].get(r.get('account', 'unknown'), 0)   + r.get('amount', 0)
-
-        # CALENDAR
-        cal_raw = safe_text("events")
-        events  = []
-        if cal_raw and cal_raw != "no_events":
-            for block in cal_raw.split('\n\n'):
-                lines = block.strip().split('\n')
-                if len(lines) >= 2:
-                    title    = lines[0].replace('📅','').replace('*','').strip()
-                    parts    = lines[1].strip().split('·')
-                    date_str = parts[0].strip() if parts else '—'
-                    time_str = parts[1].strip() if len(parts) > 1 else '—'
-                    combined = ' '.join(lines).lower()
-                    tags     = [m for m in FAMILY_MEMBERS if m != 'Everyone' and m.lower() in combined]
-                    if title and 'upcoming' not in title.lower():
-                        events.append({"title": title, "date": date_str, "time": time_str, "tags": tags})
-
-        # TO-DO
-        todo_raw = safe_text("todos")
-        todos_by_person = {}
-        if todo_raw and todo_raw != "no_todos":
-            try:
-                todos_by_person = _json.loads(todo_raw)
-            except:
-                pass
-
-        # GROCERY
-        groc_raw  = safe_text("groceries")
-        groceries = [{"name": i.strip()} for i in groc_raw.split(',') if i.strip()] if groc_raw else []
-
-        # FERTILITY
-        fert_raw  = safe_text("fertility")
-        fertility = {}
-        if fert_raw and fert_raw != "no_fertility":
-            for line in fert_raw.split('\n'):
-                line = line.strip().replace('*','')
-                if 'last period start:' in line.lower():
-                    fertility['last_period_start'] = line.split(':',1)[1].strip()
-                elif 'next period' in line.lower():
-                    fertility['next_period'] = line.split(':',1)[1].strip()
-                elif 'fertile window' in line.lower():
-                    fertility['fertile_window'] = line.split(':',1)[1].strip()
-                elif 'last ovulation' in line.lower():
-                    fertility['last_ovulation'] = line.split(':',1)[1].strip()
-                elif 'duration' in line.lower():
-                    fertility['duration'] = line.split(':',1)[1].strip().replace(' days','').strip()
-
-        # KIDS CALENDAR
-        kids_calendar = {}
-        for kid in ['Mikaela', 'Meaghan', 'Eleanor']:
-            kid_raw    = safe_text(f"kid_{kid}")
-            kid_events = []
-            if kid_raw and kid_raw != "no_kid_events":
-                for block in kid_raw.split('\n\n'):
-                    bl = block.strip().split('\n')
-                    if len(bl) >= 2:
-                        t      = bl[0].replace('📅','').replace('*','').strip()
-                        bparts = bl[1].strip().split('·')
-                        if t and 'upcoming' not in t.lower():
-                            kid_events.append({"title": t, "date": bparts[0].strip() if bparts else '—', "time": bparts[1].strip() if len(bparts) > 1 else '—'})
-            kids_calendar[kid] = kid_events
-
-        return _json.dumps({
-            "expenses":        expenses,
-            "events":          events,
-            "todos_by_person": todos_by_person,
-            "groceries":       groceries,
-            "fertility":       fertility,
-            "kids_calendar":   kids_calendar,
-            "birthdays":       safe_json("birthdays"),
-            "budgets":         safe_json("budgets"),
-            "memories":        safe_json("memories"),
-            "recurring":       safe_json("recurring"),
-        }), 200, {'Content-Type': 'application/json'}
-
-    except Exception as e:
-        print(f"DASHBOARD ERROR: {e}")
-        return _json.dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
-
-
-@app.route('/', methods=['GET'])
-def healthcheck():
-    return "ok", 200
-
-@app.route('/', methods=['POST'])
-def webhook():
-    try:
-        data = request.get_json(silent=True)
-        if not data:
-            return "ignored", 200
-        future = asyncio.run_coroutine_threadsafe(
-            application.process_update(Update.de_json(data, application.bot)), loop
-        )
-        future.result(timeout=30)
-        return "ok", 200
-    except Exception as e:
-        print(f"WEBHOOK ERROR: {e}")
-        return "ok", 200
-
-@app.route('/notify', methods=['POST'])
-def notify():
-    try:
-        data        = request.get_json(silent=True)
-        notify_type = data.get("type", "")
-        future      = asyncio.run_coroutine_threadsafe(handle_notify(notify_type, data), loop)
-        future.result(timeout=30)
-        return "ok", 200
-    except Exception as e:
-        print(f"NOTIFY ERROR: {e}")
-        return "error", 200
-
-@app.route('/set_webhook', methods=['GET'])
-def set_webhook():
-    url      = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
-    response = requests.post(url, json={"url": f"{RAILWAY_URL}/"})
-    return response.json()
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+/* ── RESET ───────────────────────────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { height:100%; -webkit-tap-highlight-color:transparent; }
+body { font-family:var(--font); background:var(--surface-2); color:var(--ink); min-height:100%; overscroll-behavior:none; }
+button { cursor:pointer; font-family:inherit; border:none; background:none; }
+input,textarea,select { font-family:inherit; }
+a { color:inherit; text-decoration:none; }
+
+/* ── SCREEN MANAGER ──────────────────────────────────── */
+.screen { display:none; flex-direction:column; height:100dvh; overflow:hidden; }
+.screen.active { display:flex; }
+
+/* ── LOGIN ───────────────────────────────────────────── */
+#login-screen {
+  background: linear-gradient(145deg, #1a1a2e 0%, #2d2d5e 60%, #3a6fa8 100%);
+  align-items:center; justify-content:center; gap:0;
+}
+.login-wrap { width:100%; max-width:360px; padding:32px 24px; }
+.login-logo { text-align:center; margin-bottom:40px; }
+.login-logo .logo-mark {
+  width:72px; height:72px; border-radius:50%;
+  background:rgba(255,255,255,.12); border:2px solid rgba(255,255,255,.25);
+  display:flex; align-items:center; justify-content:center;
+  font-size:32px; margin:0 auto 16px;
+}
+.login-logo h1 { color:#fff; font-size:24px; font-weight:700; letter-spacing:-.3px; }
+.login-logo p  { color:rgba(255,255,255,.55); font-size:14px; margin-top:4px; }
+.member-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:28px; }
+.member-btn {
+  padding:18px 12px; border-radius:var(--radius); border:2px solid rgba(255,255,255,.15);
+  background:rgba(255,255,255,.08); color:#fff; font-size:15px; font-weight:600;
+  transition:all .15s; display:flex; flex-direction:column; align-items:center; gap:8px;
+}
+.member-btn .avatar { font-size:28px; }
+.member-btn:hover, .member-btn.selected {
+  background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.5);
+  transform:translateY(-2px);
+}
+.pin-section { display:none; }
+.pin-section.visible { display:block; }
+.pin-label { color:rgba(255,255,255,.7); font-size:14px; text-align:center; margin-bottom:12px; }
+.pin-dots { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
+.pin-dot {
+  width:14px; height:14px; border-radius:50%;
+  border:2px solid rgba(255,255,255,.4); background:transparent; transition:all .15s;
+}
+.pin-dot.filled { background:#fff; border-color:#fff; }
+.pin-keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.pin-key {
+  padding:16px; border-radius:var(--radius-sm); background:rgba(255,255,255,.1);
+  color:#fff; font-size:20px; font-weight:600; border:1px solid rgba(255,255,255,.15);
+  transition:all .1s; text-align:center;
+}
+.pin-key:active { background:rgba(255,255,255,.25); transform:scale(.95); }
+.pin-key.del { font-size:16px; }
+.pin-error { color:#ff8a8a; font-size:13px; text-align:center; margin-top:8px; min-height:18px; }
+
+/* ── APP SHELL ───────────────────────────────────────── */
+#app-screen { padding-bottom:var(--nav-h); }
+
+/* ── HEADER ──────────────────────────────────────────── */
+.app-header {
+  height:var(--header-h); padding:0 16px;
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  flex-shrink:0; position:sticky; top:0; z-index:100;
+}
+.header-left { display:flex; align-items:center; gap:10px; }
+.header-avatar {
+  width:34px; height:34px; border-radius:50%;
+  background:var(--blue-light); display:flex; align-items:center; justify-content:center;
+  font-size:16px; color:var(--blue);
+}
+.header-name { font-size:16px; font-weight:700; color:var(--ink); }
+.header-date { font-size:12px; color:var(--ink-faint); margin-top:1px; }
+.header-right { display:flex; gap:8px; align-items:center; }
+.icon-btn {
+  width:36px; height:36px; border-radius:50%; display:flex;
+  align-items:center; justify-content:center; color:var(--ink-soft);
+  transition:background .15s;
+}
+.icon-btn:hover { background:var(--surface-2); }
+.refresh-btn .spinning { animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── BOTTOM NAV ──────────────────────────────────────── */
+.bottom-nav {
+  position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
+  background:var(--surface); border-top:1px solid var(--border);
+  display:flex; z-index:200; padding-bottom:env(safe-area-inset-bottom);
+}
+.nav-item {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:3px; color:var(--ink-faint);
+  font-size:10px; font-weight:500; padding:8px 4px; transition:color .15s;
+  border-radius:var(--radius-sm);
+}
+.nav-item svg { width:22px; height:22px; }
+.nav-item.active { color:var(--blue); }
+.nav-item.active svg { stroke:var(--blue); }
+
+/* ── SECTIONS ────────────────────────────────────────── */
+.section { display:none; flex-direction:column; height:calc(100dvh - var(--header-h) - var(--nav-h)); overflow-y:auto; }
+.section.active { display:flex; }
+.section-body { padding:16px; display:flex; flex-direction:column; gap:16px; flex:1; }
+
+/* ── CARDS ───────────────────────────────────────────── */
+.card {
+  background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-sm);
+  border:1px solid var(--border); overflow:hidden;
+}
+.card-header {
+  padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid var(--border);
+}
+.card-title { font-size:15px; font-weight:700; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.card-body { padding:0; }
+.card-row {
+  padding:12px 16px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; gap:12px;
+}
+.card-row:last-child { border-bottom:none; }
+.card-row-main { flex:1; min-width:0; }
+.card-row-title { font-size:14px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-row-sub { font-size:12px; color:var(--ink-faint); margin-top:2px; }
+.card-row-right { flex-shrink:0; text-align:right; }
+.card-empty { padding:32px 16px; text-align:center; color:var(--ink-faint); font-size:14px; }
+.card-empty .card-empty-icon { font-size:36px; margin-bottom:8px; }
+
+/* ── TAGS / BADGES ───────────────────────────────────── */
+.badge {
+  display:inline-flex; align-items:center; padding:2px 8px;
+  border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap;
+}
+.badge-blue   { background:var(--blue-light);   color:var(--blue-dark); }
+.badge-green  { background:var(--green-light);  color:#1e7a50; }
+.badge-red    { background:var(--red-light);    color:#b83232; }
+.badge-amber  { background:var(--amber-light);  color:#a3600a; }
+.badge-purple { background:var(--purple-light); color:#5a3e9a; }
+.badge-gray   { background:var(--surface-2);    color:var(--ink-soft); }
+
+/* ── PROGRESS BAR ────────────────────────────────────── */
+.progress-wrap { margin-top:6px; }
+.progress-track { height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+.progress-fill  { height:100%; border-radius:3px; transition:width .4s ease; }
+
+/* ── BUTTONS ─────────────────────────────────────────── */
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:10px 18px; border-radius:var(--radius-sm); font-size:14px; font-weight:600;
+  transition:all .15s; white-space:nowrap;
+}
+.btn-primary   { background:var(--blue);  color:#fff; }
+.btn-primary:hover   { background:var(--blue-dark); }
+.btn-secondary { background:var(--surface-2); color:var(--ink); border:1px solid var(--border); }
+.btn-secondary:hover { background:var(--border); }
+.btn-danger    { background:var(--red-light); color:var(--red); }
+.btn-success   { background:var(--green-light); color:var(--green); }
+.btn-sm { padding:6px 12px; font-size:12px; }
+.btn-full { width:100%; }
+.fab {
+  position:fixed; bottom:calc(var(--nav-h) + 16px); right:16px;
+  width:52px; height:52px; border-radius:50%; background:var(--blue);
+  color:#fff; font-size:24px; box-shadow:var(--shadow-lg); z-index:150;
+  display:flex; align-items:center; justify-content:center; transition:transform .15s;
+}
+.fab:hover { transform:scale(1.07); }
+.fab.hidden { display:none; }
+
+/* ── MODAL ───────────────────────────────────────────── */
+.modal-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+  z-index:300; align-items:flex-end; justify-content:center;
+}
+.modal-overlay.open { display:flex; }
+.modal {
+  background:var(--surface); border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+  width:100%; max-width:560px; max-height:90dvh; overflow-y:auto;
+  padding:0 0 env(safe-area-inset-bottom);
+  animation:slideUp .25s ease;
+}
+@keyframes slideUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
+.modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:12px auto 0; }
+.modal-header { padding:16px 20px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.modal-title { font-size:17px; font-weight:700; color:var(--ink); }
+.modal-close { width:32px; height:32px; border-radius:50%; background:var(--surface-2); display:flex; align-items:center; justify-content:center; color:var(--ink-soft); font-size:18px; }
+.modal-body { padding:20px; display:flex; flex-direction:column; gap:16px; }
+.modal-footer { padding:0 20px 20px; display:flex; gap:10px; }
+
+/* ── FORM ────────────────────────────────────────────── */
+.field { display:flex; flex-direction:column; gap:6px; }
+.field label { font-size:13px; font-weight:600; color:var(--ink-soft); }
+.field input, .field select, .field textarea {
+  padding:11px 14px; border:1.5px solid var(--border); border-radius:var(--radius-sm);
+  font-size:15px; color:var(--ink); background:var(--surface); outline:none; transition:border-color .15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--blue); }
+.field textarea { resize:vertical; min-height:80px; }
+.field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+/* ── CHIP SELECTOR ───────────────────────────────────── */
+.chip-group { display:flex; flex-wrap:wrap; gap:8px; }
+.chip {
+  padding:6px 14px; border-radius:20px; border:1.5px solid var(--border);
+  font-size:13px; font-weight:500; color:var(--ink-soft); background:var(--surface);
+  transition:all .15s; cursor:pointer;
+}
+.chip.selected { border-color:var(--blue); background:var(--blue-light); color:var(--blue); font-weight:600; }
+
+/* ── TOAST ───────────────────────────────────────────── */
+#toast {
+  position:fixed; bottom:calc(var(--nav-h) + 16px); left:50%;
+  transform:translateX(-50%) translateY(20px); z-index:999;
+  background:#1a1a2e; color:#fff; padding:10px 20px; border-radius:24px;
+  font-size:14px; font-weight:500; opacity:0; pointer-events:none; transition:all .25s; white-space:nowrap;
+}
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ── SECTION: HOME ───────────────────────────────────── */
+.home-greeting { padding:20px 16px 4px; }
+.home-greeting h2 { font-size:22px; font-weight:800; color:var(--ink); }
+.home-greeting p  { font-size:14px; color:var(--ink-faint); margin-top:2px; }
+.home-grid { padding:0 16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.home-tile {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadow-sm);
+  cursor:pointer; transition:all .15s;
+}
+.home-tile:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.home-tile .tile-icon { font-size:26px; }
+.home-tile .tile-label { font-size:11px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.5px; }
+.home-tile .tile-value { font-size:20px; font-weight:800; color:var(--ink); line-height:1; }
+.home-tile .tile-sub { font-size:12px; color:var(--ink-soft); }
+
+/* ── TODAY SUMMARY ───────────────────────────────────── */
+.today-card { margin:0 16px; }
+
+/* ── SECTION: CALENDAR ───────────────────────────────── */
+.event-dot { width:8px; height:8px; border-radius:50%; background:var(--blue); flex-shrink:0; margin-top:5px; }
+.event-tag { display:inline-flex; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:600; margin:2px 2px 0 0; }
+
+/* ── SECTION: TASKS ──────────────────────────────────── */
+.task-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.task-check {
+  width:22px; height:22px; border-radius:50%; border:2px solid var(--border);
+  flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:all .15s;
+}
+.task-check:hover { border-color:var(--green); }
+.task-check.done { background:var(--green); border-color:var(--green); }
+.task-check.done::after { content:'✓'; color:#fff; font-size:12px; font-weight:700; }
+.task-main { flex:1; min-width:0; }
+.task-title { font-size:14px; font-weight:500; color:var(--ink); }
+.task-meta  { font-size:12px; color:var(--ink-faint); margin-top:2px; }
+.task-del { padding:6px; color:var(--ink-faint); opacity:0; transition:opacity .15s; }
+.task-row:hover .task-del { opacity:1; }
+
+/* ── SECTION: GROCERY ────────────────────────────────── */
+.grocery-row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border); }
+.grocery-check { width:22px; height:22px; border-radius:var(--radius-sm); border:2px solid var(--border); flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+.grocery-check:hover { border-color:var(--blue); }
+.grocery-check.bought { background:var(--blue); border-color:var(--blue); }
+.grocery-check.bought::after { content:'✓'; color:#fff; font-size:12px; font-weight:700; }
+.grocery-label { flex:1; font-size:14px; color:var(--ink); }
+.grocery-label.bought { text-decoration:line-through; color:var(--ink-faint); }
+
+/* ── SECTION: EXPENSES ───────────────────────────────── */
+.exp-amount { font-size:13px; font-weight:700; color:var(--ink); }
+.exp-category { font-size:11px; color:var(--ink-faint); margin-top:2px; }
+.pie-wrap { padding:16px; display:flex; flex-direction:column; gap:10px; }
+.pie-row { display:flex; align-items:center; gap:10px; }
+.pie-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.pie-label { flex:1; font-size:13px; color:var(--ink); }
+.pie-val { font-size:13px; font-weight:600; color:var(--ink); }
+
+/* ── SECTION: BUDGETS ────────────────────────────────── */
+.budget-row { padding:14px 16px; border-bottom:1px solid var(--border); }
+.budget-row-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.budget-group-name { font-size:14px; font-weight:600; color:var(--ink); }
+.budget-pct { font-size:12px; font-weight:700; }
+
+/* ── SECTION: MEMORIES ───────────────────────────────── */
+.memory-row { padding:14px 16px; border-bottom:1px solid var(--border); }
+.memory-type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-faint); margin-bottom:4px; }
+.memory-text { font-size:14px; color:var(--ink); line-height:1.5; }
+.memory-meta { font-size:12px; color:var(--ink-faint); margin-top:6px; }
+
+/* ── SECTION: FERTILITY ──────────────────────────────── */
+.fertility-stat { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+.fertility-label { font-size:14px; color:var(--ink-soft); }
+.fertility-value { font-size:14px; font-weight:600; color:var(--ink); }
+
+/* ── SECTION: FRIDGE ─────────────────────────────────── */
+.fridge-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.fridge-name { font-size:14px; font-weight:500; color:var(--ink); }
+.fridge-stock { font-size:18px; font-weight:800; color:var(--blue); }
+.fridge-stale { color:var(--amber); }
+
+/* ── SECTION: RECURRING ──────────────────────────────── */
+.rec-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+.rec-main { flex:1; min-width:0; }
+.rec-name { font-size:14px; font-weight:600; color:var(--ink); }
+.rec-meta { font-size:12px; color:var(--ink-faint); margin-top:2px; }
+.rec-amount { font-size:15px; font-weight:700; color:var(--ink); }
+
+/* ── SECTION: BIRTHDAYS ──────────────────────────────── */
+.bd-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+.bd-icon { font-size:24px; flex-shrink:0; }
+.bd-main { flex:1; }
+.bd-name { font-size:14px; font-weight:600; color:var(--ink); }
+.bd-meta { font-size:12px; color:var(--ink-faint); margin-top:2px; }
+.bd-days { font-size:12px; font-weight:700; text-align:right; }
+
+/* ── LOADING ─────────────────────────────────────────── */
+.loading { display:flex; align-items:center; justify-content:center; padding:40px; color:var(--ink-faint); gap:8px; font-size:14px; }
+.loader { width:18px; height:18px; border:2.5px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
+
+/* ── MORE MENU ───────────────────────────────────────── */
+.more-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px; }
+.more-tile {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 16px; display:flex; flex-direction:column; align-items:center; gap:10px;
+  cursor:pointer; transition:all .15s; text-align:center;
+}
+.more-tile:hover { border-color:var(--blue); background:var(--blue-light); transform:translateY(-2px); }
+.more-tile .more-icon { font-size:30px; }
+.more-tile .more-label { font-size:13px; font-weight:600; color:var(--ink); }
+
+/* ── DESKTOP SIDEBAR ─────────────────────────────────── */
+@media (min-width:720px) {
+  #app-screen { flex-direction:row; padding-bottom:0; }
+  .bottom-nav { display:none; }
+  .sidebar {
+    width:220px; flex-shrink:0; border-right:1px solid var(--border);
+    background:var(--surface); display:flex; flex-direction:column;
+    padding:20px 12px; gap:4px; overflow-y:auto;
+  }
+  .sidebar-logo { padding:8px 12px 20px; font-size:16px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:10px; }
+  .sidebar-logo .logo-emoji { font-size:22px; }
+  .sidebar-item {
+    display:flex; align-items:center; gap:10px; padding:10px 12px;
+    border-radius:var(--radius-sm); color:var(--ink-soft); font-size:14px; font-weight:500;
+    cursor:pointer; transition:all .15s;
+  }
+  .sidebar-item svg { width:18px; height:18px; flex-shrink:0; }
+  .sidebar-item:hover { background:var(--surface-2); color:var(--ink); }
+  .sidebar-item.active { background:var(--blue-light); color:var(--blue); font-weight:600; }
+  .app-main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .app-header { position:sticky; }
+  .section { height:calc(100dvh - var(--header-h)); }
+  .fab { bottom:24px; right:24px; }
+  #toast { bottom:24px; }
+  .more-grid { grid-template-columns:repeat(3,1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════ -->
+<div id="login-screen" class="screen active">
+  <div class="login-wrap">
+    <div class="login-logo">
+      <div class="logo-mark">🏠</div>
+      <h1>Wong Family</h1>
+      <p>Who's using the app?</p>
+    </div>
+    <div class="member-grid" id="member-grid"></div>
+    <div class="pin-section" id="pin-section">
+      <p class="pin-label" id="pin-label">Enter your PIN</p>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pin-keypad" id="pin-keypad"></div>
+      <p class="pin-error" id="pin-error"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     APP SCREEN
+══════════════════════════════════════════════════ -->
+<div id="app-screen" class="screen">
+
+  <!-- Sidebar (desktop) -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <div class="app-main" id="app-main" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="header-avatar" id="header-avatar"></div>
+        <div>
+          <div class="header-name" id="header-name"></div>
+          <div class="header-date" id="header-date"></div>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn refresh-btn" id="refresh-btn" title="Refresh">
+          <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+        <button class="icon-btn" id="logout-btn" title="Switch user">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sections container -->
+    <div style="flex:1;overflow:hidden;position:relative;">
+
+      <!-- HOME -->
+      <div class="section active" id="section-home">
+        <div class="home-greeting" id="home-greeting"></div>
+        <div class="today-card" id="today-card"></div>
+        <div class="home-grid" id="home-grid"></div>
+      </div>
+
+      <!-- CALENDAR -->
+      <div class="section" id="section-calendar">
+        <div class="section-body">
+          <div class="card" id="calendar-card">
+            <div class="card-header"><span class="card-title">📅 Upcoming Events</span></div>
+            <div class="card-body" id="calendar-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TASKS -->
+      <div class="section" id="section-tasks">
+        <div class="section-body">
+          <div class="card" id="tasks-card">
+            <div class="card-header"><span class="card-title">✅ To-Do List</span></div>
+            <div class="card-body" id="tasks-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GROCERIES -->
+      <div class="section" id="section-grocery">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🛒 Grocery List</span></div>
+            <div class="card-body" id="grocery-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EXPENSES -->
+      <div class="section" id="section-expenses">
+        <div class="section-body" id="expenses-body">
+          <div class="loading"><div class="loader"></div>Loading…</div>
+        </div>
+      </div>
+
+      <!-- MORE (hub for secondary features) -->
+      <div class="section" id="section-more">
+        <div class="more-grid" id="more-grid"></div>
+      </div>
+
+      <!-- BUDGETS -->
+      <div class="section" id="section-budgets">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">📊 Budgets</span>
+              <button class="btn btn-sm btn-primary" onclick="openModal('modal-budget')">+ Set Budget</button>
+            </div>
+            <div class="card-body" id="budgets-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MEMORIES -->
+      <div class="section" id="section-memories">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">💛 Family Memories</span></div>
+            <div class="card-body" id="memories-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FERTILITY -->
+      <div class="section" id="section-fertility">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🌸 Fertility Tracker</span></div>
+            <div class="card-body" id="fertility-body"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Log Entry</span></div>
+            <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+              <div class="chip-group" id="fertility-type-chips"></div>
+              <div class="field"><label>Date</label><input type="date" id="fertility-date-input"></div>
+              <div class="field"><label>Notes (optional)</label><input type="text" id="fertility-notes-input" placeholder="e.g. light flow"></div>
+              <button class="btn btn-primary btn-full" onclick="submitFertility()">Log Entry</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FRIDGE -->
+      <div class="section" id="section-fridge">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🍎 Fridge Stock</span></div>
+            <div class="card-body" id="fridge-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Update Stock</span></div>
+            <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+              <div class="field-row">
+                <div class="field"><label>Item name</label><input type="text" id="fridge-name-input" placeholder="e.g. Apple"></div>
+                <div class="field"><label>Qty</label><input type="number" id="fridge-qty-input" min="1" value="1"></div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-success btn-full" onclick="updateFridge('add')">+ Add stock</button>
+                <button class="btn btn-danger btn-full" onclick="updateFridge('eat')">− Log eating</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RECURRING -->
+      <div class="section" id="section-recurring">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🔄 Recurring Expenses</span></div>
+            <div class="card-body" id="recurring-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BIRTHDAYS -->
+      <div class="section" id="section-birthdays">
+        <div class="section-body">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🎂 Birthdays & Anniversaries</span></div>
+            <div class="card-body" id="birthdays-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end sections container -->
+  </div><!-- end app-main -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav class="bottom-nav" id="bottom-nav"></nav>
+
+</div><!-- end app-screen -->
+
+<!-- FAB -->
+<button class="fab hidden" id="fab" onclick="onFab()">+</button>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════════════ -->
+
+<!-- Add Event -->
+<div class="modal-overlay" id="modal-event">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Add Event</span><button class="modal-close" onclick="closeModal('modal-event')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Event Title</label><input type="text" id="ev-title" placeholder="e.g. Dentist appointment"></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="ev-date"></div>
+        <div class="field"><label>Time (optional)</label><input type="time" id="ev-time"></div>
+      </div>
+      <div class="field"><label>End Time (optional)</label><input type="time" id="ev-end-time"></div>
+      <div class="field"><label>Notes (optional)</label><textarea id="ev-notes" placeholder="Any extra details…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-event')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitEvent()">Add Event</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Task -->
+<div class="modal-overlay" id="modal-task">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Add Task</span><button class="modal-close" onclick="closeModal('modal-task')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Task</label><input type="text" id="task-title" placeholder="What needs to be done?"></div>
+      <div class="field"><label>Assign to</label>
+        <div class="chip-group" id="task-assign-chips"></div>
+      </div>
+      <div class="field"><label>Due Date (optional)</label><input type="date" id="task-due"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-task')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitTask()">Add Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Grocery -->
+<div class="modal-overlay" id="modal-grocery">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Add to Grocery List</span><button class="modal-close" onclick="closeModal('modal-grocery')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Item name</label><input type="text" id="grocery-item" placeholder="e.g. Milk, bread…"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-grocery')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitGrocery()">Add Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Memory -->
+<div class="modal-overlay" id="modal-memory">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Log a Memory</span><button class="modal-close" onclick="closeModal('modal-memory')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Type</label>
+        <div class="chip-group" id="memory-type-chips"></div>
+      </div>
+      <div class="field"><label>About</label>
+        <div class="chip-group" id="memory-person-chips"></div>
+      </div>
+      <div class="field"><label>Memory</label><textarea id="memory-text" placeholder="Write the memory…"></textarea></div>
+      <div class="field"><label>Date</label><input type="date" id="memory-date"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-memory')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitMemory()">Save Memory</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Birthday -->
+<div class="modal-overlay" id="modal-birthday">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Add Birthday / Anniversary</span><button class="modal-close" onclick="closeModal('modal-birthday')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Name</label><input type="text" id="bd-name" placeholder="e.g. Grandma Wong"></div>
+      <div class="field"><label>Type</label>
+        <div class="chip-group" id="bd-type-chips"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Month</label>
+          <select id="bd-month">
+            <option value="">Month</option>
+            <option value="01">January</option><option value="02">February</option>
+            <option value="03">March</option><option value="04">April</option>
+            <option value="05">May</option><option value="06">June</option>
+            <option value="07">July</option><option value="08">August</option>
+            <option value="09">September</option><option value="10">October</option>
+            <option value="11">November</option><option value="12">December</option>
+          </select>
+        </div>
+        <div class="field"><label>Day</label><input type="number" id="bd-day" min="1" max="31" placeholder="1–31"></div>
+      </div>
+      <div class="field"><label>Year (optional)</label><input type="number" id="bd-year" placeholder="e.g. 1985" min="1900" max="2025"></div>
+      <div class="field"><label>Notes (optional)</label><input type="text" id="bd-notes" placeholder="e.g. favourite cake: chocolate"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-birthday')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitBirthday()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set Budget -->
+<div class="modal-overlay" id="modal-budget">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Set Group Budget</span><button class="modal-close" onclick="closeModal('modal-budget')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Category Group</label>
+        <select id="budget-group-select"></select>
+      </div>
+      <div class="field"><label>Monthly Budget ($)</label><input type="number" id="budget-amount" placeholder="e.g. 500" min="0" step="0.01"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-budget')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitBudget()">Save Budget</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Recurring Expense -->
+<div class="modal-overlay" id="modal-recurring">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><span class="modal-title">Add Recurring Expense</span><button class="modal-close" onclick="closeModal('modal-recurring')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Name</label><input type="text" id="rec-name" placeholder="e.g. Netflix, Insurance"></div>
+      <div class="field-row">
+        <div class="field"><label>Amount ($)</label><input type="number" id="rec-amount" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="field"><label>Day of Month</label><input type="number" id="rec-day" min="1" max="28" placeholder="1–28"></div>
+      </div>
+      <div class="field"><label>Category Group</label><select id="rec-group-select"></select></div>
+      <div class="field"><label>Category</label><select id="rec-cat-select"></select></div>
+      <div class="field"><label>Account</label>
+        <div class="chip-group" id="rec-account-chips"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-recurring')">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitRecurring()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════
+// CONFIG — update GAS_URL before deploying
+// ══════════════════════════════════════════════════════
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec'; // e.g. https://script.google.com/macros/s/.../exec
+
+const MEMBERS = [
+  { name:'Marcus',  emoji:'👨', pin:'1811' }, // ← replace PINs
+  { name:'Eleanor', emoji:'👩', pin:'2505' },
+  { name:'Mikaela', emoji:'👧', pin:'1212' },
+  { name:'Meaghan', emoji:'👧', pin:'3008' },
+];
+
+const FAMILY_MEMBERS = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
+
+const EXPENSE_GROUPS = {
+  '👶 Children':['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
+  '👕 Clothing':['Clothing - Accessories','Clothing - Clothes','Clothing - Shoes'],
+  '🍽 Eating Out':['Eating Out - Beverages','Eating Out - Breakfast','Eating Out - Dinner','Eating Out - Lunch','Eating Out - Snacks'],
+  '📚 Education':['Education - Books','Education - Courses & Enrichment','Education - Subscription'],
+  '🎭 Entertainment':['Entertainment - Experiences','Entertainment - Subscriptions','Entertainment - Objects (toys, etc)'],
+  '🎁 Gifts/Giving':['Gifts & Treats - CNY','Gifts & Treats - Family','Gifts & Treats - Friends','Gifts & Treats - Wedding','Giving - Church','Giving - Charity','Giving - Parents'],
+  '🏥 Health':['Health & Fitness - Dental + Medical','Health & Fitness - Events + Subscription','Health & Fitness - Equipment + Supplements'],
+  '🏠 Household':['Household - Appliances','Household - Groceries','Household - Helper','Household - Household Misc','Household - Renovation','Household - Utilities (electric, gas, water)','Household - Internet'],
+  '🐾 Pets':['Pets - Pet Food','Pets - Grooming','Pets - Pet Misc'],
+  '💆 Self Care':['Self Care - Massage','Self Care - Personal Care','Utilities - Mobile'],
+  '✈️ Travel':['Travel - Hotels','Travel - Transport','Travel - Expenses'],
+  '🚗 Transport':['Transportation - Bus/MRT','Transportation - Taxi/Grab','Transportation - Auto: Service','Transportation - Auto: Loan','Transportation - Auto: Gas'],
+  '📈 Finance':['Endowment','Insurance','Investing','Taxes - Income Tax','Taxes - Property Tax'],
+  '🌍 Others':['Electronics','Misc','Missions'],
+};
+
+const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#7a7a7a'];
+
+// ══════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════
+let currentUser   = null;
+let currentSection= 'home';
+let appData       = {};
+let pinBuffer     = '';
+let selectedMember= null;
+let fertTypeSelected = 'Period Start';
+
+// ══════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  buildLogin();
+  buildNav();
+  buildModals();
+  document.getElementById('refresh-btn').addEventListener('click', loadData);
+  document.getElementById('logout-btn').addEventListener('click', logout);
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+  });
+
+  // Check saved session
+  const saved = sessionStorage.getItem('wf_user');
+  if (saved) loginAs(saved);
+});
+
+// ══════════════════════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════════════════════
+function buildLogin() {
+  const grid = document.getElementById('member-grid');
+  grid.innerHTML = MEMBERS.map(m => `
+    <button class="member-btn" onclick="selectMember('${m.name}')">
+      <span class="avatar">${m.emoji}</span>${m.name}
+    </button>`).join('');
+
+  // PIN dots
+  const dots = document.getElementById('pin-dots');
+  dots.innerHTML = [0,1,2,3].map(() => '<div class="pin-dot"></div>').join('');
+
+  // Keypad
+  const keypad = document.getElementById('pin-keypad');
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  keypad.innerHTML = keys.map(k => k === ''
+    ? '<div></div>'
+    : `<button class="pin-key${k==='⌫'?' del':''}" onclick="pinKey('${k}')">${k}</button>`
+  ).join('');
+}
+
+function selectMember(name) {
+  selectedMember = name;
+  pinBuffer = '';
+  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('selected'));
+  document.querySelectorAll('.member-btn').forEach(b => { if (b.textContent.trim() === name) b.classList.add('selected'); });
+  document.getElementById('pin-section').classList.add('visible');
+  document.getElementById('pin-label').textContent = `${name}'s PIN`;
+  document.getElementById('pin-error').textContent = '';
+  updatePinDots();
+}
+
+function pinKey(key) {
+  if (key === '⌫') { pinBuffer = pinBuffer.slice(0,-1); updatePinDots(); return; }
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += key;
+  updatePinDots();
+  if (pinBuffer.length === 4) checkPin();
+}
+
+function updatePinDots() {
+  document.querySelectorAll('.pin-dot').forEach((d,i) => {
+    d.classList.toggle('filled', i < pinBuffer.length);
+  });
+}
+
+function checkPin() {
+  const member = MEMBERS.find(m => m.name === selectedMember);
+  if (member && pinBuffer === member.pin) {
+    sessionStorage.setItem('wf_user', selectedMember);
+    loginAs(selectedMember);
+  } else {
+    document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
+    setTimeout(() => { pinBuffer = ''; updatePinDots(); }, 600);
+  }
+}
+
+function loginAs(name) {
+  currentUser = name;
+  const member = MEMBERS.find(m => m.name === name);
+  document.getElementById('login-screen').classList.remove('active');
+  document.getElementById('app-screen').classList.add('active');
+  document.getElementById('header-name').textContent = name;
+  document.getElementById('header-avatar').textContent = member ? member.emoji : '👤';
+  document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-SG', { weekday:'long', day:'numeric', month:'long' });
+  updateActiveNav('home');
+  loadData();
+}
+
+function logout() {
+  sessionStorage.removeItem('wf_user');
+  currentUser = null; pinBuffer = ''; selectedMember = null;
+  document.getElementById('app-screen').classList.remove('active');
+  document.getElementById('login-screen').classList.add('active');
+  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('pin-section').classList.remove('visible');
+  document.getElementById('pin-error').textContent = '';
+  updatePinDots();
+}
+
+// ══════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════
+const NAV_ITEMS = [
+  { id:'home',     label:'Home',     icon:'home'     },
+  { id:'calendar', label:'Calendar', icon:'calendar' },
+  { id:'tasks',    label:'Tasks',    icon:'check'    },
+  { id:'grocery',  label:'Grocery',  icon:'cart'     },
+  { id:'expenses', label:'Expenses', icon:'dollar'   },
+  { id:'more',     label:'More',     icon:'grid'     },
+];
+
+const ICONS = {
+  home:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  check:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  cart:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
+  dollar:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  grid:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+};
+
+function buildNav() {
+  // Bottom nav (mobile)
+  document.getElementById('bottom-nav').innerHTML = NAV_ITEMS.map(n => `
+    <button class="nav-item" id="nav-${n.id}" onclick="switchSection('${n.id}')">
+      ${ICONS[n.icon]}<span>${n.label}</span>
+    </button>`).join('');
+
+  // Sidebar (desktop)
+  document.getElementById('sidebar').innerHTML = `
+    <div class="sidebar-logo"><span class="logo-emoji">🏠</span>Wong Family</div>` +
+    NAV_ITEMS.map(n => `
+    <div class="sidebar-item" id="side-${n.id}" onclick="switchSection('${n.id}')">
+      ${ICONS[n.icon]} ${n.label}
+    </div>`).join('');
+
+  // More grid
+  const MORE_TILES = [
+    { id:'budgets',   icon:'📊', label:'Budgets'   },
+    { id:'memories',  icon:'💛', label:'Memories'  },
+    { id:'birthdays', icon:'🎂', label:'Birthdays' },
+    { id:'fertility', icon:'🌸', label:'Fertility' },
+    { id:'fridge',    icon:'🍎', label:'Fridge'    },
+    { id:'recurring', icon:'🔄', label:'Recurring' },
+  ];
+  document.getElementById('more-grid').innerHTML = MORE_TILES.map(t => `
+    <div class="more-tile" onclick="switchSection('${t.id}')">
+      <span class="more-icon">${t.icon}</span>
+      <span class="more-label">${t.label}</span>
+    </div>`).join('');
+}
+
+function switchSection(id) {
+  currentSection = id;
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('section-' + id);
+  if (target) target.classList.add('active');
+  updateActiveNav(id);
+  updateFab(id);
+  renderSection(id);
+}
+
+function updateActiveNav(id) {
+  const navId = ['budgets','memories','birthdays','fertility','fridge','recurring'].includes(id) ? 'more' : id;
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
+  const nb = document.getElementById('nav-' + navId);
+  const sb = document.getElementById('side-' + navId);
+  if (nb) nb.classList.add('active');
+  if (sb) sb.classList.add('active');
+}
+
+function updateFab(id) {
+  const fab = document.getElementById('fab');
+  const FAB_MAP = {
+    calendar:'modal-event', tasks:'modal-task', grocery:'modal-grocery',
+    memories:'modal-memory', birthdays:'modal-birthday', recurring:'modal-recurring',
+  };
+  if (FAB_MAP[id]) { fab.classList.remove('hidden'); fab._modal = FAB_MAP[id]; }
+  else fab.classList.add('hidden');
+}
+
+function onFab() {
+  const fab = document.getElementById('fab');
+  if (fab._modal) openModal(fab._modal);
+}
+
+// ══════════════════════════════════════════════════════
+// DATA LOADING
+// ══════════════════════════════════════════════════════
+async function loadData() {
+  const icon = document.getElementById('refresh-icon');
+  icon.classList.add('spinning');
+  try {
+    const res  = await fetch(GAS_URL + '?action=get_all');
+    appData    = await res.json();
+    renderSection(currentSection);
+    renderHome();
+  } catch (e) {
+    showToast('Could not load data. Check connection.');
+    console.error(e);
+  } finally {
+    icon.classList.remove('spinning');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// RENDER ROUTER
+// ══════════════════════════════════════════════════════
+function renderSection(id) {
+  switch(id) {
+    case 'home':      renderHome();      break;
+    case 'calendar':  renderCalendar();  break;
+    case 'tasks':     renderTasks();     break;
+    case 'grocery':   renderGrocery();   break;
+    case 'expenses':  renderExpenses();  break;
+    case 'budgets':   renderBudgets();   break;
+    case 'memories':  renderMemories();  break;
+    case 'fertility': renderFertility(); break;
+    case 'fridge':    renderFridge();    break;
+    case 'recurring': renderRecurring(); break;
+    case 'birthdays': renderBirthdays(); break;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// HOME
+// ══════════════════════════════════════════════════════
+function renderHome() {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('home-greeting').innerHTML = `
+    <h2>${greeting}, ${currentUser}! 👋</h2>
+    <p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+
+  // Today summary card
+  const events    = (appData.events||[]).filter(e => e.dateRaw === todayStr());
+  const tasks     = (appData.todos||[]).filter(t => t.dueRaw && t.dueRaw <= todayStr());
+  const groceries = (appData.groceries||[]).filter(g => !g.bought);
+  document.getElementById('today-card').innerHTML = `
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header"><span class="card-title">Today at a Glance</span></div>
+      <div class="card-body">
+        ${events.length === 0 && tasks.length === 0 ? '<div class="card-empty">Clear schedule today 🎉</div>' : ''}
+        ${events.map(e => `<div class="card-row"><div class="event-dot"></div><div class="card-row-main"><div class="card-row-title">${e.title}</div><div class="card-row-sub">${e.time}</div></div></div>`).join('')}
+        ${tasks.map(t => `<div class="card-row"><div style="font-size:16px;">✅</div><div class="card-row-main"><div class="card-row-title">${t.task}</div><div class="card-row-sub">Due today · ${t.assignee}</div></div></div>`).join('')}
+      </div>
+    </div>`;
+
+  // Stats tiles
+  const expenses  = appData.expenses || {};
+  const budgets   = appData.budgets  || [];
+  const totalBudget = budgets.reduce((s,b) => s + b.budget, 0);
+  const overBudget  = budgets.filter(b => b.spent > b.budget).length;
+
+  document.getElementById('home-grid').innerHTML = `
+    <div class="home-tile" onclick="switchSection('grocery')">
+      <span class="tile-icon">🛒</span>
+      <span class="tile-label">To Buy</span>
+      <span class="tile-value">${groceries.length}</span>
+      <span class="tile-sub">items on list</span>
+    </div>
+    <div class="home-tile" onclick="switchSection('tasks')">
+      <span class="tile-icon">✅</span>
+      <span class="tile-label">Open Tasks</span>
+      <span class="tile-value">${(appData.todos||[]).length}</span>
+      <span class="tile-sub">to complete</span>
+    </div>
+    <div class="home-tile" onclick="switchSection('expenses')">
+      <span class="tile-icon">💰</span>
+      <span class="tile-label">Spent This Month</span>
+      <span class="tile-value">$${(expenses.total||0).toFixed(0)}</span>
+      <span class="tile-sub">family account</span>
+    </div>
+    <div class="home-tile" onclick="switchSection('budgets')">
+      <span class="tile-icon">${overBudget > 0 ? '⚠️' : '📊'}</span>
+      <span class="tile-label">Budgets</span>
+      <span class="tile-value">${budgets.length}</span>
+      <span class="tile-sub">${overBudget > 0 ? overBudget + ' over limit' : 'all on track'}</span>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// CALENDAR
+// ══════════════════════════════════════════════════════
+function renderCalendar() {
+  const events = appData.events || [];
+  const el = document.getElementById('calendar-list');
+  if (!events.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">📅</div>No upcoming events</div>'; return; }
+  el.innerHTML = events.map(e => {
+    const tags = (e.tags||[]).map(t => `<span class="event-tag badge-blue">${t}</span>`).join('');
+    return `<div class="card-row">
+      <div class="event-dot"></div>
+      <div class="card-row-main">
+        <div class="card-row-title">${e.title}</div>
+        <div class="card-row-sub">${e.date} · ${e.time}${e.notes ? ' · ' + e.notes : ''}</div>
+        ${tags ? '<div style="margin-top:4px;">' + tags + '</div>' : ''}
+      </div>
+      <button onclick="deleteEvent('${e.id}')" style="color:var(--ink-faint);font-size:18px;padding:4px 8px;opacity:.5;">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function deleteEvent(id) {
+  if (!confirm('Delete this event?')) return;
+  await gasPost({ note:'delete_event', event_id: id });
+  appData.events = (appData.events||[]).filter(e => e.id !== id);
+  renderCalendar(); renderHome();
+  showToast('Event deleted');
+}
+
+// ══════════════════════════════════════════════════════
+// TASKS
+// ══════════════════════════════════════════════════════
+function renderTasks() {
+  const todos = appData.todos || [];
+  const el = document.getElementById('tasks-list');
+  if (!todos.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">✅</div>No open tasks — all done!</div>'; return; }
+  const grouped = {};
+  FAMILY_MEMBERS.forEach(m => grouped[m] = []);
+  todos.forEach(t => { if (!grouped[t.assignee]) grouped[t.assignee] = []; grouped[t.assignee].push(t); });
+  el.innerHTML = FAMILY_MEMBERS.filter(m => grouped[m] && grouped[m].length > 0).map(m => `
+    <div style="padding:8px 16px 4px;font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;">${m}</div>
+    ${grouped[m].map(t => `
+      <div class="task-row">
+        <div class="task-check" onclick="completeTask(${t.rowNum}, this)"></div>
+        <div class="task-main">
+          <div class="task-title">${t.task}</div>
+          <div class="task-meta">${t.due ? 'Due ' + t.due : 'No due date'}</div>
+        </div>
+        <button class="task-del" onclick="deleteTask(${t.rowNum})" title="Delete">✕</button>
+      </div>`).join('')}`).join('');
+}
+
+async function completeTask(rowNum, el) {
+  el.classList.add('done');
+  await gasPost({ note:'complete_todo', todo_id: rowNum });
+  appData.todos = (appData.todos||[]).filter(t => t.rowNum !== rowNum);
+  setTimeout(() => { renderTasks(); renderHome(); }, 400);
+  showToast('Task done! 🎉');
+}
+
+async function deleteTask(rowNum) {
+  if (!confirm('Delete this task?')) return;
+  await gasPost({ note:'delete_todo', todo_id: rowNum });
+  appData.todos = (appData.todos||[]).filter(t => t.rowNum !== rowNum);
+  renderTasks(); renderHome();
+  showToast('Task deleted');
+}
+
+// ══════════════════════════════════════════════════════
+// GROCERY
+// ══════════════════════════════════════════════════════
+function renderGrocery() {
+  const items = appData.groceries || [];
+  const el = document.getElementById('grocery-list');
+  const toBuy  = items.filter(i => !i.bought);
+  const bought = items.filter(i => i.bought);
+  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🛒</div>Grocery list is empty</div>'; return; }
+  el.innerHTML =
+    toBuy.map(i => groceryRow(i)).join('') +
+    (bought.length ? `<div style="padding:8px 16px 4px;font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;">Bought</div>` + bought.map(i => groceryRow(i)).join('') : '');
+}
+
+function groceryRow(i) {
+  return `<div class="grocery-row">
+    <div class="grocery-check ${i.bought?'bought':''}" onclick="toggleGrocery('${i.name}','${i.bought}',this)"></div>
+    <span class="grocery-label ${i.bought?'bought':''}">${i.name}</span>
+  </div>`;
+}
+
+async function toggleGrocery(name, bought, el) {
+  if (!bought || bought === 'false') {
+    el.classList.add('bought');
+    el.nextElementSibling.classList.add('bought');
+    await gasPost({ note:'bought ' + name });
+    const item = (appData.groceries||[]).find(i => i.name === name);
+    if (item) item.bought = true;
+    setTimeout(renderGrocery, 400);
+    showToast(name + ' marked as bought');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// EXPENSES
+// ══════════════════════════════════════════════════════
+function renderExpenses() {
+  const exp = appData.expenses || { rows:[], total:0, byCategory:{}, byAccount:{} };
+  const el  = document.getElementById('expenses-body');
+  const now = new Date();
+  const monthName = now.toLocaleDateString('en-SG', { month:'long', year:'numeric' });
+
+  const catEntries = Object.entries(exp.byCategory||{}).sort((a,b) => b[1]-a[1]);
+  const pieRows = catEntries.map((e,i) => `
+    <div class="pie-row">
+      <div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
+      <span class="pie-label">${e[0]}</span>
+      <span class="pie-val">$${e[1].toFixed(2)}</span>
+    </div>`).join('');
+
+  const recentRows = (exp.rows||[]).slice(0,15).map(r => `
+    <div class="card-row">
+      <div class="card-row-main">
+        <div class="card-row-title">${r.desc || r.category}</div>
+        <div class="card-row-sub">${r.date} · ${r.category} · ${r.account}</div>
+      </div>
+      <div class="card-row-right">
+        <div class="exp-amount">$${r.amount.toFixed(2)}</div>
+        <button onclick="deleteExpense(${r.rowNum})" style="color:var(--ink-faint);font-size:12px;margin-top:2px;">Delete</button>
+      </div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">💰 ${monthName}</span>
+        <span class="badge badge-blue">$${(exp.total||0).toFixed(2)} total</span>
+      </div>
+      <div class="pie-wrap">${pieRows || '<div class="card-empty">No expenses this month</div>'}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Recent Entries</span></div>
+      <div class="card-body">${recentRows || '<div class="card-empty">No entries yet</div>'}</div>
+    </div>`;
+}
+
+async function deleteExpense(rowNum) {
+  if (!confirm('Delete this expense?')) return;
+  await gasPost({ note:'delete_expense', row_id: rowNum });
+  if (appData.expenses) {
+    const row = appData.expenses.rows.find(r => r.rowNum === rowNum);
+    if (row) { appData.expenses.total -= row.amount; appData.expenses.rows = appData.expenses.rows.filter(r => r.rowNum !== rowNum); }
+  }
+  renderExpenses();
+  showToast('Expense deleted');
+}
+
+// ══════════════════════════════════════════════════════
+// BUDGETS
+// ══════════════════════════════════════════════════════
+function renderBudgets() {
+  const budgets = appData.budgets || [];
+  const el = document.getElementById('budgets-list');
+  if (!budgets.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">📊</div>No budgets set yet</div>'; return; }
+  el.innerHTML = budgets.sort((a,b) => a.group.localeCompare(b.group)).map(b => {
+    const pct    = b.budget > 0 ? Math.round(b.spent / b.budget * 100) : 0;
+    const over   = b.spent > b.budget;
+    const warn   = pct >= 80 && !over;
+    const color  = over ? 'var(--red)' : warn ? 'var(--amber)' : 'var(--green)';
+    const badge  = over ? 'badge-red' : warn ? 'badge-amber' : 'badge-green';
+    const label  = over ? '🚨 Over' : warn ? '⚠️ ' + pct + '%' : '✅ ' + pct + '%';
+    return `<div class="budget-row">
+      <div class="budget-row-header">
+        <span class="budget-group-name">${b.group}</span>
+        <span class="badge ${badge}">${label}</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${color};"></div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--ink-faint);">
+        <span>$${b.spent.toFixed(2)} spent</span><span>$${b.budget.toFixed(2)} budget</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// MEMORIES
+// ══════════════════════════════════════════════════════
+function renderMemories() {
+  const memories = appData.memories || [];
+  const el = document.getElementById('memories-list');
+  if (!memories.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">💛</div>No memories yet — log your first one!</div>'; return; }
+  const typeEmoji = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
+  el.innerHTML = memories.map(m => `
+    <div class="memory-row">
+      <div class="memory-type">${typeEmoji(m.type)} ${m.type.split(' ').slice(1).join(' ')} · ${m.person}</div>
+      <div class="memory-text">${m.memory}</div>
+      <div class="memory-meta">📅 ${m.date} · logged by ${m.loggedBy}</div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// FERTILITY
+// ══════════════════════════════════════════════════════
+function renderFertility() {
+  const f  = appData.fertility || {};
+  const el = document.getElementById('fertility-body');
+  if (!f.lastPeriodStart) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🌸</div>No data yet. Log your first entry below.</div>'; return; }
+  const rows = [
+    ['Last Period Start', f.lastPeriodStart],
+    ['Next Period (est.)', f.nextPeriod],
+    ['Fertile Window', f.fertileStart && f.fertileEnd ? f.fertileStart + ' – ' + f.fertileEnd : '—'],
+    ['Period Duration', f.duration ? f.duration + ' days' : '—'],
+    ['Last Ovulation', f.lastOvulation || '—'],
+  ];
+  el.innerHTML = rows.map(r => `
+    <div class="fertility-stat">
+      <span class="fertility-label">${r[0]}</span>
+      <span class="fertility-value">${r[1] || '—'}</span>
+    </div>`).join('') +
+    ((f.symptoms||[]).length ? `
+    <div style="padding:12px 16px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Symptoms</div>
+      ${f.symptoms.map(s => `<div style="font-size:14px;color:var(--ink);padding:4px 0;border-bottom:1px solid var(--border);">${s.date} · ${s.note}</div>`).join('')}
+    </div>` : '');
+}
+
+// ══════════════════════════════════════════════════════
+// FRIDGE
+// ══════════════════════════════════════════════════════
+function renderFridge() {
+  const items = appData.fridge || [];
+  const el = document.getElementById('fridge-list');
+  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🍎</div>Fridge is empty</div>'; return; }
+  el.innerHTML = items.filter(i => i.stock > 0).map(i => `
+    <div class="fridge-row">
+      <div>
+        <div class="fridge-name">${i.name}</div>
+        <div style="font-size:12px;color:var(--ink-faint);">Updated ${i.lastUpdated}${i.stale ? ' · ⚠️ stale' : ''}</div>
+      </div>
+      <div class="fridge-stock ${i.stale ? 'fridge-stale' : ''}">${i.stock}</div>
+    </div>`).join('') || '<div class="card-empty">All items depleted</div>';
+}
+
+// ══════════════════════════════════════════════════════
+// RECURRING
+// ══════════════════════════════════════════════════════
+function renderRecurring() {
+  const items = appData.recurring || [];
+  const el = document.getElementById('recurring-list');
+  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🔄</div>No recurring expenses set up</div>'; return; }
+  const suffix = d => d===1?'st':d===2?'nd':d===3?'rd':'th';
+  el.innerHTML = items.map(r => {
+    const when = r.daysLeft === 0 ? '<span class="badge badge-red">Due today</span>' : r.daysLeft === 1 ? '<span class="badge badge-amber">Tomorrow</span>' : `<span class="badge badge-gray">In ${r.daysLeft} days</span>`;
+    return `<div class="rec-row">
+      <div class="rec-main">
+        <div class="rec-name">${r.name}</div>
+        <div class="rec-meta">${r.category} · ${r.account} · ${r.day}${suffix(r.day)} of month</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+        <span class="rec-amount">$${r.amount.toFixed(2)}</span>
+        ${when}
+        <button onclick="deleteRecurring(${r.rowNum})" style="font-size:12px;color:var(--ink-faint);">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteRecurring(rowNum) {
+  if (!confirm('Remove this recurring expense?')) return;
+  await gasPost({ note:'delete_recurring', row_num: rowNum });
+  appData.recurring = (appData.recurring||[]).filter(r => r.rowNum !== rowNum);
+  renderRecurring();
+  showToast('Removed');
+}
+
+// ══════════════════════════════════════════════════════
+// BIRTHDAYS
+// ══════════════════════════════════════════════════════
+function renderBirthdays() {
+  const items = appData.birthdays || [];
+  const el = document.getElementById('birthdays-list');
+  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🎂</div>No birthdays saved yet</div>'; return; }
+  el.innerHTML = items.map(b => {
+    const icon  = b.type === 'Birthday' ? '🎂' : '💍';
+    const when  = b.daysAway === 0 ? '<span class="badge badge-red">Today! 🥳</span>' : b.daysAway === 1 ? '<span class="badge badge-amber">Tomorrow!</span>' : b.daysAway <= 7 ? `<span class="badge badge-amber">In ${b.daysAway} days</span>` : `<span class="badge badge-gray">In ${b.daysAway} days</span>`;
+    return `<div class="bd-row">
+      <div class="bd-icon">${icon}</div>
+      <div class="bd-main">
+        <div class="bd-name">${b.name}</div>
+        <div class="bd-meta">${b.dateLabel}${b.agePart ? ' · ' + b.agePart : ''}${b.notes ? ' · ' + b.notes : ''}</div>
+      </div>
+      <div class="bd-days">${when}</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// MODALS & FORMS
+// ══════════════════════════════════════════════════════
+function buildModals() {
+  // Task assignee chips
+  buildChips('task-assign-chips', FAMILY_MEMBERS, 'Everyone', 'task-assign');
+
+  // Memory type chips
+  buildChips('memory-type-chips', ['🏆 Milestone','💬 Quote','💛 Moment'], '💛 Moment', 'mem-type');
+
+  // Memory person chips
+  buildChips('memory-person-chips', FAMILY_MEMBERS, 'Everyone', 'mem-person');
+
+  // Birthday type chips
+  buildChips('bd-type-chips', ['Birthday','Wedding Anniversary'], 'Birthday', 'bd-type');
+
+  // Fertility type chips
+  const fertTypes = ['Period Start','Period End','Ovulation','Symptom'];
+  buildChips('fertility-type-chips', fertTypes, 'Period Start', 'fert-type');
+
+  // Recurring account chips
+  buildChips('rec-account-chips', ['Personal Account','Family'], 'Family', 'rec-acct');
+
+  // Budget group select
+  const bgSel = document.getElementById('budget-group-select');
+  bgSel.innerHTML = Object.keys(EXPENSE_GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+
+  // Recurring group select (updates category select on change)
+  const rgSel = document.getElementById('rec-group-select');
+  rgSel.innerHTML = Object.keys(EXPENSE_GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+  rgSel.addEventListener('change', () => updateRecurringCats());
+  updateRecurringCats();
+
+  // Default dates to today
+  const today = todayStr();
+  ['ev-date','task-due','memory-date','fertility-date-input'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = today;
+  });
+}
+
+function buildChips(containerId, options, defaultVal, key) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = options.map(o => `<span class="chip${o===defaultVal?' selected':''}" data-key="${key}" data-val="${o}" onclick="selectChip(this,'${key}')">${o}</span>`).join('');
+}
+
+function selectChip(el, key) {
+  el.closest('.chip-group').querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function getChip(key) {
+  const el = document.querySelector(`.chip[data-key="${key}"].selected`);
+  return el ? el.dataset.val : null;
+}
+
+function updateRecurringCats() {
+  const group = document.getElementById('rec-group-select').value;
+  const cats  = EXPENSE_GROUPS[group] || [];
+  document.getElementById('rec-cat-select').innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// Submit functions
+async function submitEvent() {
+  const title = document.getElementById('ev-title').value.trim();
+  const date  = document.getElementById('ev-date').value;
+  if (!title || !date) { showToast('Please fill in title and date'); return; }
+  const time    = document.getElementById('ev-time').value;
+  const endTime = document.getElementById('ev-end-time').value;
+  const notes   = document.getElementById('ev-notes').value.trim();
+  await gasPost({ note:'add_event', event_title:title, event_date:formatDateForGAS(date), event_time:formatTimeForGAS(time), event_end_time:formatTimeForGAS(endTime), event_notes:notes });
+  closeModal('modal-event');
+  document.getElementById('ev-title').value = '';
+  document.getElementById('ev-notes').value = '';
+  showToast('Event added! ✅');
+  await loadData();
+}
+
+async function submitTask() {
+  const task = document.getElementById('task-title').value.trim();
+  if (!task) { showToast('Please enter a task'); return; }
+  const assignee = getChip('task-assign') || 'Everyone';
+  const due      = document.getElementById('task-due').value;
+  await gasPost({ note:'add_todo', todo_task:task, todo_assignee:assignee, todo_due:due ? formatDateForGAS(due) : '' });
+  closeModal('modal-task');
+  document.getElementById('task-title').value = '';
+  showToast('Task added! ✅');
+  await loadData();
+}
+
+async function submitGrocery() {
+  const item = document.getElementById('grocery-item').value.trim();
+  if (!item) { showToast('Please enter an item'); return; }
+  await gasPost({ note:'+' + item });
+  closeModal('modal-grocery');
+  document.getElementById('grocery-item').value = '';
+  showToast(item + ' added to list! 🛒');
+  await loadData();
+}
+
+async function submitMemory() {
+  const text = document.getElementById('memory-text').value.trim();
+  if (!text) { showToast('Please write the memory'); return; }
+  const type   = getChip('mem-type')   || '💛 Moment';
+  const person = getChip('mem-person') || 'Everyone';
+  const date   = document.getElementById('memory-date').value;
+  await gasPost({ note:'add_memory', memory_type:type, memory_person:person, memory_text:text, memory_date:date ? formatDateForGAS(date) : '' });
+  closeModal('modal-memory');
+  document.getElementById('memory-text').value = '';
+  showToast('Memory saved! 💛');
+  await loadData();
+}
+
+async function submitBirthday() {
+  const name = document.getElementById('bd-name').value.trim();
+  const month = document.getElementById('bd-month').value;
+  const day   = document.getElementById('bd-day').value;
+  if (!name || !month || !day) { showToast('Please fill in name, month, and day'); return; }
+  const type  = getChip('bd-type') || 'Birthday';
+  const year  = document.getElementById('bd-year').value;
+  const notes = document.getElementById('bd-notes').value.trim();
+  const dateStr = month + '-' + String(day).padStart(2,'0');
+  await gasPost({ note:'add_birthday', name, type, date:dateStr, year, notes });
+  closeModal('modal-birthday');
+  document.getElementById('bd-name').value = '';
+  document.getElementById('bd-day').value  = '';
+  document.getElementById('bd-year').value = '';
+  showToast('Saved! 🎂');
+  await loadData();
+}
+
+async function submitBudget() {
+  const group  = document.getElementById('budget-group-select').value;
+  const amount = parseFloat(document.getElementById('budget-amount').value);
+  if (!group || isNaN(amount) || amount <= 0) { showToast('Please enter a valid amount'); return; }
+  await gasPost({ note:'set_budget', group, budget:amount });
+  closeModal('modal-budget');
+  document.getElementById('budget-amount').value = '';
+  showToast('Budget saved! 📊');
+  await loadData();
+}
+
+async function submitFertility() {
+  const type  = getChip('fert-type') || 'Period Start';
+  const date  = document.getElementById('fertility-date-input').value;
+  const notes = document.getElementById('fertility-notes-input').value.trim();
+  if (!date) { showToast('Please select a date'); return; }
+  await gasPost({ note:'add_fertility', fertility_type:type, fertility_date:formatDateForGAS(date), fertility_notes:notes });
+  document.getElementById('fertility-notes-input').value = '';
+  showToast('Logged! 🌸');
+  await loadData();
+}
+
+async function updateFridge(type) {
+  const name = document.getElementById('fridge-name-input').value.trim();
+  const qty  = parseInt(document.getElementById('fridge-qty-input').value) || 1;
+  if (!name) { showToast('Please enter an item name'); return; }
+  const prefix = type === 'add' ? '+' : '-';
+  await gasPost({ note:`${prefix}fruits ${name} ${qty}` });
+  document.getElementById('fridge-name-input').value = '';
+  document.getElementById('fridge-qty-input').value  = '1';
+  showToast(type === 'add' ? 'Stock added! 🍎' : 'Eating logged! 😋');
+  await loadData();
+}
+
+async function submitRecurring() {
+  const name    = document.getElementById('rec-name').value.trim();
+  const amount  = parseFloat(document.getElementById('rec-amount').value);
+  const day     = parseInt(document.getElementById('rec-day').value);
+  const group   = document.getElementById('rec-group-select').value;
+  const cat     = document.getElementById('rec-cat-select').value;
+  const account = getChip('rec-acct') || 'Family';
+  if (!name || isNaN(amount) || isNaN(day) || day < 1 || day > 28) { showToast('Please fill all fields (day must be 1–28)'); return; }
+  await gasPost({ note:'add_recurring', rec_name:name, rec_amount:amount, rec_day:day, rec_category:cat, rec_account:account });
+  closeModal('modal-recurring');
+  document.getElementById('rec-name').value   = '';
+  document.getElementById('rec-amount').value = '';
+  document.getElementById('rec-day').value    = '';
+  showToast('Recurring expense saved! 🔄');
+  await loadData();
+}
+
+// ══════════════════════════════════════════════════════
+// GAS API
+// ══════════════════════════════════════════════════════
+async function gasPost(data) {
+  try {
+    data.user = currentUser || 'Unknown';
+    await fetch(GAS_URL, { method:'POST', body:JSON.stringify(data) });
+  } catch (e) { console.error('GAS POST error:', e); showToast('Error saving. Try again.'); }
+}
+
+// ══════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function formatDateForGAS(isoDate) {
+  if (!isoDate) return '';
+  const d = new Date(isoDate + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function formatTimeForGAS(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const mer = h >= 12 ? 'pm' : 'am';
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2,'0')}${mer}`;
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+</script>
+
+</body>
+</html>
