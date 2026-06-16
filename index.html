@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Wong Family">
 <meta name="theme-color" content="#4f86c6">
 <title>Wong Family</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 /* ── RESET ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -237,6 +239,8 @@ input,textarea,select{font-family:inherit;}
 .tab-row { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #e4e6ef; background: #fff; }
 .tab-pill { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #e4e6ef; background: #fff; color: #5a5a72; cursor: pointer; outline: none; }
 .tab-pill.active { background: #4f86c6; color: #fff; border-color: #4f86c6; }
+.toggle-pill { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; background: transparent; color: #5a5a72; border: none; cursor: pointer; transition: all 0.2s ease; outline: none; }
+.toggle-pill.active { background: #fff; color: #1a1a2e; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
 .sched-day-group { border-bottom: 1px solid #e4e6ef; }
 .sched-day-group:last-child { border-bottom: none; }
 .sched-day-hdr { background: #f8f9fa; padding: 8px 16px; font-size: 12px; font-weight: 700; color: #9898aa; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -447,6 +451,21 @@ input,textarea,select{font-family:inherit;}
       </div>
     </div>
 
+    <!-- TRAVEL -->
+    <div class="section" id="s-travel">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-title">🗺️ Travel Map</span>
+            <button class="btn btn-sm btn-p" onclick="openM('m-trip-add')">+ Add Trip</button>
+          </div>
+          <div id="travel-map" style="height:350px;border-radius:12px;margin:12px;border:1.5px solid #e4e6ef;box-shadow:0 4px 12px rgba(0,0,0,0.05);position:relative;z-index:1;"></div>
+          <div class="card-hdr" style="border-top:1px solid #e4e6ef;margin-top:10px;"><span class="card-title">✈️ Visited Places</span></div>
+          <div class="card-body" id="trip-list" style="padding:0;"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- end content -->
 
   <!-- Bottom Nav -->
@@ -580,6 +599,13 @@ input,textarea,select{font-family:inherit;}
     <div class="modal-body">
       <div class="field"><label>Group</label><select id="bud-grp"></select></div>
       <div class="field"><label>Monthly Budget ($)</label><input type="number" id="bud-amt" placeholder="e.g. 500" min="0" step="0.01"></div>
+      <div class="field">
+        <label>Account</label>
+        <select id="bud-account">
+          <option value="Family">Family</option>
+          <option value="Personal Account">Personal Account</option>
+        </select>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-s" onclick="closeM('m-budget')">Cancel</button>
@@ -606,6 +632,43 @@ input,textarea,select{font-family:inherit;}
     <div class="modal-foot">
       <button class="btn btn-s" onclick="closeM('m-recurring')">Cancel</button>
       <button class="btn btn-p" style="flex:1" onclick="submitRecurring()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Trip Modal -->
+<div class="overlay" id="m-trip-add">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Log Family Trip</span><button class="modal-close" onclick="closeM('m-trip-add')">✕</button></div>
+    <div class="modal-body">
+      <div class="frow">
+        <div class="field"><label>City</label><input type="text" id="tr-city" placeholder="e.g. Tokyo"></div>
+        <div class="field"><label>Country</label><input type="text" id="tr-country" placeholder="e.g. Japan"></div>
+      </div>
+      <div class="field"><label>Date Visited</label><input type="date" id="tr-date"></div>
+      <div class="field">
+        <label>Members Who Visited</label>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;color:#5a5a72;">
+            <input type="checkbox" name="tr-mem" value="Mikaela" checked> Mikaela
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;color:#5a5a72;">
+            <input type="checkbox" name="tr-mem" value="Meaghan" checked> Meaghan
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;color:#5a5a72;">
+            <input type="checkbox" name="tr-mem" value="Eleanor" checked> Eleanor
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;color:#5a5a72;">
+            <input type="checkbox" name="tr-mem" value="Marcus" checked> Marcus
+          </label>
+        </div>
+      </div>
+      <div class="field"><label>Notes / Highlights</label><input type="text" id="tr-notes" placeholder="e.g. DisneySea, sushi, cherry blossoms"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-trip-add')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitTrip()">Pin Trip 📍</button>
     </div>
   </div>
 </div>
@@ -778,7 +841,7 @@ function logout() {
 }
 
 // ══ NAV ══
-const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays','schedules'];
+const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays','schedules','travel'];
 
 function goTo(id) {
   section = id;
@@ -809,6 +872,7 @@ function buildMore() {
     {id:'fridge',icon:'🍎',label:'Fridge'},
     {id:'recurring',icon:'🔄',label:'Recurring'},
     {id:'schedules',icon:'⛵',label:'Schedules'},
+    {id:'travel',icon:'✈️',label:'Travel'},
   ];
   document.getElementById('more-grid').innerHTML = tiles.map(t =>
     `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
@@ -866,6 +930,7 @@ function render(id) {
     case 'recurring': renderRecurring(); break;
     case 'birthdays': renderBirthdays(); break;
     case 'schedules': renderSchedules(); break;
+    case 'travel':    renderTravel();    break;
   }
 }
 
@@ -992,17 +1057,42 @@ async function togGroc(name, bought, el) {
 
 // ══ EXPENSES ══
 function renderExpenses() {
-  const exp = data.expenses || {rows:[],total:0,byCategory:{},history:[],lastMonthTotal:0};
+  const exp = data.expenses || {rows:[],total:0,byCategory:{},history:[],lastMonthTotal:0,familyTotal:0,personalTotal:0,familyByCategory:{},personalByCategory:{},familyHistory:[],personalHistory:[],lastMonthFamilyTotal:0,lastMonthPersonalTotal:0};
   const el  = document.getElementById('exp-body');
   const month = new Date().toLocaleDateString('en-SG',{month:'long',year:'numeric'});
-  const cats  = Object.entries(exp.byCategory||{}).sort((a,b)=>b[1]-a[1]);
+  
+  let total = 0;
+  let cats = [];
+  let hist = [];
+  let lastMonth = 0;
+  let filteredRows = [];
+  
+  if (activeExpenseAccount === 'Personal') {
+    total = exp.personalTotal || 0;
+    cats = Object.entries(exp.personalByCategory || {}).sort((a,b)=>b[1]-a[1]);
+    hist = exp.personalHistory || [];
+    lastMonth = exp.lastMonthPersonalTotal || 0;
+    filteredRows = (exp.rows || []).filter(r => r.account === 'Personal Account');
+  } else if (activeExpenseAccount === 'Family') {
+    total = exp.familyTotal || 0;
+    cats = Object.entries(exp.familyByCategory || {}).sort((a,b)=>b[1]-a[1]);
+    hist = exp.familyHistory || [];
+    lastMonth = exp.lastMonthFamilyTotal || 0;
+    filteredRows = (exp.rows || []).filter(r => r.account !== 'Personal Account');
+  } else {
+    total = exp.total || 0;
+    cats = Object.entries(exp.byCategory || {}).sort((a,b)=>b[1]-a[1]);
+    hist = exp.history || [];
+    lastMonth = exp.lastMonthTotal || 0;
+    filteredRows = exp.rows || [];
+  }
   
   // 1. Donut SVG Generation
   let currentPercent = 0;
   let donutSvgCircles = '';
   cats.forEach((c, i) => {
     const amt = c[1];
-    const pct = exp.total > 0 ? (amt / exp.total) : 0;
+    const pct = total > 0 ? (amt / total) : 0;
     const strokeDashArray = `${pct * 100} ${100 - (pct * 100)}`;
     const strokeDashOffset = -currentPercent * 100;
     const color = PIE_COLORS[i % PIE_COLORS.length];
@@ -1015,21 +1105,19 @@ function renderExpenses() {
 
   // 2. Month-on-Month Comparison
   let momHtml = '';
-  const lastMonth = exp.lastMonthTotal || 0;
   if (lastMonth > 0) {
-    const diff = exp.total - lastMonth;
+    const diff = total - lastMonth;
     const pctDiff = (diff / lastMonth) * 100;
     if (diff > 0) {
       momHtml = `<span class="badge b-red" style="margin-left:8px;">📈 +${pctDiff.toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`;
     } else {
-      momHtml = `<span class="badge b-green" style="margin-left:8px;">📉 ${pctDiff.toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`;
+      momHtml = `<span class="badge b-green" style="margin-left:8px;">📉 ${Math.abs(pctDiff).toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`;
     }
   } else {
     momHtml = `<span class="badge b-blue" style="margin-left:8px;">New Tracker</span>`;
   }
 
   // 3. 6-Month Trend Bar Chart
-  const hist = exp.history || [];
   const maxTotal = Math.max(...hist.map(h => h.total), 1);
   const barChartHtml = hist.map((h, i) => {
     const heightPct = (h.total / maxTotal) * 100;
@@ -1043,12 +1131,19 @@ function renderExpenses() {
   }).join('');
 
   el.innerHTML = `
+    <!-- Account Toggle Pills -->
+    <div style="display:flex;background:#e4e6ef;padding:3px;border-radius:8px;margin:10px 16px 16px;">
+      <button class="toggle-pill ${activeExpenseAccount === 'All' ? 'active' : ''}" onclick="toggleExpenseAccount('All')" style="flex:1;text-align:center;">All</button>
+      <button class="toggle-pill ${activeExpenseAccount === 'Family' ? 'active' : ''}" onclick="toggleExpenseAccount('Family')" style="flex:1;text-align:center;">Family</button>
+      <button class="toggle-pill ${activeExpenseAccount === 'Personal' ? 'active' : ''}" onclick="toggleExpenseAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
+    </div>
+
     <!-- Summary & Category Breakdown -->
     <div class="card">
       <div class="card-hdr">
         <span class="card-title">💰 ${month}</span>
         <div style="display:flex;align-items:center;">
-          <span class="badge b-blue">$${(exp.total||0).toFixed(2)}</span>
+          <span class="badge b-blue">$${(total||0).toFixed(2)}</span>
           ${momHtml}
         </div>
       </div>
@@ -1058,7 +1153,7 @@ function renderExpenses() {
           <svg viewBox="0 0 42 42" class="donut">
             ${donutSvgCircles}
             <g class="chart-text">
-              <text x="50%" y="50%" class="chart-number" style="font-size: 5px; font-weight: 800;">$${exp.total.toFixed(0)}</text>
+              <text x="50%" y="50%" class="chart-number" style="font-size: 5px; font-weight: 800;">$${total.toFixed(0)}</text>
               <text x="50%" y="64%" class="chart-label" style="font-size: 2px; fill: #9898aa;">Total</text>
             </g>
           </svg>
@@ -1076,7 +1171,7 @@ function renderExpenses() {
 
     <!-- Spending Trend Card -->
     <div class="card">
-      <div class="card-hdr"><span class="card-title">📈 6-Month Trend</span></div>
+      <div class="card-hdr"><span class="card-title">📈 6-Month Trend (${activeExpenseAccount})</span></div>
       <div class="bar-chart-wrap">
         ${barChartHtml || '<div class="empty">No trend data</div>'}
       </div>
@@ -1085,7 +1180,7 @@ function renderExpenses() {
     <!-- Recent Entries -->
     <div class="card">
       <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
-      <div class="card-body">${(exp.rows||[]).slice(0, 15).map(r => `
+      <div class="card-body">${(filteredRows||[]).slice(0, 15).map(r => `
         <div class="row">
           <div class="row-main">
             <div class="row-title">${r.desc||r.category}</div>
@@ -1111,22 +1206,50 @@ async function delExp(n) {
 function renderBudgets() {
   const buds = data.budgets || [];
   const el   = document.getElementById('bud-list');
-  if (!buds.length) { el.innerHTML = '<div class="empty"><div class="ei">📊</div>No budgets set yet</div>'; return; }
-  el.innerHTML = buds.sort((a,b)=>a.group.localeCompare(b.group)).map(b => {
-    const pct   = b.budget>0 ? Math.round(b.spent/b.budget*100) : 0;
-    const over  = b.spent > b.budget;
-    const warn  = pct >= 80 && !over;
-    const col   = over?'#e05252':warn?'#d4861e':'#3aaa75';
-    const cls   = over?'b-red':warn?'b-amber':'b-green';
-    const lbl   = over?'🚨 Over':warn?'⚠️ '+pct+'%':'✅ '+pct+'%';
-    return `<div class="bud-row">
-      <div class="bud-hdr"><span class="bud-name">${b.group}</span><span class="badge ${cls}">${lbl}</span></div>
-      <div class="prog-track"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${col};"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:#9898aa;margin-top:4px;">
-        <span>$${b.spent.toFixed(2)} spent</span><span>$${b.budget.toFixed(2)} budget</span>
-      </div>
-    </div>`;
-  }).join('');
+  if (!el) return;
+  
+  const filteredBuds = buds.filter(b => {
+    if (activeBudgetAccount === 'Personal') return b.account === 'Personal Account';
+    if (activeBudgetAccount === 'Family') return b.account !== 'Personal Account';
+    return true;
+  });
+  
+  let budgetsHtml = '';
+  if (!filteredBuds.length) {
+    budgetsHtml = '<div class="empty"><div class="ei">📊</div>No budgets set for this account</div>';
+  } else {
+    budgetsHtml = filteredBuds.sort((a,b)=>a.group.localeCompare(b.group)).map(b => {
+      const pct   = b.budget>0 ? Math.round(b.spent/b.budget*100) : 0;
+      const over  = b.spent > b.budget;
+      const warn  = pct >= 80 && !over;
+      const col   = over?'#e05252':warn?'#d4861e':'#3aaa75';
+      const cls   = over?'b-red':warn?'b-amber':'b-green';
+      const lbl   = over?'🚨 Over':warn?'⚠️ '+pct+'%':'✅ '+pct+'%';
+      return `<div class="bud-row" style="border-bottom:1px solid #e4e6ef;padding:12px 0;">
+        <div class="bud-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span class="bud-name" style="font-weight:600;">${b.group}</span>
+          <span class="badge ${cls}">${lbl}</span>
+        </div>
+        <div style="font-size:11px;color:#9898aa;margin-bottom:6px;">Account: ${b.account || 'Family'}</div>
+        <div class="prog-track" style="height:6px;background:#e4e6ef;border-radius:3px;overflow:hidden;">
+          <div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${col};height:100%;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#9898aa;margin-top:4px;">
+          <span>$${b.spent.toFixed(2)} spent</span><span>$${b.budget.toFixed(2)} budget</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  
+  el.innerHTML = `
+    <!-- Account Toggle Pills -->
+    <div style="display:flex;background:#e4e6ef;padding:3px;border-radius:8px;margin-bottom:16px;">
+      <button class="toggle-pill ${activeBudgetAccount === 'All' ? 'active' : ''}" onclick="toggleBudgetAccount('All')" style="flex:1;text-align:center;">All</button>
+      <button class="toggle-pill ${activeBudgetAccount === 'Family' ? 'active' : ''}" onclick="toggleBudgetAccount('Family')" style="flex:1;text-align:center;">Family</button>
+      <button class="toggle-pill ${activeBudgetAccount === 'Personal' ? 'active' : ''}" onclick="toggleBudgetAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
+    </div>
+    ${budgetsHtml}
+  `;
 }
 
 // ══ MEMORIES ══
@@ -1311,8 +1434,9 @@ async function submitBirthday() {
 
 async function submitBudget() {
   const group = v('bud-grp'); const amt = parseFloat(v('bud-amt'));
+  const account = document.getElementById('bud-account').value;
   if (!group||isNaN(amt)||amt<=0) { toast('Please enter a valid amount'); return; }
-  await gPost({note:'set_budget',group,budget:amt});
+  await gPost({note:'set_budget',group,budget:amt,account});
   closeM('m-budget'); clr('bud-amt'); toast('Budget saved! 📊'); await loadData();
 }
 
@@ -1343,6 +1467,19 @@ async function submitExpense() {
   if (!desc||isNaN(amt)||amt<=0||!date) { toast('Please fill description, amount, and date'); return; }
   await gPost({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'});
   closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense logged! 💰'); await loadData();
+}
+
+let activeExpenseAccount = 'All';
+let activeBudgetAccount = 'All';
+
+function toggleExpenseAccount(acc) {
+  activeExpenseAccount = acc;
+  renderExpenses();
+}
+
+function toggleBudgetAccount(acc) {
+  activeBudgetAccount = acc;
+  renderBudgets();
 }
 
 // ══ KID SCHEDULES ══
@@ -1519,6 +1656,142 @@ function handlePinText(val) {
   }
 }
   
+// ══ TRAVEL TRACKER ══
+let travelMap = null;
+let travelMarkers = [];
+
+function renderTravel() {
+  const trips = data.travel || [];
+  const el = document.getElementById('trip-list');
+  if (!el) return;
+  
+  // Render Trip List below map
+  if (!trips.length) {
+    el.innerHTML = '<div class="empty"><div class="ei">✈️</div>No trips logged yet</div>';
+  } else {
+    el.innerHTML = trips.map(t => {
+      const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+      return `
+        <div class="row" style="padding:10px 16px;border-bottom:1px solid #e4e6ef;">
+          <div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div>
+          <div class="row-main">
+            <div class="row-title" style="font-weight:600;">${t.city}, ${t.country}</div>
+            <div class="row-sub">${t.date} · Travelers: ${membersStr}</div>
+            ${t.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${t.notes}"</div>` : ''}
+          </div>
+          <button onclick="delTrip('${t.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+        </div>`;
+    }).join('');
+  }
+  
+  // Initialize Leaflet Map
+  // Wait until s-travel is displayed in the DOM
+  setTimeout(() => {
+    try {
+      const mapContainer = document.getElementById('travel-map');
+      if (!mapContainer) return;
+      
+      if (!travelMap) {
+        travelMap = L.map('travel-map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          subdomains: 'abcd',
+          maxZoom: 20
+        }).addTo(travelMap);
+      }
+      
+      // Clear existing markers
+      travelMarkers.forEach(m => m.remove());
+      travelMarkers = [];
+      
+      // Draw new markers
+      trips.forEach(t => {
+        if (t.lat !== 0 || t.lng !== 0) {
+          const marker = L.marker([t.lat, t.lng]).addTo(travelMap);
+          const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+          const popupContent = `
+            <div style="font-family:sans-serif;padding:2px;min-width:150px;">
+              <h4 style="margin:0 0 4px;color:#1a1a2e;font-size:13px;font-weight:bold;">📍 ${t.city}, ${t.country}</h4>
+              <div style="font-size:11px;color:#9898aa;margin-bottom:6px;">📅 ${t.date}</div>
+              <div style="font-size:12px;color:#5a5a72;margin-bottom:4px;"><strong>Who:</strong> ${membersStr}</div>
+              ${t.notes ? `<div style="font-size:11px;color:#888;font-style:italic;border-top:1px solid #eee;padding-top:4px;margin-top:4px;">"${t.notes}"</div>` : ''}
+            </div>`;
+          marker.bindPopup(popupContent);
+          travelMarkers.push(marker);
+        }
+      });
+      
+      // Fix Leaflet tile rendering on tab switch
+      travelMap.invalidateSize();
+    } catch (e) {
+      console.error('Leaflet Map Error:', e);
+    }
+  }, 100);
+}
+
+async function submitTrip() {
+  const city = v('tr-city');
+  const country = v('tr-country');
+  const dateVal = document.getElementById('tr-date').value;
+  const notes = v('tr-notes');
+  
+  if (!city || !country) { alert('Please enter both City and Country'); return; }
+  if (!dateVal) { alert('Please select a date'); return; }
+  
+  // Get members
+  const memberBoxes = document.querySelectorAll('input[name="tr-mem"]:checked');
+  const membersStr = Array.from(memberBoxes).map(cb => cb.value).join(',');
+  
+  document.body.classList.add('loading-state');
+  
+  // Geocode City, Country via Nominatim API
+  let lat = 0;
+  let lng = 0;
+  try {
+    const q = encodeURIComponent(`${city}, ${country}`);
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`);
+    const geo = await res.json();
+    if (geo && geo.length > 0) {
+      lat = parseFloat(geo[0].lat);
+      lng = parseFloat(geo[0].lon);
+    } else {
+      toast('Could not find location coordinates on map. Placed at center.');
+    }
+  } catch (err) {
+    console.error('Nominatim Geocoding Error:', err);
+  }
+  
+  const payload = {
+    note: 'add_trip',
+    trip_city: city,
+    trip_country: country,
+    trip_date: fmtDate(dateVal),
+    trip_lat: lat,
+    trip_lng: lng,
+    trip_members: membersStr,
+    trip_notes: notes
+  };
+  
+  await gPost(payload);
+  document.body.classList.remove('loading-state');
+  closeM('m-trip-add');
+  
+  clr('tr-city', 'tr-country', 'tr-notes');
+  
+  toast('Trip pinned on the world map! 📍');
+  await loadData();
+}
+
+async function delTrip(id) {
+  if (!confirm('Remove this trip and pin from map?')) return;
+  document.body.classList.add('loading-state');
+  await gPost({ note: 'delete_trip', trip_id: id });
+  document.body.classList.remove('loading-state');
+  data.travel = (data.travel || []).filter(t => t.id !== id);
+  renderTravel();
+  toast('Trip deleted');
+}
+
 // ══ UTILS ══
 function v(id) { return document.getElementById(id)?.value?.trim()||''; }
 function clr(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
@@ -1535,7 +1808,7 @@ function fmtTime(s) {
 }
 function setDefaultDates() {
   const tod = todayStr();
-  ['ev-date','tk-due','mem-date','fert-date','ex-date','act-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
+  ['ev-date','tk-due','mem-date','fert-date','ex-date','act-date','tr-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
 }
 
 let toastT;

@@ -472,6 +472,7 @@ function doGet(e) {
       case 'get_fertility': output = getFertilityData();    break;
       case 'get_fridge':    output = getFridgeData();       break;
       case 'get_recurring': output = getRecurring();        break;
+      case 'get_travel':    output = getTravelData();       break;
       case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
       case 'write':
         var writeData = {};
@@ -662,14 +663,22 @@ function handleWrite(data) {
     if (noteLower === 'set_budget') {
       var bdgSheet  = ss.getSheetByName('Budgets');
       if (!bdgSheet) { bdgSheet = ss.insertSheet('Budgets'); bdgSheet.appendRow(['Group', 'Monthly Budget', 'Account', 'Set By', 'Updated At']); }
-      var groupName = toStr(data.group); var budget = parseFloat(data.budget) || 0;
-      var bdgVals   = bdgSheet.getDataRange().getValues(); var found = false;
+      var groupName = toStr(data.group); 
+      var budget    = parseFloat(data.budget) || 0;
+      var budgetAcc = toStr(data.account) || 'Family';
+      var bdgVals   = bdgSheet.getDataRange().getValues(); 
+      var found     = false;
       for (var i = 1; i < bdgVals.length; i++) {
-        if (toStr(bdgVals[i][0]).toLowerCase() === groupName.toLowerCase()) {
-          bdgSheet.getRange(i + 1, 2).setValue(budget); bdgSheet.getRange(i + 1, 4).setValue(user); bdgSheet.getRange(i + 1, 5).setValue(new Date()); found = true; break;
+        if (toStr(bdgVals[i][0]).toLowerCase() === groupName.toLowerCase() &&
+            toStr(bdgVals[i][2] || 'Family').toLowerCase() === budgetAcc.toLowerCase()) {
+          bdgSheet.getRange(i + 1, 2).setValue(budget); 
+          bdgSheet.getRange(i + 1, 4).setValue(user); 
+          bdgSheet.getRange(i + 1, 5).setValue(new Date()); 
+          found = true; 
+          break;
         }
       }
-      if (!found) bdgSheet.appendRow([groupName, budget, 'Family', user, new Date()]);
+      if (!found) bdgSheet.appendRow([groupName, budget, budgetAcc, user, new Date()]);
       return { status: 'ok' };
     }
 
@@ -695,6 +704,45 @@ function handleWrite(data) {
       var recSheet = ss.getSheetByName('RecurringExpenses');
       var rowNum   = parseInt(toStr(data.row_num));
       if (recSheet && !isNaN(rowNum) && rowNum > 1) recSheet.getRange(rowNum, 7).setValue('false');
+      return { status: 'ok' };
+    }
+
+    // TRAVEL: add
+    if (noteLower === 'add_trip') {
+      var travelSheet = ss.getSheetByName('Travel');
+      if (!travelSheet) {
+        travelSheet = ss.insertSheet('Travel');
+        travelSheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
+      }
+      var tripId = 'tr_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      var tripDate = toStr(data.trip_date) ? parseEventDate(toStr(data.trip_date), '') : new Date();
+      travelSheet.appendRow([
+        tripId,
+        tripDate,
+        toStr(data.trip_city),
+        toStr(data.trip_country),
+        parseFloat(data.trip_lat) || 0,
+        parseFloat(data.trip_lng) || 0,
+        toStr(data.trip_members),
+        toStr(data.trip_notes),
+        new Date()
+      ]);
+      return { status: 'ok' };
+    }
+
+    // TRAVEL: delete
+    if (noteLower === 'delete_trip') {
+      var travelSheet = ss.getSheetByName('Travel');
+      var targetId = toStr(data.trip_id);
+      if (travelSheet) {
+        var tVals = travelSheet.getDataRange().getValues();
+        for (var ti = 1; ti < tVals.length; ti++) {
+          if (toStr(tVals[ti][0]) === targetId) {
+            travelSheet.deleteRow(ti + 1);
+            break;
+          }
+        }
+      }
       return { status: 'ok' };
     }
 
@@ -740,6 +788,7 @@ function getAllDashboardData() {
     fertility: getFertilityData(),
     fridge:    getFridgeData(),
     recurring: getRecurring(),
+    travel:    getTravelData(),
     expenseGroups: EXPENSE_GROUPS
   };
 }
@@ -818,7 +867,7 @@ function getGroceries() {
 function getExpensesData() {
   var ss       = SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
-  if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0 };
+  if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0, familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {}, familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0 };
   var eVals      = expSheet.getDataRange().getValues();
   var tz         = Session.getScriptTimeZone();
   
@@ -828,22 +877,32 @@ function getExpensesData() {
   
   var rows       = [];
   var total      = 0;
+  var familyTotal = 0;
+  var personalTotal = 0;
   var byCategory = {};
+  var familyByCategory = {};
+  var personalByCategory = {};
   var byAccount  = {};
   
   var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var last6Months = [];
+  var familyHistory = [];
+  var personalHistory = [];
   for (var m = 5; m >= 0; m--) {
     var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
     var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     var label = monthNames[d.getMonth()] + ' ' + String(d.getFullYear()).substring(2);
     last6Months.push({ key: key, label: label, total: 0 });
+    familyHistory.push({ key: key, label: label, total: 0 });
+    personalHistory.push({ key: key, label: label, total: 0 });
   }
   
   var lastMonthKey = '';
   var lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   lastMonthKey = lm.getFullYear() + '-' + String(lm.getMonth() + 1).padStart(2, '0');
   var lastMonthTotal = 0;
+  var lastMonthFamilyTotal = 0;
+  var lastMonthPersonalTotal = 0;
   
   for (var i = 1; i < eVals.length; i++) {
     var row = eVals[i];
@@ -854,23 +913,43 @@ function getExpensesData() {
     var amount = parseFloat(row[4]) || 0;
     var cat = toStr(row[3]) || 'Other';
     var acc = toStr(row[2]) || 'Family';
+    var isPersonal = (acc === 'Personal Account');
     
     var rKey = rowDate.getFullYear() + '-' + String(rowDate.getMonth() + 1).padStart(2, '0');
     for (var h = 0; h < last6Months.length; h++) {
       if (last6Months[h].key === rKey) {
         last6Months[h].total += amount;
+        if (isPersonal) {
+          personalHistory[h].total += amount;
+        } else {
+          familyHistory[h].total += amount;
+        }
         break;
       }
     }
     
     if (rKey === lastMonthKey) {
       lastMonthTotal += amount;
+      if (isPersonal) {
+        lastMonthPersonalTotal += amount;
+      } else {
+        lastMonthFamilyTotal += amount;
+      }
     }
     
     if (rowDate.getMonth() === thisMonth && rowDate.getFullYear() === thisYear) {
       total += amount;
       byCategory[cat] = (byCategory[cat] || 0) + amount;
       byAccount[acc] = (byAccount[acc] || 0) + amount;
+      
+      if (isPersonal) {
+        personalTotal += amount;
+        personalByCategory[cat] = (personalByCategory[cat] || 0) + amount;
+      } else {
+        familyTotal += amount;
+        familyByCategory[cat] = (familyByCategory[cat] || 0) + amount;
+      }
+      
       rows.push({
         rowNum: i + 1,
         date: Utilities.formatDate(rowDate, tz, 'dd MMM'),
@@ -889,7 +968,15 @@ function getExpensesData() {
     byCategory: byCategory,
     byAccount: byAccount,
     history: last6Months,
-    lastMonthTotal: lastMonthTotal
+    lastMonthTotal: lastMonthTotal,
+    familyTotal: familyTotal,
+    personalTotal: personalTotal,
+    familyByCategory: familyByCategory,
+    personalByCategory: personalByCategory,
+    familyHistory: familyHistory,
+    personalHistory: personalHistory,
+    lastMonthFamilyTotal: lastMonthFamilyTotal,
+    lastMonthPersonalTotal: lastMonthPersonalTotal
   };
 }
 
@@ -927,7 +1014,7 @@ function getBudgets() {
       }
     }
     
-    budgets.push({ group: gn, budget: parseFloat(bRow[1]) || 0, spent: spent, setBy: toStr(bRow[3]) });
+    budgets.push({ group: gn, budget: parseFloat(bRow[1]) || 0, spent: spent, account: budgetAcc, setBy: toStr(bRow[3]) });
   }
   return budgets;
 }
@@ -1038,6 +1125,38 @@ function getRecurring() {
   return result;
 }
 
+function getTravelData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var travelSheet = ss.getSheetByName('Travel');
+  if (!travelSheet) {
+    travelSheet = ss.insertSheet('Travel');
+    travelSheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
+  }
+  var vals = travelSheet.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var result = [];
+  for (var i = 1; i < vals.length; i++) {
+    var row = vals[i];
+    if (!row[0]) continue;
+    var tripDate = new Date(row[1]);
+    if (isNaN(tripDate.getTime())) tripDate = new Date();
+    result.push({
+      id: toStr(row[0]),
+      date: Utilities.formatDate(tripDate, tz, 'dd MMM yyyy'),
+      dateRaw: Utilities.formatDate(tripDate, tz, 'yyyy-MM-dd'),
+      city: toStr(row[2]),
+      country: toStr(row[3]),
+      lat: parseFloat(row[4]) || 0,
+      lng: parseFloat(row[5]) || 0,
+      members: toStr(row[6]) ? toStr(row[6]).split(',').map(function(m) { return m.trim(); }) : [],
+      notes: toStr(row[7])
+    });
+  }
+  result.sort(function(a, b) {
+    return b.dateRaw.localeCompare(a.dateRaw);
+  });
+  return result;
+}
 
 // ============================================================
 // HELPERS
