@@ -726,25 +726,25 @@ function buildMore() {
 // ══ DATA ══
 // Load data via JSONP (bypasses CORS)
 function loadData() {
-  return new Promise((resolve) => {
-    const cbName = 'cb_' + Date.now();
-    const script  = document.createElement('script');
-    window[cbName] = function(result) {
-      delete window[cbName];
-      document.body.removeChild(script);
-      data = result;
-      render(section);
-      renderHome();
-      resolve();
-    };
-    script.onerror = function() {
-      delete window[cbName];
-      document.body.removeChild(script);
-      toast('Could not load data');
-      resolve();
-    };
-    script.src = GAS_URL + '?action=get_all&callback=' + cbName;
-    document.body.appendChild(script);
+  return new Promise(resolve => {
+    const cb = 'cb_' + Date.now();
+    const s  = document.createElement('script');
+    window[cb] = r => { delete window[cb]; s.remove(); data = r; render(section); renderHome(); resolve(); };
+    s.onerror  = () => { delete window[cb]; s.remove(); toast('Could not load data'); resolve(); };
+    s.src = GAS_URL + '?action=get_all&callback=' + cb;
+    document.body.appendChild(s);
+  });
+}
+
+function gPost(payload) {
+  return new Promise(resolve => {
+    payload.user = user || 'Unknown';
+    const cb = 'cb_' + Date.now();
+    const s  = document.createElement('script');
+    window[cb] = r => { delete window[cb]; s.remove(); resolve(r); };
+    s.onerror  = () => { delete window[cb]; s.remove(); resolve(null); };
+    s.src = GAS_URL + '?action=write&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
+    document.body.appendChild(s);
   });
 }
 
@@ -1144,32 +1144,7 @@ async function submitRecurring() {
   closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved! 🔄'); await loadData();
 }
 
-// ══ GAS ══
-function gPost(payload) {
-  return new Promise((resolve) => {
-    payload.user = user || 'Unknown';
-    const cbName = 'cb_' + Date.now();
-    const script  = document.createElement('script');
-    // Encode payload as URL params via a GET write endpoint
-    const params  = new URLSearchParams({
-      action:   'write',
-      callback: cbName,
-      data:     JSON.stringify(payload)
-    });
-    window[cbName] = function(result) {
-      delete window[cbName];
-      document.body.removeChild(script);
-      resolve(result);
-    };
-    script.onerror = function() {
-      delete window[cbName];
-      document.body.removeChild(script);
-      resolve(null);
-    };
-    script.src = GAS_URL + '?' + params.toString();
-    document.body.appendChild(script);
-  });
-}
+
 
 function handlePinText(val) {
   // Sync typed input with pin buffer
