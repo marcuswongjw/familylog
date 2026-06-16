@@ -329,9 +329,32 @@ input,textarea,select{font-family:inherit;}
 .cal-dot.Mikaela { background: #4f86c6; }
 .cal-dot.Meaghan { background: #f4a261; }
 .cal-day-cell.selected { background: #edf4fc; }
+
+/* ── GLOBAL LOADING PROGRESS BAR ── */
+#top-progress-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 100000;
+  pointer-events: none;
+  background: transparent;
+}
+#top-progress-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #3aaa75, #4f86c6);
+  box-shadow: 0 0 8px rgba(79, 134, 198, 0.6);
+  transition: width 0.4s cubic-bezier(0.1, 0.8, 0.3, 1), opacity 0.3s ease;
+  opacity: 0;
+}
 </style>
 </head>
 <body>
+
+<!-- GLOBAL LOADING PROGRESS BAR -->
+<div id="top-progress-container"><div id="top-progress-bar"></div></div>
 
 <!-- LOGIN -->
 <div id="login-screen" class="screen active">
@@ -970,9 +993,48 @@ function buildMore() {
   ).join('');
 }
 
+// ── PROGRESS BAR CONTROLS ──
+let progressInterval = null;
+
+function startProgressBar() {
+  const bar = document.getElementById('top-progress-bar');
+  if (!bar) return;
+  clearInterval(progressInterval);
+  bar.style.opacity = '1';
+  bar.style.width = '0%';
+  
+  let percent = 0;
+  progressInterval = setInterval(() => {
+    if (percent < 30) {
+      percent += Math.random() * 8 + 5;
+    } else if (percent < 75) {
+      percent += Math.random() * 4 + 2;
+    } else if (percent < 95) {
+      percent += Math.random() * 1.5 + 0.5;
+    } else if (percent < 99) {
+      percent += 0.1;
+    }
+    bar.style.width = Math.min(percent, 99) + '%';
+  }, 120);
+}
+
+function finishProgressBar() {
+  const bar = document.getElementById('top-progress-bar');
+  if (!bar) return;
+  clearInterval(progressInterval);
+  bar.style.width = '100%';
+  setTimeout(() => {
+    bar.style.opacity = '0';
+    setTimeout(() => {
+      bar.style.width = '0%';
+    }, 300);
+  }, 200);
+}
+
 // ══ DATA ══
 // Load data via JSONP (bypasses CORS)
 function loadData() {
+  startProgressBar();
   return new Promise(resolve => {
     const cb = 'cb_' + Date.now();
     const s  = document.createElement('script');
@@ -986,21 +1048,39 @@ function loadData() {
       }
       render(section);
       renderHome();
+      finishProgressBar();
       resolve();
     };
-    s.onerror  = () => { delete window[cb]; s.remove(); toast('Could not load data'); resolve(); };
+    s.onerror  = () => {
+      delete window[cb];
+      s.remove();
+      toast('Could not load data');
+      finishProgressBar();
+      resolve();
+    };
     s.src = GAS_URL + '?action=get_all&callback=' + cb;
     document.body.appendChild(s);
   });
 }
 
 function gPost(payload) {
+  startProgressBar();
   return new Promise(resolve => {
     payload.user = user || 'Unknown';
     const cb = 'cb_' + Date.now();
     const s  = document.createElement('script');
-    window[cb] = r => { delete window[cb]; s.remove(); resolve(r); };
-    s.onerror  = () => { delete window[cb]; s.remove(); resolve(null); };
+    window[cb] = r => {
+      delete window[cb];
+      s.remove();
+      finishProgressBar();
+      resolve(r);
+    };
+    s.onerror  = () => {
+      delete window[cb];
+      s.remove();
+      finishProgressBar();
+      resolve(null);
+    };
     s.src = GAS_URL + '?action=write&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
     document.body.appendChild(s);
   });
