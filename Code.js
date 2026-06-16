@@ -452,8 +452,13 @@ function keepAlive() {
 function doGet(e) {
   var action   = e && e.parameter && e.parameter.action   ? e.parameter.action   : '';
   var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
+  
+  if (action === 'confirm_expense_page') {
+    var id = e && e.parameter && e.parameter.id ? e.parameter.id : '';
+    return renderConfirmExpensePage(id);
+  }
+  
   var output;
-
   try {
     switch (action) {
       case 'get_all':       output = getAllDashboardData(); break;
@@ -467,6 +472,7 @@ function doGet(e) {
       case 'get_fertility': output = getFertilityData();    break;
       case 'get_fridge':    output = getFridgeData();       break;
       case 'get_recurring': output = getRecurring();        break;
+      case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
       case 'write':
         var writeData = {};
         try { writeData = JSON.parse(e.parameter.data || '{}'); } catch(pe) {}
@@ -1021,4 +1027,298 @@ function testCalendarConnection() {
 function testDigest() {
   sendMorningDigest(new Date());
   Logger.log('Digest sent — check email!');
+}
+
+
+// ============================================================
+// PAYLAH SCANNER & APPROVAL SYSTEM
+// ============================================================
+
+function scanInboxForPayLah() {
+  var query = 'from:paylah.alert@dbs.com -label:PayLah-Processed';
+  var threads = GmailApp.search(query, 0, 10);
+  if (threads.length === 0) return;
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendingSheet = ss.getSheetByName('PendingExpenses');
+  if (!pendingSheet) {
+    pendingSheet = ss.insertSheet('PendingExpenses');
+    pendingSheet.appendRow(['ID', 'Date', 'Account', 'Category', 'Amount', 'Note', 'Timestamp']);
+  }
+  
+  var label = GmailApp.getUserLabelByName('PayLah-Processed');
+  if (!label) {
+    label = GmailApp.createLabel('PayLah-Processed');
+  }
+  
+  threads.forEach(function(thread) {
+    var messages = thread.getMessages();
+    messages.forEach(function(msg) {
+      var body = msg.getPlainBody();
+      
+      // Parse details
+      var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
+      var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
+      var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+      
+      if (amtMatch && toMatch) {
+        var amount = parseFloat(amtMatch[1]);
+        var merchant = toMatch[1].trim();
+        var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'}); // default
+        
+        if (dateMatch) {
+          var dateParts = dateMatch[1].trim().split(/\s+/);
+          if (dateParts.length >= 2) {
+            dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
+          }
+        }
+        
+        var id = 'p_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+        var category = proposeCategory(merchant);
+        
+        // Append to PendingExpenses
+        pendingSheet.appendRow([id, dateStr, 'Family', category, amount, merchant, new Date()]);
+        
+        // Send email with approval link
+        sendApprovalEmail(id, dateStr, amount, merchant, category);
+      }
+    });
+    // Mark thread as processed
+    thread.addLabel(label);
+  });
+}
+
+function proposeCategory(merchant) {
+  var mLower = merchant.toLowerCase();
+  for (var groupName in EXPENSE_GROUPS) {
+    var cats = EXPENSE_GROUPS[groupName];
+    for (var c = 0; c < cats.length; c++) {
+      var catLower = cats[c].toLowerCase();
+      var subcatName = catLower.split(' - ').pop();
+      if (mLower.indexOf(subcatName) !== -1 || subcatName.indexOf(mLower) !== -1) {
+        return cats[c];
+      }
+    }
+  }
+  
+  // Direct keyword fallbacks
+  if (mLower.indexOf('grab') !== -1 || mLower.indexOf('gojek') !== -1 || mLower.indexOf('comfort') !== -1 || mLower.indexOf('transit') !== -1 || mLower.indexOf('mrt') !== -1) {
+    return 'Transportation - Taxi/Grab';
+  }
+  if (mLower.indexOf('toast box') !== -1 || mLower.indexOf('starbucks') !== -1 || mLower.indexOf('mcdonald') !== -1 || mLower.indexOf('kopitiam') !== -1 || mLower.indexOf('food') !== -1 || mLower.indexOf('restaurant') !== -1) {
+    return 'Eating Out - Lunch';
+  }
+  if (mLower.indexOf('fairprice') !== -1 || mLower.indexOf('cold storage') !== -1 || mLower.indexOf('supermarket') !== -1 || mLower.indexOf('sheng siong') !== -1) {
+    return 'Household - Groceries';
+  }
+  return 'Misc';
+}
+
+function sendApprovalEmail(id, dateStr, amount, merchant, category) {
+  var webAppUrl = ScriptApp.getService().getUrl();
+  var approvalUrl = webAppUrl + '?action=confirm_expense_page&id=' + id;
+  
+  var subject = '❓ Confirm PayLah! Expense: $' + amount.toFixed(2) + ' at ' + merchant;
+  var htmlBody = '<div style="font-family:sans-serif;max-width:400px;border:1px solid #e4e6ef;border-radius:10px;padding:20px;background:#f9f9fb;">' +
+                 '<h3 style="color:#2c7a4b;margin-top:0;border-bottom:1px solid #e4e6ef;padding-bottom:10px;">DBS PayLah! Expense Detected</h3>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Merchant:</strong> ' + merchant + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> $' + amount.toFixed(2) + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ' + dateStr + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Category:</strong> ' + category + '</p>' +
+                 '<div style="margin-top:20px;text-align:center;">' +
+                   '<a href="' + approvalUrl + '" style="background:#4f86c6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;font-size:14px;">Verify & Log Expense</a>' +
+                 '</div>' +
+                 '</div>';
+  sendFamilyEmail(subject, htmlBody);
+}
+
+function renderConfirmExpensePage(id) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('PendingExpenses');
+  if (!sheet) return HtmlService.createHtmlOutput('<h3>Error: PendingExpenses sheet not found.</h3>');
+  
+  var vals = sheet.getDataRange().getValues();
+  var rowIdx = -1;
+  for (var i = 1; i < vals.length; i++) {
+    if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
+  }
+  
+  if (rowIdx === -1) {
+    return HtmlService.createHtmlOutput('<h3 style="font-family:sans-serif;color:#e74c3c;text-align:center;margin-top:50px;">This transaction has already been logged or dismissed.</h3>');
+  }
+  
+  var dateStr = toStr(vals[rowIdx-1][1]);
+  var acc     = toStr(vals[rowIdx-1][2]);
+  var cat     = toStr(vals[rowIdx-1][3]);
+  var amt     = parseFloat(vals[rowIdx-1][4]) || 0;
+  var desc    = toStr(vals[rowIdx-1][5]);
+  
+  // Build category options grouped
+  var groupOptionsHtml = '';
+  for (var grp in EXPENSE_GROUPS) {
+    groupOptionsHtml += '<optgroup label="' + grp + '">';
+    var cats = EXPENSE_GROUPS[grp];
+    for (var c = 0; c < cats.length; c++) {
+      var sel = (cats[c] === cat) ? ' selected' : '';
+      groupOptionsHtml += '<option value="' + cats[c] + '"' + sel + '>' + cats[c] + '</option>';
+    }
+    groupOptionsHtml += '</optgroup>';
+  }
+  
+  var webAppUrl = ScriptApp.getService().getUrl();
+  
+  var html = '<!DOCTYPE html>' +
+    '<html>' +
+    '<head>' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<style>' +
+        'body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#f5f6fa; color:#1a1a2e; padding:16px; margin:0; }' +
+        '.card { background:#fff; border-radius:14px; border:1px solid #e4e6ef; padding:20px; max-width:400px; margin:20px auto; box-shadow:0 4px 12px rgba(0,0,0,0.05); }' +
+        'h3 { margin-top:0; color:#2c7a4b; text-align:center; }' +
+        '.field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }' +
+        'label { font-size:12px; font-weight:600; color:#5a5a72; }' +
+        'input, select { padding:10px 12px; border:1.5px solid #e4e6ef; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box; width:100%; }' +
+        'input:focus, select:focus { border-color:#4f86c6; }' +
+        '.btn-row { display:flex; gap:10px; margin-top:20px; }' +
+        'button { flex:1; padding:12px; border:none; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; }' +
+        '.btn-p { background:#4f86c6; color:#fff; }' +
+        '.btn-s { background:#fdeaea; color:#b83232; }' +
+      '</style>' +
+    '</head>' +
+    '<body>' +
+      '<div class="card">' +
+        '<h3>Verify PayLah! Expense</h3>' +
+        '<form id="exp-form">' +
+          '<input type="hidden" name="id" value="' + id + '">' +
+          '<div class="field"><label>Description</label><input type="text" name="desc" value="' + desc + '"></div>' +
+          '<div class="field"><label>Amount ($)</label><input type="number" step="0.01" name="amount" value="' + amt.toFixed(2) + '"></div>' +
+          '<div class="field"><label>Date</label><input type="text" name="date" value="' + dateStr + '"></div>' +
+          '<div class="field"><label>Account</label>' +
+            '<select name="account">' +
+              '<option value="Family" ' + (acc === 'Family' ? 'selected' : '') + '>Family</option>' +
+              '<option value="Personal Account" ' + (acc === 'Personal Account' ? 'selected' : '') + '>Personal Account</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="field"><label>Category</label>' +
+            '<select name="category">' + groupOptionsHtml + '</select>' +
+          '</div>' +
+          '<div class="btn-row">' +
+            '<button type="button" class="btn-s" onclick="submitForm(\'reject\')">Dismiss</button>' +
+            '<button type="button" class="btn-p" onclick="submitForm(\'approve\')">Log Expense</button>' +
+          '</div>' +
+        '</form>' +
+      '</div>' +
+      '<script>' +
+        'function submitForm(action) {' +
+          'var form = document.getElementById(\'exp-form\');' +
+          'var formData = new FormData(form);' +
+          'var query = \'?action=submit_confirmed_expense&status=\' + action;' +
+          'formData.forEach(function(value, key){' +
+            'query += \'&\' + encodeURIComponent(key) + \'=\' + encodeURIComponent(value);' +
+          '});' +
+          'document.body.innerHTML = \'<div style="text-align:center;margin-top:100px;font-family:sans-serif;color:#666;">Processing...</div>\';' +
+          'var s = document.createElement(\'script\');' +
+          's.src = \'' + webAppUrl + '\' + query + \'&callback=onDone\';' +
+          'document.body.appendChild(s);' +
+        '}' +
+        'window.onDone = function(r) {' +
+          'if (r && r.status === \'ok\') {' +
+            'document.body.innerHTML = \'<div class="card" style="text-align:center;"><h3 style="color:#2c7a4b;">Success!</h3><p>\' + r.message + \'</p></div>\';' +
+          '} else {' +
+            'document.body.innerHTML = \'<div class="card" style="text-align:center;"><h3 style="color:#e74c3c;">Error</h3><p>\' + (r ? r.message : \'Unknown error\') + \'</p></div>\';' +
+          '}' +
+        '}' +
+      '</script>' +
+    '</body>' +
+    '</html>';
+  return HtmlService.createHtmlOutput(html);
+}
+
+function handleSubmitConfirmedExpense(params) {
+  var id = params.id;
+  var status = params.status;
+  
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendingSheet = ss.getSheetByName('PendingExpenses');
+  if (!pendingSheet) return { status: 'error', message: 'PendingExpenses sheet not found' };
+  
+  var vals = pendingSheet.getDataRange().getValues();
+  var rowIdx = -1;
+  for (var i = 1; i < vals.length; i++) {
+    if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
+  }
+  
+  if (rowIdx === -1) {
+    return { status: 'error', message: 'This transaction was already processed' };
+  }
+  
+  if (status === 'approve') {
+    var desc = params.desc;
+    var amount = parseFloat(params.amount) || 0;
+    var dateStr = params.date;
+    var account = params.account;
+    var category = params.category;
+    
+    var expSheet = ss.getSheetByName('Expenses');
+    if (!expSheet) {
+      expSheet = ss.insertSheet('Expenses');
+      expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']);
+    }
+    
+    var parsedDate = parseEventDate(dateStr, '');
+    
+    // Log to Expenses
+    expSheet.appendRow([new Date(), parsedDate, account, category, amount, desc]);
+    
+    // Sort Expenses
+    var lastRow = expSheet.getLastRow();
+    if (lastRow > 2) {
+      expSheet.getRange(2, 1, lastRow - 1, expSheet.getLastColumn()).sort({ column: 2, ascending: true });
+    }
+    
+    // Remove from PendingExpenses
+    pendingSheet.deleteRow(rowIdx);
+    
+    return { status: 'ok', message: 'Expense of $' + amount.toFixed(2) + ' logged to ' + category + '!' };
+  } else {
+    // Just remove from Pending
+    pendingSheet.deleteRow(rowIdx);
+    return { status: 'ok', message: 'PayLah! expense dismissed.' };
+  }
+}
+
+function testPayLahScanner() {
+  var mockEmailBody = 'Transaction Alerts\n' +
+                      'Transaction Ref: IPS78160863519729871\n' +
+                      'Dear Sir / Madam,\n' +
+                      'We refer to your PayLah! Scan & Pay Transfer dated 16 Jun. We are pleased to confirm that the transaction was completed.\n' +
+                      'Date & Time:\t16 Jun 19:17 (SGT)\n' +
+                      'Amount:\tSGD10.50\n' +
+                      'From:\tPayLah! Wallet (Mobile ending 4128)\n' +
+                      'To:\tTOAST BOX COFFEE SHOP\n';
+                      
+  var amtMatch = mockEmailBody.match(/Amount:\s*SGD\s*([\d\.]+)/i);
+  var toMatch = mockEmailBody.match(/To:\s*(.+?)(?:\r|\n)/i);
+  var dateMatch = mockEmailBody.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+  
+  if (amtMatch && toMatch) {
+    var amount = parseFloat(amtMatch[1]);
+    var merchant = toMatch[1].trim();
+    var dateStr = '16 Jun ' + new Date().getFullYear();
+    
+    if (dateMatch) {
+      var dateParts = dateMatch[1].trim().split(/\s+/);
+      if (dateParts.length >= 2) {
+        dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
+      }
+    }
+    
+    Logger.log('Parsed successfully!');
+    Logger.log('Amount: ' + amount);
+    Logger.log('Merchant: ' + merchant);
+    Logger.log('Date: ' + dateStr);
+    Logger.log('Proposed Category: ' + proposeCategory(merchant));
+  } else {
+    Logger.log('Failed to parse mock email');
+  }
 }
