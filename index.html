@@ -724,13 +724,28 @@ function buildMore() {
 }
 
 // ══ DATA ══
-async function loadData() {
-  try {
-    const r = await fetch(GAS_URL + '?action=get_all');
-    data = await r.json();
-    render(section);
-    renderHome();
-  } catch(e) { toast('Could not load data'); }
+// Load data via JSONP (bypasses CORS)
+function loadData() {
+  return new Promise((resolve) => {
+    const cbName = 'cb_' + Date.now();
+    const script  = document.createElement('script');
+    window[cbName] = function(result) {
+      delete window[cbName];
+      document.body.removeChild(script);
+      data = result;
+      render(section);
+      renderHome();
+      resolve();
+    };
+    script.onerror = function() {
+      delete window[cbName];
+      document.body.removeChild(script);
+      toast('Could not load data');
+      resolve();
+    };
+    script.src = GAS_URL + '?action=get_all&callback=' + cbName;
+    document.body.appendChild(script);
+  });
 }
 
 // ══ RENDER ROUTER ══
@@ -1130,11 +1145,30 @@ async function submitRecurring() {
 }
 
 // ══ GAS ══
-async function gPost(payload) {
-  try {
+function gPost(payload) {
+  return new Promise((resolve) => {
     payload.user = user || 'Unknown';
-    await fetch(GAS_URL, {method:'POST', body:JSON.stringify(payload)});
-  } catch(e) { console.error(e); toast('Error saving. Try again.'); }
+    const cbName = 'cb_' + Date.now();
+    const script  = document.createElement('script');
+    // Encode payload as URL params via a GET write endpoint
+    const params  = new URLSearchParams({
+      action:   'write',
+      callback: cbName,
+      data:     JSON.stringify(payload)
+    });
+    window[cbName] = function(result) {
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(result);
+    };
+    script.onerror = function() {
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(null);
+    };
+    script.src = GAS_URL + '?' + params.toString();
+    document.body.appendChild(script);
+  });
 }
 
 function handlePinText(val) {
