@@ -238,6 +238,10 @@ input,textarea,select{font-family:inherit;}
       <p class="pin-lbl" id="pinlbl">Enter your PIN</p>
       <div class="pin-dots" id="pindots"></div>
       <div class="pin-pad" id="pinpad"></div>
+      <input type="password" id="pin-text-input" maxlength="4" inputmode="numeric" pattern="[0-9]*"
+        placeholder="or type PIN here"
+        style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-size:16px;text-align:center;letter-spacing:8px;outline:none;"
+        oninput="handlePinText(this.value)">
       <p class="pin-err" id="pinerr"></p>
     </div>
   </div>
@@ -631,6 +635,7 @@ function buildLogin() {
 
 function selMem(name) {
   selMember = name; pinBuf = '';
+  const pti = document.getElementById('pin-text-input'); if (pti) pti.value = ''; // ← add here
   document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
   document.querySelectorAll('.member-btn').forEach(b => { if (b.textContent.trim() === name) b.classList.add('sel'); });
   document.getElementById('pinbox').classList.add('show');
@@ -672,6 +677,7 @@ function loginAs(name) {
 function logout() {
   sessionStorage.removeItem('wf_user');
   user = null; pinBuf = ''; selMember = null;
+  const pti = document.getElementById('pin-text-input'); if (pti) pti.value = ''; // ← add here
   document.getElementById('app-screen').classList.remove('active');
   document.getElementById('login-screen').classList.add('active');
   document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
