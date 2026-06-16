@@ -472,7 +472,6 @@ function doGet(e) {
       case 'get_fertility': output = getFertilityData();    break;
       case 'get_fridge':    output = getFridgeData();       break;
       case 'get_recurring': output = getRecurring();        break;
-      case 'get_schedules': output = getSchedulesData();    break;
       case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
       case 'write':
         var writeData = {};
@@ -560,24 +559,27 @@ function handleWrite(data) {
 
     // CALENDAR: add
     if (noteLower === 'add_event') {
-      var title      = toStr(data.event_title) || 'Untitled Event';
-      var dateStr    = toStr(data.event_date);
-      var timeStr    = toStr(data.event_time);
-      var endTimeStr = toStr(data.event_end_time);
-      var eventNotes = toStr(data.event_notes);
-      var isAllDay   = !timeStr || timeStr === '';
-      var startDate  = parseEventDate(dateStr, timeStr);
+      var title         = toStr(data.event_title) || 'Untitled Event';
+      var dateStr       = toStr(data.event_date);
+      var timeStr       = toStr(data.event_time);
+      var endTimeStr    = toStr(data.event_end_time);
+      var eventLocation = toStr(data.event_location);
+      var eventNotes    = toStr(data.event_notes);
+      var isAllDay      = !timeStr || timeStr === '';
+      var startDate     = parseEventDate(dateStr, timeStr);
       var endDate;
       if (isAllDay) { endDate = new Date(startDate); endDate.setDate(endDate.getDate() + 1); }
       else if (endTimeStr) { endDate = parseEventDate(dateStr, endTimeStr); if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1); }
       else { endDate = new Date(startDate.getTime() + 60 * 60 * 1000); }
       var calendar     = CalendarApp.getCalendarById(CALENDAR_ID);
       var createdEvent = isAllDay
-        ? calendar.createAllDayEvent(title, startDate, { description: eventNotes || '' })
-        : calendar.createEvent(title, startDate, endDate, { description: eventNotes || '' });
+        ? calendar.createAllDayEvent(title, startDate, { description: eventNotes || '', location: eventLocation || '' })
+        : calendar.createEvent(title, startDate, endDate, { description: eventNotes || '', location: eventLocation || '' });
       var calSheet = ss.getSheetByName('Calendar');
       if (!calSheet) { calSheet = ss.insertSheet('Calendar'); calSheet.appendRow(['Title', 'Date', 'Time', 'Added By', 'Notes', 'Google Event ID']); }
-      calSheet.appendRow([title, startDate, timeStr, user, eventNotes, createdEvent.getId()]);
+      var calNotes = eventNotes;
+      if (eventLocation) calNotes = (calNotes ? calNotes + '\n' : '') + 'Location: ' + eventLocation;
+      calSheet.appendRow([title, startDate, timeStr, user, calNotes, createdEvent.getId()]);
       return { status: 'ok', id: createdEvent.getId() };
     }
 
@@ -696,79 +698,6 @@ function handleWrite(data) {
       return { status: 'ok' };
     }
 
-    // SCHEDULES: add
-    if (noteLower === 'add_schedule') {
-      var schedSheet = ss.getSheetByName('Schedules');
-      if (!schedSheet) {
-        schedSheet = ss.insertSheet('Schedules');
-        schedSheet.appendRow(['ID', 'Child', 'Activity', 'DayOfWeek', 'Time', 'Location', 'Notes']);
-      }
-      var schedId = 'sch_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-      schedSheet.appendRow([
-        schedId,
-        toStr(data.sched_child),
-        toStr(data.sched_activity),
-        toStr(data.sched_day),
-        toStr(data.sched_time),
-        toStr(data.sched_location),
-        toStr(data.sched_notes)
-      ]);
-      return { status: 'ok' };
-    }
-
-    // SCHEDULES: delete
-    if (noteLower === 'delete_schedule') {
-      var schedSheet = ss.getSheetByName('Schedules');
-      var targetId = toStr(data.sched_id);
-      if (schedSheet) {
-        var sVals = schedSheet.getDataRange().getValues();
-        for (var si = 1; si < sVals.length; si++) {
-          if (toStr(sVals[si][0]) === targetId) {
-            schedSheet.deleteRow(si + 1);
-            break;
-          }
-        }
-      }
-      return { status: 'ok' };
-    }
-
-    // ACTIVITY_LOG: add
-    if (noteLower === 'log_activity') {
-      var actSheet = ss.getSheetByName('ActivityLog');
-      if (!actSheet) {
-        actSheet = ss.insertSheet('ActivityLog');
-        actSheet.appendRow(['ID', 'Date', 'Child', 'Activity', 'Duration', 'Notes', 'Timestamp']);
-      }
-      var actId = 'act_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-      var actDate = toStr(data.act_date) ? parseEventDate(toStr(data.act_date), '') : new Date();
-      actSheet.appendRow([
-        actId,
-        actDate,
-        toStr(data.act_child),
-        toStr(data.act_activity),
-        parseFloat(data.act_duration) || 0,
-        toStr(data.act_notes),
-        new Date()
-      ]);
-      return { status: 'ok' };
-    }
-
-    // ACTIVITY_LOG: delete
-    if (noteLower === 'delete_activity') {
-      var actSheet = ss.getSheetByName('ActivityLog');
-      var targetId = toStr(data.act_id);
-      if (actSheet) {
-        var aVals = actSheet.getDataRange().getValues();
-        for (var ai = 1; ai < aVals.length; ai++) {
-          if (toStr(aVals[ai][0]) === targetId) {
-            actSheet.deleteRow(ai + 1);
-            break;
-          }
-        }
-      }
-      return { status: 'ok' };
-    }
-
     logSheet.appendRow([new Date(), user, 'General', note]);
     return { status: 'ok' };
 
@@ -811,69 +740,27 @@ function getAllDashboardData() {
     fertility: getFertilityData(),
     fridge:    getFridgeData(),
     recurring: getRecurring(),
-    schedules: getSchedulesData(),
     expenseGroups: EXPENSE_GROUPS
   };
-}
-
-function getSchedulesData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var tz = Session.getScriptTimeZone();
-  var result = { timetables: [], activityLogs: [] };
-  
-  var schedSheet = ss.getSheetByName('Schedules');
-  if (schedSheet) {
-    var sVals = schedSheet.getDataRange().getValues();
-    for (var i = 1; i < sVals.length; i++) {
-      var row = sVals[i];
-      if (!row[0]) continue;
-      result.timetables.push({
-        id: toStr(row[0]),
-        child: toStr(row[1]),
-        activity: toStr(row[2]),
-        day: toStr(row[3]),
-        time: toStr(row[4]),
-        location: toStr(row[5]),
-        notes: toStr(row[6])
-      });
-    }
-  }
-  
-  var actSheet = ss.getSheetByName('ActivityLog');
-  if (actSheet) {
-    var aVals = actSheet.getDataRange().getValues();
-    for (var j = 1; j < aVals.length; j++) {
-      var aRow = aVals[j];
-      if (!aRow[0]) continue;
-      var actDate = new Date(aRow[1]);
-      if (isNaN(actDate.getTime())) actDate = new Date(aRow[6] || new Date());
-      result.activityLogs.push({
-        id: toStr(aRow[0]),
-        date: Utilities.formatDate(actDate, tz, 'dd MMM yyyy'),
-        dateRaw: Utilities.formatDate(actDate, tz, 'yyyy-MM-dd'),
-        child: toStr(aRow[2]),
-        activity: toStr(aRow[3]),
-        duration: parseFloat(aRow[4]) || 0,
-        notes: toStr(aRow[5])
-      });
-    }
-    result.activityLogs.reverse();
-  }
-  
-  return result;
 }
 
 function getEvents() {
   try {
     var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
-    var now             = new Date(); var thirtyDaysLater = new Date(); thirtyDaysLater.setDate(now.getDate() + 30);
-    var events          = calendar.getEvents(now, thirtyDaysLater);
+    var now             = new Date();
+    var thirtyDaysAgo   = new Date(); thirtyDaysAgo.setDate(now.getDate() - 30);
+    var thirtyDaysLater = new Date(); thirtyDaysLater.setDate(now.getDate() + 30);
+    var events          = calendar.getEvents(thirtyDaysAgo, thirtyDaysLater);
     var tz              = Session.getScriptTimeZone();
     var result          = [];
     for (var i = 0; i < events.length; i++) {
       var ev        = events[i];
       var titleDesc = ev.getTitle() + ' ' + (ev.getDescription() || '');
       var tags      = FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
+      var duration  = 0;
+      try {
+        duration = (ev.getEndTime().getTime() - ev.getStartTime().getTime()) / (1000 * 60 * 60);
+      } catch (de) {}
       result.push({
         id:      ev.getId(),
         title:   ev.getTitle(),
@@ -883,7 +770,9 @@ function getEvents() {
         endTime: ev.isAllDayEvent() ? '' : Utilities.formatDate(ev.getEndTime(), tz, 'h:mm a'),
         allDay:  ev.isAllDayEvent(),
         notes:   ev.getDescription() || '',
-        tags:    tags
+        location: ev.getLocation() || '',
+        tags:    tags,
+        duration: duration
       });
     }
     return result;

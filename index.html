@@ -345,10 +345,7 @@ input,textarea,select{font-family:inherit;}
         <div class="card">
           <div class="card-hdr">
             <span class="card-title">⛵ Kid Activity Tracker</span>
-            <div style="display:flex;gap:4px;">
-              <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">+ Timetable</button>
-              <button class="btn btn-sm btn-p" onclick="openM('m-activity-log')">+ Log Session</button>
-            </div>
+            <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">+ Add Session / Class</button>
           </div>
           <div class="tab-row">
             <button class="tab-pill active" id="pill-Mikaela" onclick="filterSchedules('Mikaela')">Mikaela</button>
@@ -617,7 +614,7 @@ input,textarea,select{font-family:inherit;}
 <div class="overlay" id="m-timetable-add">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-hdr"><span class="modal-title">Add Timetable Class</span><button class="modal-close" onclick="closeM('m-timetable-add')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add Activity Session / Class</span><button class="modal-close" onclick="closeM('m-timetable-add')">✕</button></div>
     <div class="modal-body">
       <div class="field">
         <label>Child</label>
@@ -626,55 +623,20 @@ input,textarea,select{font-family:inherit;}
           <option value="Meaghan">Meaghan</option>
         </select>
       </div>
-      <div class="field"><label>Activity</label><input type="text" id="sch-act" placeholder="e.g. Sailing Practice"></div>
+      <div class="field"><label>Activity</label><input type="text" id="sch-act" placeholder="e.g. Sailing Practice, Piano Class"></div>
       <div class="frow">
-        <div class="field">
-          <label>Day of Week</label>
-          <select id="sch-day">
-            <option value="Monday">Monday</option>
-            <option value="Tuesday">Tuesday</option>
-            <option value="Wednesday">Wednesday</option>
-            <option value="Thursday">Thursday</option>
-            <option value="Friday">Friday</option>
-            <option value="Saturday">Saturday</option>
-            <option value="Sunday">Sunday</option>
-          </select>
-        </div>
-        <div class="field"><label>Time</label><input type="text" id="sch-time" placeholder="e.g. 09:00 - 13:00"></div>
+        <div class="field"><label>Date</label><input type="date" id="sch-date"></div>
+        <div class="field"><label>Start Time</label><input type="time" id="sch-time"></div>
       </div>
-      <div class="field"><label>Location</label><input type="text" id="sch-loc" placeholder="e.g. SAF Yacht Club"></div>
-      <div class="field"><label>Notes</label><input type="text" id="sch-notes" placeholder="e.g. Bring sailing gear"></div>
+      <div class="frow">
+        <div class="field"><label>End Time</label><input type="time" id="sch-end-time"></div>
+        <div class="field"><label>Location</label><input type="text" id="sch-loc" placeholder="e.g. SAF Yacht Club"></div>
+      </div>
+      <div class="field"><label>Notes / Feedback</label><input type="text" id="sch-notes" placeholder="e.g. Bring sailing gear, laser practice notes"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-s" onclick="closeM('m-timetable-add')">Cancel</button>
-      <button class="btn btn-p" style="flex:1" onclick="submitSchedule()">Save Class</button>
-    </div>
-  </div>
-</div>
-
-<!-- Log kid activity session modal -->
-<div class="overlay" id="m-activity-log">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-hdr"><span class="modal-title">Log Kid Activity</span><button class="modal-close" onclick="closeM('m-activity-log')">✕</button></div>
-    <div class="modal-body">
-      <div class="field">
-        <label>Child</label>
-        <select id="act-child">
-          <option value="Mikaela">Mikaela</option>
-          <option value="Meaghan">Meaghan</option>
-        </select>
-      </div>
-      <div class="field"><label>Activity</label><input type="text" id="act-act" placeholder="e.g. Sailing Training"></div>
-      <div class="frow">
-        <div class="field"><label>Date</label><input type="date" id="act-date"></div>
-        <div class="field"><label>Duration (hours)</label><input type="number" id="act-dur" step="0.5" placeholder="e.g. 3.5" min="0"></div>
-      </div>
-      <div class="field"><label>Progress Notes / Feedback</label><input type="text" id="act-notes" placeholder="e.g. Windy day, practiced Laser sailing."></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-s" onclick="closeM('m-activity-log')">Cancel</button>
-      <button class="btn btn-p" style="flex:1" onclick="submitActivityLog()">Log Activity</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitSchedule()">Save to Calendar</button>
     </div>
   </div>
 </div>
@@ -938,7 +900,8 @@ function renderHome() {
 
 // ══ CALENDAR ══
 function renderCal() {
-  const evs = data.events || [];
+  const today = todayStr();
+  const evs = (data.events || []).filter(e => e.dateRaw >= today);
   const el  = document.getElementById('cal-list');
   if (!evs.length) { el.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
   el.innerHTML = evs.map(e => `
@@ -1394,65 +1357,63 @@ function filterSchedules(child) {
 }
 
 function renderSchedules() {
-  const sched = data.schedules || { timetables: [], activityLogs: [] };
+  const evs = data.events || [];
   const container = document.getElementById('sched-container');
   if (!container) return;
   
+  const today = todayStr();
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
   
-  const timetables = sched.timetables || [];
-  const filteredTimetable = timetables.filter(t => activeSchedChild === 'All' || t.child === activeSchedChild);
+  const filteredEvents = evs.filter(e => {
+    if (activeSchedChild === 'All') {
+      return e.tags.includes('Mikaela') || e.tags.includes('Meaghan');
+    }
+    return e.tags.includes(activeSchedChild);
+  });
   
-  const activityLogs = sched.activityLogs || [];
-  const filteredLogs = activityLogs.filter(a => activeSchedChild === 'All' || a.child === activeSchedChild);
+  const upcoming = filteredEvents.filter(e => e.dateRaw >= today).sort((a,b) => a.dateRaw.localeCompare(b.dateRaw));
+  const past = filteredEvents.filter(e => e.dateRaw < today).sort((a,b) => b.dateRaw.localeCompare(a.dateRaw));
   
   let totalHours = 0;
   const activityBreakdown = {};
-  filteredLogs.forEach(a => {
+  past.forEach(a => {
     const d = new Date(a.dateRaw);
     if (!isNaN(d.getTime()) && d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
-      totalHours += a.duration;
-      activityBreakdown[a.activity] = (activityBreakdown[a.activity] || 0) + a.duration;
+      const dur = a.duration || 0;
+      totalHours += dur;
+      
+      let actType = 'Class';
+      const titleLower = a.title.toLowerCase();
+      if (titleLower.indexOf('sailing') !== -1) actType = '⛵ Sailing';
+      else if (titleLower.indexOf('piano') !== -1 || titleLower.indexOf('music') !== -1) actType = '🎹 Piano';
+      else if (titleLower.indexOf('enrichment') !== -1 || titleLower.indexOf('class') !== -1) actType = '📚 Class';
+      else actType = '🎯 Enrichment';
+      
+      activityBreakdown[actType] = (activityBreakdown[actType] || 0) + dur;
     }
   });
   
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const groupedTimetable = {};
-  days.forEach(d => groupedTimetable[d] = []);
-  filteredTimetable.forEach(t => {
-    if (groupedTimetable[t.day]) {
-      groupedTimetable[t.day].push(t);
-    }
-  });
-  
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   let timetableHtml = '';
-  days.forEach(day => {
-    const classes = groupedTimetable[day];
-    if (classes.length > 0) {
-      timetableHtml += `
-        <div class="sched-day-group">
-          <div class="sched-day-hdr">${day}</div>
-          <div style="padding:4px 0;">
-            ${classes.map(c => `
-              <div class="row" style="padding:10px 16px;">
-                <div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div>
-                <div class="row-main">
-                  <div class="row-title" style="font-weight:600;">${c.activity} ${activeSchedChild === 'All' ? '· <span style="color:#4f86c6;">' + c.child + '</span>' : ''}</div>
-                  <div class="row-sub">${c.time} · ${c.location || 'No Location'}</div>
-                  ${c.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${c.notes}"</div>` : ''}
-                </div>
-                <button onclick="delSchedule('${c.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
-              </div>
-            `).join('')}
+  if (upcoming.length > 0) {
+    timetableHtml = upcoming.slice(0, 10).map(c => {
+      const dayName = days[new Date(c.dateRaw).getDay()];
+      return `
+        <div class="row" style="padding:10px 16px;">
+          <div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div>
+          <div class="row-main">
+            <div class="row-title" style="font-weight:600;">${c.title}</div>
+            <div class="row-sub">${dayName}, ${c.date} · ${c.time}${c.endTime ? ' - ' + c.endTime : ''}${c.location ? ' · ' + c.location : ''}</div>
+            ${c.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${c.notes}"</div>` : ''}
           </div>
+          <button onclick="delSchedule('${c.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
         </div>
       `;
-    }
-  });
-  if (!timetableHtml) {
-    timetableHtml = '<div class="empty">No recurring classes scheduled</div>';
+    }).join('');
+  } else {
+    timetableHtml = '<div class="empty">No upcoming classes/sessions scheduled</div>';
   }
   
   let breakdownItems = '';
@@ -1464,27 +1425,27 @@ function renderSchedules() {
       <div class="stat-num">${totalHours.toFixed(1)}</div>
       <div class="stat-main">
         <div class="stat-lbl">Hours Completed This Month</div>
-        ${breakdownItems || '<div style="font-size:11px;color:#9898aa;">No sessions logged yet</div>'}
+        ${breakdownItems || '<div style="font-size:11px;color:#9898aa;">No sessions completed yet this month</div>'}
       </div>
     </div>
   `;
   
-  let timelineHtml = filteredLogs.slice(0, 10).map(a => `
+  let timelineHtml = past.slice(0, 10).map(a => `
     <div class="row" style="padding:10px 16px;">
-      <div style="font-size:20px;flex-shrink:0;margin-right:6px;">📝</div>
+      <div style="font-size:20px;flex-shrink:0;margin-right:6px;">✅</div>
       <div class="row-main">
-        <div class="row-title" style="font-weight:600;">${a.activity} (${a.duration} hrs) ${activeSchedChild === 'All' ? '· <span style="color:#4f86c6;">' + a.child + '</span>' : ''}</div>
-        <div class="row-sub">${a.date} ${a.notes ? '· ' + a.notes : ''}</div>
+        <div class="row-title" style="font-weight:600;">${a.title} (${a.duration.toFixed(1)} hrs)</div>
+        <div class="row-sub">${a.date} · Completed ${a.location ? ' · ' + a.location : ''}${a.notes ? ' · ' + a.notes : ''}</div>
       </div>
-      <button onclick="delActivity('${a.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+      <button onclick="delSchedule('${a.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
     </div>
   `).join('');
   if (!timelineHtml) {
-    timelineHtml = '<div class="empty">No sessions logged yet</div>';
+    timelineHtml = '<div class="empty">No past sessions logged</div>';
   }
   
   container.innerHTML = `
-    <div style="margin-top:10px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📅 Timetable</div>
+    <div style="margin-top:10px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📅 Timetable / Upcoming</div>
     ${timetableHtml}
     
     <div style="margin-top:20px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📊 Month Progress</div>
@@ -1500,21 +1461,25 @@ function renderSchedules() {
 async function submitSchedule() {
   const child = document.getElementById('sch-child').value;
   const activity = document.getElementById('sch-act').value;
-  const day = document.getElementById('sch-day').value;
+  const dateVal = document.getElementById('sch-date').value;
   const time = document.getElementById('sch-time').value;
+  const endTime = document.getElementById('sch-end-time').value;
   const location = document.getElementById('sch-loc').value;
   const notes = document.getElementById('sch-notes').value;
   
   if (!activity) { alert('Please enter activity name'); return; }
+  if (!dateVal) { alert('Please select a date'); return; }
+  
+  const title = child + ' - ' + activity;
   
   const payload = {
-    note: 'add_schedule',
-    sched_child: child,
-    sched_activity: activity,
-    sched_day: day,
-    sched_time: time,
-    sched_location: location,
-    sched_notes: notes
+    note: 'add_event',
+    event_title: title,
+    event_date: fmtDate(dateVal),
+    event_time: time,
+    event_end_time: endTime,
+    event_location: location,
+    event_notes: notes
   };
   
   document.body.classList.add('loading-state');
@@ -1524,71 +1489,24 @@ async function submitSchedule() {
   
   document.getElementById('sch-act').value = '';
   document.getElementById('sch-time').value = '';
+  document.getElementById('sch-end-time').value = '';
   document.getElementById('sch-loc').value = '';
   document.getElementById('sch-notes').value = '';
   
-  toast('Class timetable added! ⛵');
-  await loadData();
-  renderSchedules();
-}
-
-async function submitActivityLog() {
-  const child = document.getElementById('act-child').value;
-  const activity = document.getElementById('act-act').value;
-  const dateVal = document.getElementById('act-date').value;
-  const duration = parseFloat(document.getElementById('act-dur').value) || 0;
-  const notes = document.getElementById('act-notes').value;
-  
-  if (!activity) { alert('Please enter activity name'); return; }
-  if (duration <= 0) { alert('Please enter duration (hours)'); return; }
-  
-  const payload = {
-    note: 'log_activity',
-    act_child: child,
-    act_activity: activity,
-    act_date: fmtDate(dateVal),
-    act_duration: duration,
-    act_notes: notes
-  };
-  
-  document.body.classList.add('loading-state');
-  await gPost(payload);
-  document.body.classList.remove('loading-state');
-  closeM('m-activity-log');
-  
-  document.getElementById('act-act').value = '';
-  document.getElementById('act-dur').value = '';
-  document.getElementById('act-notes').value = '';
-  
-  toast('Activity logged successfully! 📝');
+  toast('Schedules updated in Google Calendar! ⛵');
   await loadData();
   renderSchedules();
 }
 
 async function delSchedule(id) {
-  if (!confirm('Remove this recurring class from timetable?')) return;
+  if (!confirm('Delete this calendar event?')) return;
   document.body.classList.add('loading-state');
-  await gPost({ note: 'delete_schedule', sched_id: id });
+  await gPost({ note: 'delete_event', event_id: id });
   document.body.classList.remove('loading-state');
-  
-  if (data.schedules && data.schedules.timetables) {
-    data.schedules.timetables = data.schedules.timetables.filter(t => t.id !== id);
-  }
+  data.events = (data.events || []).filter(e => e.id !== id);
   renderSchedules();
-  toast('Class removed');
-}
-
-async function delActivity(id) {
-  if (!confirm('Delete this activity log entry?')) return;
-  document.body.classList.add('loading-state');
-  await gPost({ note: 'delete_activity', act_id: id });
-  document.body.classList.remove('loading-state');
-  
-  if (data.schedules && data.schedules.activityLogs) {
-    data.schedules.activityLogs = data.schedules.activityLogs.filter(a => a.id !== id);
-  }
-  renderSchedules();
-  toast('Activity log deleted');
+  renderCal();
+  toast('Event deleted');
 }
 
 function handlePinText(val) {
