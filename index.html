@@ -252,6 +252,83 @@ input,textarea,select{font-family:inherit;}
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:#9898aa;gap:8px;font-size:14px;}
 .spin{width:18px;height:18px;border:2.5px solid #e4e6ef;border-top-color:#4f86c6;border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0;}
 @keyframes sp{to{transform:rotate(360deg);}}
+/* ── AUTOCOMPLETE SUGGESTIONS ── */
+.autocomplete-wrapper { position: relative; width: 100%; }
+.autocomplete-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e4e6ef;
+  border-radius: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 9999;
+  margin-top: 4px;
+}
+.autocomplete-suggestion {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #1a1a2e;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f6fa;
+}
+.autocomplete-suggestion:last-child { border-bottom: none; }
+.autocomplete-suggestion:hover { background: #f5f6fa; }
+
+/* ── CALENDAR MONTH GRID ── */
+.cal-grid-hdr {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-weight: 700;
+  font-size: 11px;
+  color: #9898aa;
+  padding: 8px 0;
+  border-bottom: 1px solid #e4e6ef;
+  text-transform: uppercase;
+  background: #f8f9fa;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background: #e4e6ef;
+  gap: 1px;
+  border-bottom: 1px solid #e4e6ef;
+}
+.cal-day-cell {
+  background: #fff;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 2px;
+  position: relative;
+  cursor: pointer;
+}
+.cal-day-cell.other-month { background: #f8f9fa; color: #cbd5e1; cursor: default; }
+.cal-day-cell.today { font-weight: 700; }
+.cal-day-cell.today::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #4f86c6;
+  border-radius: 50%;
+  z-index: 0;
+}
+.cal-day-num { font-size: 12px; z-index: 1; margin-bottom: 2px; }
+.cal-dots-wrap { display: flex; gap: 2px; justify-content: center; height: 6px; width: 100%; }
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; }
+.cal-dot.Mikaela { background: #4f86c6; }
+.cal-dot.Meaghan { background: #f4a261; }
+.cal-day-cell.selected { background: #edf4fc; }
 </style>
 </head>
 <body>
@@ -351,10 +428,15 @@ input,textarea,select{font-family:inherit;}
             <span class="card-title">⛵ Kid Activity Tracker</span>
             <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">+ Add Session / Class</button>
           </div>
-          <div class="tab-row">
+          <div class="tab-row" style="border-bottom:none;padding-bottom:0;">
             <button class="tab-pill active" id="pill-Mikaela" onclick="filterSchedules('Mikaela')">Mikaela</button>
             <button class="tab-pill" id="pill-Meaghan" onclick="filterSchedules('Meaghan')">Meaghan</button>
             <button class="tab-pill" id="pill-All" onclick="filterSchedules('All')">All</button>
+          </div>
+          <!-- View Toggle Pills (List vs Calendar Grid) -->
+          <div style="display:flex;background:#e4e6ef;padding:3px;border-radius:8px;margin:8px 16px 12px;">
+            <button class="toggle-pill active" id="sched-view-list" onclick="toggleSchedView('list')" style="flex:1;text-align:center;">List View</button>
+            <button class="toggle-pill" id="sched-view-grid" onclick="toggleSchedView('grid')" style="flex:1;text-align:center;">Calendar Grid</button>
           </div>
           <div id="sched-container"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
@@ -642,10 +724,19 @@ input,textarea,select{font-family:inherit;}
     <div class="modal-handle"></div>
     <div class="modal-hdr"><span class="modal-title">Log Family Trip</span><button class="modal-close" onclick="closeM('m-trip-add')">✕</button></div>
     <div class="modal-body">
-      <div class="frow">
-        <div class="field"><label>City</label><input type="text" id="tr-city" placeholder="e.g. Tokyo"></div>
-        <div class="field"><label>Country</label><input type="text" id="tr-country" placeholder="e.g. Japan"></div>
+      <div class="field">
+        <label>Search Location</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="tr-loc-search" placeholder="Type city or country... e.g. Tokyo" oninput="handleLocInput(this.value)" autocomplete="off">
+          <div id="tr-loc-suggestions" class="autocomplete-suggestions" style="display:none;"></div>
+        </div>
       </div>
+      <div class="frow">
+        <div class="field"><label>City</label><input type="text" id="tr-city" readonly style="background:#f5f6fa;color:#9898aa;"></div>
+        <div class="field"><label>Country</label><input type="text" id="tr-country" readonly style="background:#f5f6fa;color:#9898aa;"></div>
+      </div>
+      <input type="hidden" id="tr-lat" value="0">
+      <input type="hidden" id="tr-lng" value="0">
       <div class="field"><label>Date Visited</label><input type="date" id="tr-date"></div>
       <div class="field">
         <label>Members Who Visited</label>
@@ -1228,7 +1319,11 @@ function renderBudgets() {
       return `<div class="bud-row" style="border-bottom:1px solid #e4e6ef;padding:12px 0;">
         <div class="bud-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span class="bud-name" style="font-weight:600;">${b.group}</span>
-          <span class="badge ${cls}">${lbl}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge ${cls}">${lbl}</span>
+            <button onclick="editBudget('${b.group}', ${b.budget}, '${b.account || 'Family'}')" style="color:#4f86c6;font-size:14px;padding:2px;cursor:pointer;border:none;background:transparent;">✏️</button>
+            <button onclick="delBudget('${b.group}', '${b.account || 'Family'}')" style="color:#e05252;font-size:14px;padding:2px;cursor:pointer;border:none;background:transparent;">✕</button>
+          </div>
         </div>
         <div style="font-size:11px;color:#9898aa;margin-bottom:6px;">Account: ${b.account || 'Family'}</div>
         <div class="prog-track" style="height:6px;background:#e4e6ef;border-radius:3px;overflow:hidden;">
@@ -1250,6 +1345,23 @@ function renderBudgets() {
     </div>
     ${budgetsHtml}
   `;
+}
+
+function editBudget(group, amount, account) {
+  document.getElementById('bud-grp').value = group;
+  document.getElementById('bud-amt').value = amount;
+  document.getElementById('bud-account').value = account;
+  openM('m-budget');
+}
+
+async function delBudget(group, account) {
+  if (!confirm('Are you sure you want to delete the budget for ' + group + ' under ' + account + '?')) return;
+  document.body.classList.add('loading-state');
+  await gPost({ note: 'delete_budget', group: group, account: account });
+  document.body.classList.remove('loading-state');
+  toast('Budget deleted');
+  await loadData();
+  renderBudgets();
 }
 
 // ══ MEMORIES ══
@@ -1484,6 +1596,10 @@ function toggleBudgetAccount(acc) {
 
 // ══ KID SCHEDULES ══
 let activeSchedChild = 'Mikaela';
+let schedView = 'list';
+let schedYear = new Date().getFullYear();
+let schedMonth = new Date().getMonth();
+let selectedGridDayStr = new Date().toISOString().slice(0, 10);
 
 function filterSchedules(child) {
   activeSchedChild = child;
@@ -1493,7 +1609,42 @@ function filterSchedules(child) {
   renderSchedules();
 }
 
+function toggleSchedView(view) {
+  schedView = view;
+  document.getElementById('sched-view-list').classList.toggle('active', view === 'list');
+  document.getElementById('sched-view-grid').classList.toggle('active', view === 'grid');
+  renderSchedules();
+}
+
+function prevSchedMonth() {
+  schedMonth--;
+  if (schedMonth < 0) {
+    schedMonth = 11;
+    schedYear--;
+  }
+  renderSchedules();
+}
+
+function nextSchedMonth() {
+  schedMonth++;
+  if (schedMonth > 11) {
+    schedMonth = 0;
+    schedYear++;
+  }
+  renderSchedules();
+}
+
+function selectGridDay(dayStr) {
+  selectedGridDayStr = dayStr;
+  renderSchedules();
+}
+
 function renderSchedules() {
+  if (schedView === 'grid') {
+    renderSchedulesGrid();
+    return;
+  }
+
   const evs = data.events || [];
   const container = document.getElementById('sched-container');
   if (!container) return;
@@ -1593,6 +1744,118 @@ function renderSchedules() {
       ${timelineHtml}
     </div>
   `;
+}
+
+function renderSchedulesGrid() {
+  const evs = data.events || [];
+  const container = document.getElementById('sched-container');
+  if (!container) return;
+  
+  const filteredEvents = evs.filter(e => {
+    if (activeSchedChild === 'All') {
+      return e.tags.includes('Mikaela') || e.tags.includes('Meaghan');
+    }
+    return e.tags.includes(activeSchedChild);
+  });
+  
+  const firstDayOfMonth = new Date(schedYear, schedMonth, 1);
+  const startDayOfWeek = firstDayOfMonth.getDay();
+  const numDays = new Date(schedYear, schedMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(schedYear, schedMonth, 0).getDate();
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid #e4e6ef;">
+      <button onclick="prevSchedMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+      <span style="font-weight:700;font-size:14px;color:#1a1a2e;">${monthNames[schedMonth]} ${schedYear}</span>
+      <button onclick="nextSchedMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+    </div>
+    <div class="cal-grid-hdr">
+      <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+    </div>
+    <div class="cal-grid">
+  `;
+  
+  // Previous month trailing days
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const dVal = prevMonthDays - i;
+    html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${dVal}</span></div>`;
+  }
+  
+  const today = todayStr();
+  
+  // Current month days
+  for (let day = 1; day <= numDays; day++) {
+    const dayStr = `${schedYear}-${String(schedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const isToday = today === dayStr;
+    const isSelected = selectedGridDayStr === dayStr;
+    
+    const dayEvents = filteredEvents.filter(e => e.dateRaw === dayStr);
+    
+    let dotsHtml = '';
+    if (dayEvents.length > 0) {
+      dotsHtml = '<div class="cal-dots-wrap">';
+      const uniqueTags = new Set();
+      dayEvents.forEach(e => {
+        if (e.tags.includes('Mikaela')) uniqueTags.add('Mikaela');
+        if (e.tags.includes('Meaghan')) uniqueTags.add('Meaghan');
+      });
+      uniqueTags.forEach(tag => {
+        dotsHtml += `<span class="cal-dot ${tag}"></span>`;
+      });
+      dotsHtml += '</div>';
+    }
+    
+    const cellClass = `cal-day-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`;
+    html += `
+      <div class="${cellClass}" onclick="selectGridDay('${dayStr}')">
+        <span class="cal-day-num">${day}</span>
+        ${dotsHtml}
+      </div>
+    `;
+  }
+  
+  // Next month leading days (to fill 42 cells)
+  const totalCellsUsed = startDayOfWeek + numDays;
+  const nextDaysCount = 42 - totalCellsUsed;
+  for (let d = 1; d <= nextDaysCount; d++) {
+    html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${d}</span></div>`;
+  }
+  
+  html += `</div>`; // Close cal-grid
+  
+  // Details below grid
+  const selectedDayEvents = filteredEvents.filter(e => e.dateRaw === selectedGridDayStr);
+  let selectedDayHtml = '';
+  if (selectedDayEvents.length > 0) {
+    selectedDayHtml = selectedDayEvents.map(c => {
+      return `
+        <div class="row" style="padding:10px 16px;">
+          <div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div>
+          <div class="row-main">
+            <div class="row-title" style="font-weight:600;">${c.title}</div>
+            <div class="row-sub">${c.time}${c.endTime ? ' - ' + c.endTime : ''}${c.location ? ' · ' + c.location : ''}</div>
+            ${c.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${c.notes}"</div>` : ''}
+          </div>
+          <button onclick="delSchedule('${c.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+        </div>
+      `;
+    }).join('');
+  } else {
+    selectedDayHtml = '<div class="empty">No activities scheduled for this day</div>';
+  }
+  
+  html += `
+    <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">
+      📅 Activities: ${fmtDate(selectedGridDayStr)}
+    </div>
+    <div class="card-body" style="padding:0;">
+      ${selectedDayHtml}
+    </div>
+  `;
+  
+  container.innerHTML = html;
 }
 
 async function submitSchedule() {
@@ -1730,12 +1993,17 @@ function renderTravel() {
 }
 
 async function submitTrip() {
-  const city = v('tr-city');
-  const country = v('tr-country');
+  const city = document.getElementById('tr-city').value;
+  const country = document.getElementById('tr-country').value;
+  const lat = parseFloat(document.getElementById('tr-lat').value) || 0;
+  const lng = parseFloat(document.getElementById('tr-lng').value) || 0;
   const dateVal = document.getElementById('tr-date').value;
   const notes = v('tr-notes');
   
-  if (!city || !country) { alert('Please enter both City and Country'); return; }
+  if (!city || !country || lat === 0 || lng === 0) {
+    alert('Please select a valid location from the search suggestions dropdown');
+    return;
+  }
   if (!dateVal) { alert('Please select a date'); return; }
   
   // Get members
@@ -1743,23 +2011,6 @@ async function submitTrip() {
   const membersStr = Array.from(memberBoxes).map(cb => cb.value).join(',');
   
   document.body.classList.add('loading-state');
-  
-  // Geocode City, Country via Nominatim API
-  let lat = 0;
-  let lng = 0;
-  try {
-    const q = encodeURIComponent(`${city}, ${country}`);
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`);
-    const geo = await res.json();
-    if (geo && geo.length > 0) {
-      lat = parseFloat(geo[0].lat);
-      lng = parseFloat(geo[0].lon);
-    } else {
-      toast('Could not find location coordinates on map. Placed at center.');
-    }
-  } catch (err) {
-    console.error('Nominatim Geocoding Error:', err);
-  }
   
   const payload = {
     note: 'add_trip',
@@ -1776,7 +2027,12 @@ async function submitTrip() {
   document.body.classList.remove('loading-state');
   closeM('m-trip-add');
   
-  clr('tr-city', 'tr-country', 'tr-notes');
+  document.getElementById('tr-loc-search').value = '';
+  document.getElementById('tr-city').value = '';
+  document.getElementById('tr-country').value = '';
+  document.getElementById('tr-lat').value = '0';
+  document.getElementById('tr-lng').value = '0';
+  clr('tr-notes');
   
   toast('Trip pinned on the world map! 📍');
   await loadData();
@@ -1791,6 +2047,63 @@ async function delTrip(id) {
   renderTravel();
   toast('Trip deleted');
 }
+
+// ══ LOCATION AUTOCOMPLETE ══
+let locTimeout = null;
+function handleLocInput(val) {
+  clearTimeout(locTimeout);
+  if (val.trim().length < 3) {
+    document.getElementById('tr-loc-suggestions').style.display = 'none';
+    return;
+  }
+  locTimeout = setTimeout(() => {
+    fetchLocSuggestions(val.trim());
+  }, 400);
+}
+
+async function fetchLocSuggestions(q) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(q)}&limit=5`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const sug = document.getElementById('tr-loc-suggestions');
+    if (!data || data.length === 0) {
+      sug.style.display = 'none';
+      return;
+    }
+    sug.innerHTML = data.map(item => {
+      const display = item.display_name;
+      const addr = item.address || {};
+      const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
+      const country = addr.country || '';
+      return `<div class="autocomplete-suggestion" onclick="selectLocSuggestion('${city.replace(/'/g, "\\'")}', '${country.replace(/'/g, "\\'")}', ${item.lat}, ${item.lon}, '${display.replace(/'/g, "\\'")}')">${display}</div>`;
+    }).join('');
+    sug.style.display = 'block';
+  } catch (e) {
+    console.error('Autocomplete Error:', e);
+  }
+}
+
+function selectLocSuggestion(city, country, lat, lng, displayName) {
+  let parsedCity = city;
+  if (!parsedCity && displayName) {
+    parsedCity = displayName.split(',')[0].trim();
+  }
+  document.getElementById('tr-loc-search').value = displayName;
+  document.getElementById('tr-city').value = parsedCity || 'Unknown';
+  document.getElementById('tr-country').value = country || 'Unknown';
+  document.getElementById('tr-lat').value = lat;
+  document.getElementById('tr-lng').value = lng;
+  document.getElementById('tr-loc-suggestions').style.display = 'none';
+}
+
+document.addEventListener('click', function(e) {
+  const sug = document.getElementById('tr-loc-suggestions');
+  const searchInput = document.getElementById('tr-loc-search');
+  if (sug && searchInput && !searchInput.contains(e.target) && !sug.contains(e.target)) {
+    sug.style.display = 'none';
+  }
+});
 
 // ══ UTILS ══
 function v(id) { return document.getElementById(id)?.value?.trim()||''; }

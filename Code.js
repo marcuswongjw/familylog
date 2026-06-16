@@ -682,6 +682,24 @@ function handleWrite(data) {
       return { status: 'ok' };
     }
 
+    // BUDGETS: delete
+    if (noteLower === 'delete_budget') {
+      var bdgSheet  = ss.getSheetByName('Budgets');
+      var groupName = toStr(data.group);
+      var budgetAcc = toStr(data.account) || 'Family';
+      if (bdgSheet) {
+        var bdgVals = bdgSheet.getDataRange().getValues();
+        for (var i = 1; i < bdgVals.length; i++) {
+          if (toStr(bdgVals[i][0]).toLowerCase() === groupName.toLowerCase() &&
+              toStr(bdgVals[i][2] || 'Family').toLowerCase() === budgetAcc.toLowerCase()) {
+            bdgSheet.deleteRow(i + 1);
+            break;
+          }
+        }
+      }
+      return { status: 'ok' };
+    }
+
     // MEMORIES: add
     if (noteLower === 'add_memory') {
       var memSheet = ss.getSheetByName('Memories');
