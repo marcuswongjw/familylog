@@ -602,22 +602,7 @@ const MEMBERS = [
 
 const FAM = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
 const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#888'];
-const GROUPS = {
-  '👶 Children':['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
-  '👕 Clothing':['Clothing - Accessories','Clothing - Clothes','Clothing - Shoes'],
-  '🍽 Eating Out':['Eating Out - Beverages','Eating Out - Breakfast','Eating Out - Dinner','Eating Out - Lunch','Eating Out - Snacks'],
-  '📚 Education':['Education - Books','Education - Courses & Enrichment','Education - Subscription'],
-  '🎭 Entertainment':['Entertainment - Experiences','Entertainment - Subscriptions','Entertainment - Objects (toys, etc)'],
-  '🎁 Gifts/Giving':['Gifts & Treats - CNY','Gifts & Treats - Family','Gifts & Treats - Friends','Gifts & Treats - Wedding','Giving - Church','Giving - Charity','Giving - Parents'],
-  '🏥 Health':['Health & Fitness - Dental + Medical','Health & Fitness - Events + Subscription','Health & Fitness - Equipment + Supplements'],
-  '🏠 Household':['Household - Appliances','Household - Groceries','Household - Helper','Household - Household Misc','Household - Renovation','Household - Utilities (electric, gas, water)','Household - Internet'],
-  '🐾 Pets':['Pets - Pet Food','Pets - Grooming','Pets - Pet Misc'],
-  '💆 Self Care':['Self Care - Massage','Self Care - Personal Care','Utilities - Mobile'],
-  '✈️ Travel':['Travel - Hotels','Travel - Transport','Travel - Expenses'],
-  '🚗 Transport':['Transportation - Bus/MRT','Transportation - Taxi/Grab','Transportation - Auto: Service','Transportation - Auto: Loan','Transportation - Auto: Gas'],
-  '📈 Finance':['Endowment','Insurance','Investing','Taxes - Income Tax','Taxes - Property Tax'],
-  '🌍 Others':['Electronics','Misc','Missions'],
-};
+let GROUPS = {};
 
 // ══ STATE ══
 let user = null, section = 'home', data = {}, pinBuf = '', selMember = null;
@@ -759,7 +744,18 @@ function loadData() {
   return new Promise(resolve => {
     const cb = 'cb_' + Date.now();
     const s  = document.createElement('script');
-    window[cb] = r => { delete window[cb]; s.remove(); data = r; render(section); renderHome(); resolve(); };
+    window[cb] = r => {
+      delete window[cb];
+      s.remove();
+      data = r;
+      if (r && r.expenseGroups) {
+        GROUPS = r.expenseGroups;
+        buildDynamicSelectors();
+      }
+      render(section);
+      renderHome();
+      resolve();
+    };
     s.onerror  = () => { delete window[cb]; s.remove(); toast('Could not load data'); resolve(); };
     s.src = GAS_URL + '?action=get_all&callback=' + cb;
     document.body.appendChild(s);
@@ -1077,17 +1073,6 @@ function buildModals() {
   chips('fert-chips', ['Period Start','Period End','Ovulation','Symptom'], 'Period Start', 'ft');
   chips('rc-acct-chips', ['Personal Account','Family'], 'Family', 'rca');
   chips('ex-acct-chips', ['Personal Account','Family'], 'Family', 'exa');
-  // Budget group select
-  const bgs = document.getElementById('bud-grp');
-  bgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
-  // Recurring group select
-  const rgs = document.getElementById('rc-grp');
-  rgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
-  updateRcCats();
-  // Expense group select
-  const egs = document.getElementById('ex-grp');
-  egs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
-  updateExCats();
 }
 
 function chips(id, opts, def, key) {
@@ -1114,6 +1099,20 @@ function updateRcCats() {
 function updateExCats() {
   const g = document.getElementById('ex-grp').value;
   document.getElementById('ex-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+function buildDynamicSelectors() {
+  // Budget group select
+  const bgs = document.getElementById('bud-grp');
+  if (bgs) bgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  // Recurring group select
+  const rgs = document.getElementById('rc-grp');
+  if (rgs) rgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  updateRcCats();
+  // Expense group select
+  const egs = document.getElementById('ex-grp');
+  if (egs) egs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  updateExCats();
 }
 
 function openM(id) { document.getElementById(id).classList.add('open'); }

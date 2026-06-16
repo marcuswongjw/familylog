@@ -298,30 +298,32 @@ function checkBudgetAlerts() {
   if (bdgVals.length <= 1 || expVals.length <= 1) return [];
 
   var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
-  var catSpent = {};
-  for (var i = 1; i < expVals.length; i++) {
-    var row = expVals[i]; var rowDate = new Date(row[1]);
-    if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
-    if (rowDate.getMonth() !== thisMonth || rowDate.getFullYear() !== thisYear) continue;
-    if (toStr(row[2]).toLowerCase().indexOf('family') === -1) continue;
-    var cat = toStr(row[3]) || 'Other';
-    catSpent[cat] = (catSpent[cat] || 0) + (parseFloat(row[4]) || 0);
-  }
-
-  var groupSpent = {};
-  for (var groupName in EXPENSE_GROUPS) {
-    var cats = EXPENSE_GROUPS[groupName]; var total = 0;
-    for (var c = 0; c < cats.length; c++) total += catSpent[cats[c]] || 0;
-    groupSpent[groupName] = total;
-  }
-
   var alerts = [];
+  
   for (var j = 1; j < bdgVals.length; j++) {
     var bRow  = bdgVals[j];
     var group = toStr(bRow[0]); if (!group) continue;
     var limit = parseFloat(bRow[1]) || 0; if (limit <= 0) continue;
-    var spent = groupSpent[group] || 0;
-    var pct   = spent / limit;
+    var budgetAcc = toStr(bRow[2]) || 'Family';
+    
+    var spent = 0;
+    var targetCategories = EXPENSE_GROUPS[group] || [];
+    
+    for (var i = 1; i < expVals.length; i++) {
+      var eRow = expVals[i]; var rowDate = new Date(eRow[1]);
+      if (isNaN(rowDate.getTime())) rowDate = new Date(eRow[0]);
+      if (rowDate.getMonth() !== thisMonth || rowDate.getFullYear() !== thisYear) continue;
+      
+      var eAcc = toStr(eRow[2]) || 'Family';
+      if (eAcc.toLowerCase().indexOf(budgetAcc.toLowerCase()) === -1) continue;
+      
+      var eCat = toStr(eRow[3]) || 'Other';
+      if (targetCategories.indexOf(eCat) !== -1) {
+        spent += parseFloat(eRow[4]) || 0;
+      }
+    }
+    
+    var pct = spent / limit;
     if (pct >= 1.0) alerts.push({ group: group, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'over' });
     else if (pct >= 0.8) alerts.push({ group: group, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'warning' });
   }
@@ -728,7 +730,8 @@ function getAllDashboardData() {
     memories:  getMemories(),
     fertility: getFertilityData(),
     fridge:    getFridgeData(),
-    recurring: getRecurring()
+    recurring: getRecurring(),
+    expenseGroups: EXPENSE_GROUPS
   };
 }
 
@@ -820,20 +823,35 @@ function getBudgets() {
   if (!bdgSheet) return [];
   var bdgVals  = bdgSheet.getDataRange().getValues();
   if (bdgVals.length <= 1) return [];
-  var expData  = getExpensesData();
-  var catSpent = {};
-  expData.rows.forEach(function(r) { catSpent[r.category] = (catSpent[r.category] || 0) + r.amount; });
-  var groupSpent = {};
-  for (var groupName in EXPENSE_GROUPS) {
-    var cats = EXPENSE_GROUPS[groupName]; var t = 0;
-    for (var c = 0; c < cats.length; c++) t += catSpent[cats[c]] || 0;
-    groupSpent[groupName] = t;
-  }
+  
+  var expSheet = ss.getSheetByName('Expenses');
+  var eVals = expSheet ? expSheet.getDataRange().getValues() : [];
+  var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
+  
   var budgets = [];
   for (var i = 1; i < bdgVals.length; i++) {
-    var row = bdgVals[i]; if (!row[0]) continue;
-    var gn = toStr(row[0]);
-    budgets.push({ group: gn, budget: parseFloat(row[1]) || 0, spent: groupSpent[gn] || 0, setBy: toStr(row[3]) });
+    var bRow = bdgVals[i]; if (!bRow[0]) continue;
+    var gn = toStr(bRow[0]);
+    var budgetAcc = toStr(bRow[2]) || 'Family';
+    
+    var spent = 0;
+    var targetCategories = EXPENSE_GROUPS[gn] || [];
+    
+    for (var j = 1; j < eVals.length; j++) {
+      var eRow = eVals[j];
+      var eDate = new Date(eRow[1]); if (isNaN(eDate.getTime())) eDate = new Date(eRow[0]);
+      if (eDate.getMonth() !== thisMonth || eDate.getFullYear() !== thisYear) continue;
+      
+      var eAcc = toStr(eRow[2]) || 'Family';
+      if (eAcc.toLowerCase().indexOf(budgetAcc.toLowerCase()) === -1) continue;
+      
+      var eCat = toStr(eRow[3]) || 'Other';
+      if (targetCategories.indexOf(eCat) !== -1) {
+        spent += parseFloat(eRow[4]) || 0;
+      }
+    }
+    
+    budgets.push({ group: gn, budget: parseFloat(bRow[1]) || 0, spent: spent, setBy: toStr(bRow[3]) });
   }
   return budgets;
 }
