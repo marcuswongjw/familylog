@@ -472,6 +472,7 @@ function doGet(e) {
       case 'get_fertility': output = getFertilityData();    break;
       case 'get_fridge':    output = getFridgeData();       break;
       case 'get_recurring': output = getRecurring();        break;
+      case 'get_schedules': output = getSchedulesData();    break;
       case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
       case 'write':
         var writeData = {};
@@ -695,6 +696,79 @@ function handleWrite(data) {
       return { status: 'ok' };
     }
 
+    // SCHEDULES: add
+    if (noteLower === 'add_schedule') {
+      var schedSheet = ss.getSheetByName('Schedules');
+      if (!schedSheet) {
+        schedSheet = ss.insertSheet('Schedules');
+        schedSheet.appendRow(['ID', 'Child', 'Activity', 'DayOfWeek', 'Time', 'Location', 'Notes']);
+      }
+      var schedId = 'sch_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      schedSheet.appendRow([
+        schedId,
+        toStr(data.sched_child),
+        toStr(data.sched_activity),
+        toStr(data.sched_day),
+        toStr(data.sched_time),
+        toStr(data.sched_location),
+        toStr(data.sched_notes)
+      ]);
+      return { status: 'ok' };
+    }
+
+    // SCHEDULES: delete
+    if (noteLower === 'delete_schedule') {
+      var schedSheet = ss.getSheetByName('Schedules');
+      var targetId = toStr(data.sched_id);
+      if (schedSheet) {
+        var sVals = schedSheet.getDataRange().getValues();
+        for (var si = 1; si < sVals.length; si++) {
+          if (toStr(sVals[si][0]) === targetId) {
+            schedSheet.deleteRow(si + 1);
+            break;
+          }
+        }
+      }
+      return { status: 'ok' };
+    }
+
+    // ACTIVITY_LOG: add
+    if (noteLower === 'log_activity') {
+      var actSheet = ss.getSheetByName('ActivityLog');
+      if (!actSheet) {
+        actSheet = ss.insertSheet('ActivityLog');
+        actSheet.appendRow(['ID', 'Date', 'Child', 'Activity', 'Duration', 'Notes', 'Timestamp']);
+      }
+      var actId = 'act_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      var actDate = toStr(data.act_date) ? parseEventDate(toStr(data.act_date), '') : new Date();
+      actSheet.appendRow([
+        actId,
+        actDate,
+        toStr(data.act_child),
+        toStr(data.act_activity),
+        parseFloat(data.act_duration) || 0,
+        toStr(data.act_notes),
+        new Date()
+      ]);
+      return { status: 'ok' };
+    }
+
+    // ACTIVITY_LOG: delete
+    if (noteLower === 'delete_activity') {
+      var actSheet = ss.getSheetByName('ActivityLog');
+      var targetId = toStr(data.act_id);
+      if (actSheet) {
+        var aVals = actSheet.getDataRange().getValues();
+        for (var ai = 1; ai < aVals.length; ai++) {
+          if (toStr(aVals[ai][0]) === targetId) {
+            actSheet.deleteRow(ai + 1);
+            break;
+          }
+        }
+      }
+      return { status: 'ok' };
+    }
+
     logSheet.appendRow([new Date(), user, 'General', note]);
     return { status: 'ok' };
 
@@ -737,8 +811,56 @@ function getAllDashboardData() {
     fertility: getFertilityData(),
     fridge:    getFridgeData(),
     recurring: getRecurring(),
+    schedules: getSchedulesData(),
     expenseGroups: EXPENSE_GROUPS
   };
+}
+
+function getSchedulesData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = Session.getScriptTimeZone();
+  var result = { timetables: [], activityLogs: [] };
+  
+  var schedSheet = ss.getSheetByName('Schedules');
+  if (schedSheet) {
+    var sVals = schedSheet.getDataRange().getValues();
+    for (var i = 1; i < sVals.length; i++) {
+      var row = sVals[i];
+      if (!row[0]) continue;
+      result.timetables.push({
+        id: toStr(row[0]),
+        child: toStr(row[1]),
+        activity: toStr(row[2]),
+        day: toStr(row[3]),
+        time: toStr(row[4]),
+        location: toStr(row[5]),
+        notes: toStr(row[6])
+      });
+    }
+  }
+  
+  var actSheet = ss.getSheetByName('ActivityLog');
+  if (actSheet) {
+    var aVals = actSheet.getDataRange().getValues();
+    for (var j = 1; j < aVals.length; j++) {
+      var aRow = aVals[j];
+      if (!aRow[0]) continue;
+      var actDate = new Date(aRow[1]);
+      if (isNaN(actDate.getTime())) actDate = new Date(aRow[6] || new Date());
+      result.activityLogs.push({
+        id: toStr(aRow[0]),
+        date: Utilities.formatDate(actDate, tz, 'dd MMM yyyy'),
+        dateRaw: Utilities.formatDate(actDate, tz, 'yyyy-MM-dd'),
+        child: toStr(aRow[2]),
+        activity: toStr(aRow[3]),
+        duration: parseFloat(aRow[4]) || 0,
+        notes: toStr(aRow[5])
+      });
+    }
+    result.activityLogs.reverse();
+  }
+  
+  return result;
 }
 
 function getEvents() {
@@ -807,20 +929,79 @@ function getGroceries() {
 function getExpensesData() {
   var ss       = SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
-  if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {} };
+  if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0 };
   var eVals      = expSheet.getDataRange().getValues();
   var tz         = Session.getScriptTimeZone();
-  var now        = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
-  var rows       = []; var total = 0; var byCategory = {}; var byAccount = {};
-  for (var i = 1; i < eVals.length; i++) {
-    var row = eVals[i]; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
-    if (rowDate.getMonth() !== thisMonth || rowDate.getFullYear() !== thisYear) continue;
-    var amount = parseFloat(row[4]) || 0; var cat = toStr(row[3]) || 'Other'; var acc = toStr(row[2]) || 'Family';
-    total += amount; byCategory[cat] = (byCategory[cat] || 0) + amount; byAccount[acc] = (byAccount[acc] || 0) + amount;
-    rows.push({ rowNum: i + 1, date: Utilities.formatDate(rowDate, tz, 'dd MMM'), account: acc, category: cat, amount: amount, desc: toStr(row[5]) });
+  
+  var now        = new Date();
+  var thisMonth  = now.getMonth();
+  var thisYear   = now.getFullYear();
+  
+  var rows       = [];
+  var total      = 0;
+  var byCategory = {};
+  var byAccount  = {};
+  
+  var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var last6Months = [];
+  for (var m = 5; m >= 0; m--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    var label = monthNames[d.getMonth()] + ' ' + String(d.getFullYear()).substring(2);
+    last6Months.push({ key: key, label: label, total: 0 });
   }
+  
+  var lastMonthKey = '';
+  var lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  lastMonthKey = lm.getFullYear() + '-' + String(lm.getMonth() + 1).padStart(2, '0');
+  var lastMonthTotal = 0;
+  
+  for (var i = 1; i < eVals.length; i++) {
+    var row = eVals[i];
+    var rowDate = new Date(row[1]);
+    if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
+    if (isNaN(rowDate.getTime())) continue;
+    
+    var amount = parseFloat(row[4]) || 0;
+    var cat = toStr(row[3]) || 'Other';
+    var acc = toStr(row[2]) || 'Family';
+    
+    var rKey = rowDate.getFullYear() + '-' + String(rowDate.getMonth() + 1).padStart(2, '0');
+    for (var h = 0; h < last6Months.length; h++) {
+      if (last6Months[h].key === rKey) {
+        last6Months[h].total += amount;
+        break;
+      }
+    }
+    
+    if (rKey === lastMonthKey) {
+      lastMonthTotal += amount;
+    }
+    
+    if (rowDate.getMonth() === thisMonth && rowDate.getFullYear() === thisYear) {
+      total += amount;
+      byCategory[cat] = (byCategory[cat] || 0) + amount;
+      byAccount[acc] = (byAccount[acc] || 0) + amount;
+      rows.push({
+        rowNum: i + 1,
+        date: Utilities.formatDate(rowDate, tz, 'dd MMM'),
+        account: acc,
+        category: cat,
+        amount: amount,
+        desc: toStr(row[5])
+      });
+    }
+  }
+  
   rows.reverse();
-  return { rows: rows, total: total, byCategory: byCategory, byAccount: byAccount };
+  return {
+    rows: rows,
+    total: total,
+    byCategory: byCategory,
+    byAccount: byAccount,
+    history: last6Months,
+    lastMonthTotal: lastMonthTotal
+  };
 }
 
 function getBudgets() {

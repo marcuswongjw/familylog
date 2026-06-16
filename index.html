@@ -217,6 +217,33 @@ input,textarea,select{font-family:inherit;}
 .pie-lbl{flex:1;font-size:13px;}
 .pie-val{font-size:13px;font-weight:600;}
 
+/* ── DONUT CHART ── */
+.donut-container { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 16px; border-bottom: 1px solid #e4e6ef; }
+.donut-wrap { position: relative; width: 110px; height: 110px; flex-shrink: 0; }
+.donut { width: 100%; height: 100%; transform: rotate(-90deg); }
+.chart-text { fill: #1a1a2e; text-anchor: middle; transform: rotate(90deg); transform-origin: 50% 50%; }
+.chart-number { font-size: 5px; font-weight: bold; }
+.chart-label { font-size: 1.8px; fill: #9898aa; font-weight: 600; }
+
+/* ── BAR CHART ── */
+.bar-chart-wrap { display: flex; justify-content: space-between; align-items: flex-end; height: 120px; padding: 24px 16px 10px; border-bottom: 1px solid #e4e6ef; gap: 8px; }
+.bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; gap: 6px; }
+.bar-fill { width: 100%; background: #e2eaf4; border-radius: 4px 4px 0 0; transition: height 0.5s ease-in-out; position: relative; min-height: 4px; }
+.bar-fill.current { background: #4f86c6; }
+.bar-val { font-size: 9px; font-weight: 700; color: #5a5a72; margin-bottom: 2px; text-align: center; }
+.bar-lbl { font-size: 11px; color: #9898aa; font-weight: 600; }
+
+/* ── SCHEDULES TAB & CARDS ── */
+.tab-row { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #e4e6ef; background: #fff; }
+.tab-pill { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #e4e6ef; background: #fff; color: #5a5a72; cursor: pointer; outline: none; }
+.tab-pill.active { background: #4f86c6; color: #fff; border-color: #4f86c6; }
+.sched-day-group { border-bottom: 1px solid #e4e6ef; }
+.sched-day-group:last-child { border-bottom: none; }
+.sched-day-hdr { background: #f8f9fa; padding: 8px 16px; font-size: 12px; font-weight: 700; color: #9898aa; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-summary { display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid #e4e6ef; background: #f0f7f4; margin: 12px 16px; border-radius: 10px; align-items: center; }
+.stat-num { font-size: 24px; font-weight: 800; color: #2c7a4b; }
+.stat-lbl { font-size: 12px; color: #5a5a72; font-weight: 600; }
+
 /* ── LOADING ── */
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:#9898aa;gap:8px;font-size:14px;}
 .spin{width:18px;height:18px;border:2.5px solid #e4e6ef;border-top-color:#4f86c6;border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0;}
@@ -310,6 +337,27 @@ input,textarea,select{font-family:inherit;}
     <!-- EXPENSES -->
     <div class="section" id="s-expenses">
       <div class="sec-body" id="exp-body"><div class="loading"><div class="spin"></div>Loading…</div></div>
+    </div>
+
+    <!-- KID SCHEDULES -->
+    <div class="section" id="s-schedules">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-title">⛵ Kid Activity Tracker</span>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">+ Timetable</button>
+              <button class="btn btn-sm btn-p" onclick="openM('m-activity-log')">+ Log Session</button>
+            </div>
+          </div>
+          <div class="tab-row">
+            <button class="tab-pill active" id="pill-Mikaela" onclick="filterSchedules('Mikaela')">Mikaela</button>
+            <button class="tab-pill" id="pill-Meaghan" onclick="filterSchedules('Meaghan')">Meaghan</button>
+            <button class="tab-pill" id="pill-All" onclick="filterSchedules('All')">All</button>
+          </div>
+          <div id="sched-container"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
+      </div>
     </div>
 
     <!-- MORE -->
@@ -565,6 +613,72 @@ input,textarea,select{font-family:inherit;}
   </div>
 </div>
 
+<!-- Add kid schedule modal -->
+<div class="overlay" id="m-timetable-add">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Add Timetable Class</span><button class="modal-close" onclick="closeM('m-timetable-add')">✕</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Child</label>
+        <select id="sch-child">
+          <option value="Mikaela">Mikaela</option>
+          <option value="Meaghan">Meaghan</option>
+        </select>
+      </div>
+      <div class="field"><label>Activity</label><input type="text" id="sch-act" placeholder="e.g. Sailing Practice"></div>
+      <div class="frow">
+        <div class="field">
+          <label>Day of Week</label>
+          <select id="sch-day">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+        <div class="field"><label>Time</label><input type="text" id="sch-time" placeholder="e.g. 09:00 - 13:00"></div>
+      </div>
+      <div class="field"><label>Location</label><input type="text" id="sch-loc" placeholder="e.g. SAF Yacht Club"></div>
+      <div class="field"><label>Notes</label><input type="text" id="sch-notes" placeholder="e.g. Bring sailing gear"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-timetable-add')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitSchedule()">Save Class</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log kid activity session modal -->
+<div class="overlay" id="m-activity-log">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Log Kid Activity</span><button class="modal-close" onclick="closeM('m-activity-log')">✕</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Child</label>
+        <select id="act-child">
+          <option value="Mikaela">Mikaela</option>
+          <option value="Meaghan">Meaghan</option>
+        </select>
+      </div>
+      <div class="field"><label>Activity</label><input type="text" id="act-act" placeholder="e.g. Sailing Training"></div>
+      <div class="frow">
+        <div class="field"><label>Date</label><input type="date" id="act-date"></div>
+        <div class="field"><label>Duration (hours)</label><input type="number" id="act-dur" step="0.5" placeholder="e.g. 3.5" min="0"></div>
+      </div>
+      <div class="field"><label>Progress Notes / Feedback</label><input type="text" id="act-notes" placeholder="e.g. Windy day, practiced Laser sailing."></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-activity-log')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitActivityLog()">Log Activity</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Expense -->
 <div class="overlay" id="m-expense">
   <div class="modal">
@@ -702,7 +816,7 @@ function logout() {
 }
 
 // ══ NAV ══
-const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays'];
+const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays','schedules'];
 
 function goTo(id) {
   section = id;
@@ -732,6 +846,7 @@ function buildMore() {
     {id:'fertility',icon:'🌸',label:'Fertility'},
     {id:'fridge',icon:'🍎',label:'Fridge'},
     {id:'recurring',icon:'🔄',label:'Recurring'},
+    {id:'schedules',icon:'⛵',label:'Schedules'},
   ];
   document.getElementById('more-grid').innerHTML = tiles.map(t =>
     `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
@@ -788,6 +903,7 @@ function render(id) {
     case 'fridge':    renderFridge();    break;
     case 'recurring': renderRecurring(); break;
     case 'birthdays': renderBirthdays(); break;
+    case 'schedules': renderSchedules(); break;
   }
 }
 
@@ -913,24 +1029,100 @@ async function togGroc(name, bought, el) {
 
 // ══ EXPENSES ══
 function renderExpenses() {
-  const exp = data.expenses || {rows:[],total:0,byCategory:{}};
+  const exp = data.expenses || {rows:[],total:0,byCategory:{},history:[],lastMonthTotal:0};
   const el  = document.getElementById('exp-body');
   const month = new Date().toLocaleDateString('en-SG',{month:'long',year:'numeric'});
   const cats  = Object.entries(exp.byCategory||{}).sort((a,b)=>b[1]-a[1]);
+  
+  // 1. Donut SVG Generation
+  let currentPercent = 0;
+  let donutSvgCircles = '';
+  cats.forEach((c, i) => {
+    const amt = c[1];
+    const pct = exp.total > 0 ? (amt / exp.total) : 0;
+    const strokeDashArray = `${pct * 100} ${100 - (pct * 100)}`;
+    const strokeDashOffset = -currentPercent * 100;
+    const color = PIE_COLORS[i % PIE_COLORS.length];
+    donutSvgCircles += `<circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="${color}" stroke-width="5.5" stroke-dasharray="${strokeDashArray}" stroke-dashoffset="${strokeDashOffset}"></circle>`;
+    currentPercent += pct;
+  });
+  if (cats.length === 0) {
+    donutSvgCircles = `<circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#e4e6ef" stroke-width="5.5"></circle>`;
+  }
+
+  // 2. Month-on-Month Comparison
+  let momHtml = '';
+  const lastMonth = exp.lastMonthTotal || 0;
+  if (lastMonth > 0) {
+    const diff = exp.total - lastMonth;
+    const pctDiff = (diff / lastMonth) * 100;
+    if (diff > 0) {
+      momHtml = `<span class="badge b-red" style="margin-left:8px;">📈 +${pctDiff.toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`;
+    } else {
+      momHtml = `<span class="badge b-green" style="margin-left:8px;">📉 ${pctDiff.toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`;
+    }
+  } else {
+    momHtml = `<span class="badge b-blue" style="margin-left:8px;">New Tracker</span>`;
+  }
+
+  // 3. 6-Month Trend Bar Chart
+  const hist = exp.history || [];
+  const maxTotal = Math.max(...hist.map(h => h.total), 1);
+  const barChartHtml = hist.map((h, i) => {
+    const heightPct = (h.total / maxTotal) * 100;
+    const isCurrent = (i === hist.length - 1);
+    return `
+      <div class="bar-col">
+        <div class="bar-val">$${h.total.toFixed(0)}</div>
+        <div class="bar-fill ${isCurrent ? 'current' : ''}" style="height:${Math.max(heightPct, 4)}%;"></div>
+        <div class="bar-lbl">${h.label}</div>
+      </div>`;
+  }).join('');
+
   el.innerHTML = `
+    <!-- Summary & Category Breakdown -->
     <div class="card">
-      <div class="card-hdr"><span class="card-title">💰 ${month}</span><span class="badge b-blue">$${(exp.total||0).toFixed(2)}</span></div>
-      <div class="pie-wrap">${cats.map((e,i) => `
-        <div class="pie-row">
-          <div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
-          <span class="pie-lbl">${e[0]}</span>
-          <span class="pie-val">$${e[1].toFixed(2)}</span>
-        </div>`).join('') || '<div class="empty">No expenses this month</div>'}
+      <div class="card-hdr">
+        <span class="card-title">💰 ${month}</span>
+        <div style="display:flex;align-items:center;">
+          <span class="badge b-blue">$${(exp.total||0).toFixed(2)}</span>
+          ${momHtml}
+        </div>
+      </div>
+      
+      <div class="donut-container">
+        <div class="donut-wrap">
+          <svg viewBox="0 0 42 42" class="donut">
+            ${donutSvgCircles}
+            <g class="chart-text">
+              <text x="50%" y="50%" class="chart-number" style="font-size: 5px; font-weight: 800;">$${exp.total.toFixed(0)}</text>
+              <text x="50%" y="64%" class="chart-label" style="font-size: 2px; fill: #9898aa;">Total</text>
+            </g>
+          </svg>
+        </div>
+        <div class="pie-wrap" style="flex:1;padding:0;gap:6px;">
+          ${cats.slice(0, 5).map((e,i) => `
+            <div class="pie-row">
+              <div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
+              <span class="pie-lbl" style="font-size:12px;">${e[0].split(' - ').pop()}</span>
+              <span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span>
+            </div>`).join('') || '<div class="empty">No expenses</div>'}
+        </div>
       </div>
     </div>
+
+    <!-- Spending Trend Card -->
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">📈 6-Month Trend</span></div>
+      <div class="bar-chart-wrap">
+        ${barChartHtml || '<div class="empty">No trend data</div>'}
+      </div>
+    </div>
+
+    <!-- Recent Entries -->
     <div class="card">
       <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
-      <div class="card-body">${(exp.rows||[]).slice(0,15).map(r => `
+      <div class="card-body">${(exp.rows||[]).slice(0, 15).map(r => `
         <div class="row">
           <div class="row-main">
             <div class="row-title">${r.desc||r.category}</div>
@@ -1190,7 +1382,214 @@ async function submitExpense() {
   closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense logged! 💰'); await loadData();
 }
 
+// ══ KID SCHEDULES ══
+let activeSchedChild = 'Mikaela';
 
+function filterSchedules(child) {
+  activeSchedChild = child;
+  document.querySelectorAll('.tab-pill').forEach(p => p.classList.remove('active'));
+  const pill = document.getElementById('pill-' + child);
+  if (pill) pill.classList.add('active');
+  renderSchedules();
+}
+
+function renderSchedules() {
+  const sched = data.schedules || { timetables: [], activityLogs: [] };
+  const container = document.getElementById('sched-container');
+  if (!container) return;
+  
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+  
+  const timetables = sched.timetables || [];
+  const filteredTimetable = timetables.filter(t => activeSchedChild === 'All' || t.child === activeSchedChild);
+  
+  const activityLogs = sched.activityLogs || [];
+  const filteredLogs = activityLogs.filter(a => activeSchedChild === 'All' || a.child === activeSchedChild);
+  
+  let totalHours = 0;
+  const activityBreakdown = {};
+  filteredLogs.forEach(a => {
+    const d = new Date(a.dateRaw);
+    if (!isNaN(d.getTime()) && d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+      totalHours += a.duration;
+      activityBreakdown[a.activity] = (activityBreakdown[a.activity] || 0) + a.duration;
+    }
+  });
+  
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const groupedTimetable = {};
+  days.forEach(d => groupedTimetable[d] = []);
+  filteredTimetable.forEach(t => {
+    if (groupedTimetable[t.day]) {
+      groupedTimetable[t.day].push(t);
+    }
+  });
+  
+  let timetableHtml = '';
+  days.forEach(day => {
+    const classes = groupedTimetable[day];
+    if (classes.length > 0) {
+      timetableHtml += `
+        <div class="sched-day-group">
+          <div class="sched-day-hdr">${day}</div>
+          <div style="padding:4px 0;">
+            ${classes.map(c => `
+              <div class="row" style="padding:10px 16px;">
+                <div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div>
+                <div class="row-main">
+                  <div class="row-title" style="font-weight:600;">${c.activity} ${activeSchedChild === 'All' ? '· <span style="color:#4f86c6;">' + c.child + '</span>' : ''}</div>
+                  <div class="row-sub">${c.time} · ${c.location || 'No Location'}</div>
+                  ${c.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${c.notes}"</div>` : ''}
+                </div>
+                <button onclick="delSchedule('${c.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+  });
+  if (!timetableHtml) {
+    timetableHtml = '<div class="empty">No recurring classes scheduled</div>';
+  }
+  
+  let breakdownItems = '';
+  for (const act in activityBreakdown) {
+    breakdownItems += `<div style="font-size:12px;color:#5a5a72;margin-top:4px;"><strong>${act}:</strong> ${activityBreakdown[act].toFixed(1)} hrs</div>`;
+  }
+  const summaryHtml = `
+    <div class="stat-summary">
+      <div class="stat-num">${totalHours.toFixed(1)}</div>
+      <div class="stat-main">
+        <div class="stat-lbl">Hours Completed This Month</div>
+        ${breakdownItems || '<div style="font-size:11px;color:#9898aa;">No sessions logged yet</div>'}
+      </div>
+    </div>
+  `;
+  
+  let timelineHtml = filteredLogs.slice(0, 10).map(a => `
+    <div class="row" style="padding:10px 16px;">
+      <div style="font-size:20px;flex-shrink:0;margin-right:6px;">📝</div>
+      <div class="row-main">
+        <div class="row-title" style="font-weight:600;">${a.activity} (${a.duration} hrs) ${activeSchedChild === 'All' ? '· <span style="color:#4f86c6;">' + a.child + '</span>' : ''}</div>
+        <div class="row-sub">${a.date} ${a.notes ? '· ' + a.notes : ''}</div>
+      </div>
+      <button onclick="delActivity('${a.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+    </div>
+  `).join('');
+  if (!timelineHtml) {
+    timelineHtml = '<div class="empty">No sessions logged yet</div>';
+  }
+  
+  container.innerHTML = `
+    <div style="margin-top:10px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📅 Timetable</div>
+    ${timetableHtml}
+    
+    <div style="margin-top:20px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📊 Month Progress</div>
+    ${summaryHtml}
+    
+    <div style="margin-top:10px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">📝 Completed Logs</div>
+    <div class="card-body" style="padding:0;">
+      ${timelineHtml}
+    </div>
+  `;
+}
+
+async function submitSchedule() {
+  const child = document.getElementById('sch-child').value;
+  const activity = document.getElementById('sch-act').value;
+  const day = document.getElementById('sch-day').value;
+  const time = document.getElementById('sch-time').value;
+  const location = document.getElementById('sch-loc').value;
+  const notes = document.getElementById('sch-notes').value;
+  
+  if (!activity) { alert('Please enter activity name'); return; }
+  
+  const payload = {
+    note: 'add_schedule',
+    sched_child: child,
+    sched_activity: activity,
+    sched_day: day,
+    sched_time: time,
+    sched_location: location,
+    sched_notes: notes
+  };
+  
+  document.body.classList.add('loading-state');
+  await gPost(payload);
+  document.body.classList.remove('loading-state');
+  closeM('m-timetable-add');
+  
+  document.getElementById('sch-act').value = '';
+  document.getElementById('sch-time').value = '';
+  document.getElementById('sch-loc').value = '';
+  document.getElementById('sch-notes').value = '';
+  
+  toast('Class timetable added! ⛵');
+  await loadData();
+  renderSchedules();
+}
+
+async function submitActivityLog() {
+  const child = document.getElementById('act-child').value;
+  const activity = document.getElementById('act-act').value;
+  const dateVal = document.getElementById('act-date').value;
+  const duration = parseFloat(document.getElementById('act-dur').value) || 0;
+  const notes = document.getElementById('act-notes').value;
+  
+  if (!activity) { alert('Please enter activity name'); return; }
+  if (duration <= 0) { alert('Please enter duration (hours)'); return; }
+  
+  const payload = {
+    note: 'log_activity',
+    act_child: child,
+    act_activity: activity,
+    act_date: fmtDate(dateVal),
+    act_duration: duration,
+    act_notes: notes
+  };
+  
+  document.body.classList.add('loading-state');
+  await gPost(payload);
+  document.body.classList.remove('loading-state');
+  closeM('m-activity-log');
+  
+  document.getElementById('act-act').value = '';
+  document.getElementById('act-dur').value = '';
+  document.getElementById('act-notes').value = '';
+  
+  toast('Activity logged successfully! 📝');
+  await loadData();
+  renderSchedules();
+}
+
+async function delSchedule(id) {
+  if (!confirm('Remove this recurring class from timetable?')) return;
+  document.body.classList.add('loading-state');
+  await gPost({ note: 'delete_schedule', sched_id: id });
+  document.body.classList.remove('loading-state');
+  
+  if (data.schedules && data.schedules.timetables) {
+    data.schedules.timetables = data.schedules.timetables.filter(t => t.id !== id);
+  }
+  renderSchedules();
+  toast('Class removed');
+}
+
+async function delActivity(id) {
+  if (!confirm('Delete this activity log entry?')) return;
+  document.body.classList.add('loading-state');
+  await gPost({ note: 'delete_activity', act_id: id });
+  document.body.classList.remove('loading-state');
+  
+  if (data.schedules && data.schedules.activityLogs) {
+    data.schedules.activityLogs = data.schedules.activityLogs.filter(a => a.id !== id);
+  }
+  renderSchedules();
+  toast('Activity log deleted');
+}
 
 function handlePinText(val) {
   // Sync typed input with pin buffer
@@ -1218,7 +1617,7 @@ function fmtTime(s) {
 }
 function setDefaultDates() {
   const tod = todayStr();
-  ['ev-date','tk-due','mem-date','fert-date','ex-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
+  ['ev-date','tk-due','mem-date','fert-date','ex-date','act-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
 }
 
 let toastT;
