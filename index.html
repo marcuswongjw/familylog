@@ -64,7 +64,7 @@ input,textarea,select{font-family:inherit;}
 .sec-body{padding:16px;display:flex;flex-direction:column;gap:14px;padding-bottom:24px;}
 
 /* ── BOTTOM NAV ── */
-.bot-nav{height:60px;background:#fff;border-top:1px solid #e4e6ef;display:flex;flex-shrink:0;}
+.bot-nav{height:calc(60px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:#fff;border-top:1px solid #e4e6ef;display:flex;flex-shrink:0;}
 .nav-it{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#9898aa;font-size:10px;font-weight:500;padding:6px 2px;}
 .nav-it .ni{font-size:20px;line-height:1;}
 .nav-it.act{color:#4f86c6;}
@@ -565,6 +565,28 @@ input,textarea,select{font-family:inherit;}
   </div>
 </div>
 
+<!-- Add Expense -->
+<div class="overlay" id="m-expense">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Add Expense</span><button class="modal-close" onclick="closeM('m-expense')">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Description</label><input type="text" id="ex-desc" placeholder="e.g. Lunch, taxi, grocery..."></div>
+      <div class="frow">
+        <div class="field"><label>Amount ($)</label><input type="number" id="ex-amt" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="field"><label>Date</label><input type="date" id="ex-date"></div>
+      </div>
+      <div class="field"><label>Category Group</label><select id="ex-grp" onchange="updateExCats()"></select></div>
+      <div class="field"><label>Category</label><select id="ex-cat"></select></div>
+      <div class="field"><label>Account</label><div class="chips" id="ex-acct-chips"></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-expense')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -658,7 +680,15 @@ function updDots() {
 function checkPin() {
   const m = MEMBERS.find(m => m.name === selMember);
   if (m && pinBuf === m.pin) { sessionStorage.setItem('wf_user', selMember); loginAs(selMember); }
-  else { document.getElementById('pinerr').textContent = 'Incorrect PIN. Try again.'; setTimeout(() => { pinBuf = ''; updDots(); }, 600); }
+  else {
+    document.getElementById('pinerr').textContent = 'Incorrect PIN. Try again.';
+    setTimeout(() => {
+      pinBuf = '';
+      updDots();
+      const pti = document.getElementById('pin-text-input');
+      if (pti) pti.value = '';
+    }, 600);
+  }
 }
 
 function loginAs(name) {
@@ -700,7 +730,7 @@ function goTo(id) {
   const nb = document.getElementById('nav-'+navId);
   if (nb) nb.classList.add('act');
   // FAB
-  const FAB_MAP = {calendar:'m-event',tasks:'m-task',grocery:'m-grocery',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
+  const FAB_MAP = {calendar:'m-event',tasks:'m-task',grocery:'m-grocery',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
   const fab = document.getElementById('fab');
   if (FAB_MAP[id]) { fab.classList.remove('hide'); fab._m = FAB_MAP[id]; }
   else fab.classList.add('hide');
@@ -1046,6 +1076,7 @@ function buildModals() {
   chips('bd-type-chips', ['Birthday','Wedding Anniversary'], 'Birthday', 'bdt');
   chips('fert-chips', ['Period Start','Period End','Ovulation','Symptom'], 'Period Start', 'ft');
   chips('rc-acct-chips', ['Personal Account','Family'], 'Family', 'rca');
+  chips('ex-acct-chips', ['Personal Account','Family'], 'Family', 'exa');
   // Budget group select
   const bgs = document.getElementById('bud-grp');
   bgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
@@ -1053,6 +1084,10 @@ function buildModals() {
   const rgs = document.getElementById('rc-grp');
   rgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
   updateRcCats();
+  // Expense group select
+  const egs = document.getElementById('ex-grp');
+  egs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  updateExCats();
 }
 
 function chips(id, opts, def, key) {
@@ -1074,6 +1109,11 @@ function gc(key) {
 function updateRcCats() {
   const g = document.getElementById('rc-grp').value;
   document.getElementById('rc-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+function updateExCats() {
+  const g = document.getElementById('ex-grp').value;
+  document.getElementById('ex-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
 function openM(id) { document.getElementById(id).classList.add('open'); }
@@ -1144,6 +1184,13 @@ async function submitRecurring() {
   closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved! 🔄'); await loadData();
 }
 
+async function submitExpense() {
+  const desc = v('ex-desc'); const amt = parseFloat(v('ex-amt')); const date = v('ex-date');
+  if (!desc||isNaN(amt)||amt<=0||!date) { toast('Please fill description, amount, and date'); return; }
+  await gPost({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'});
+  closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense logged! 💰'); await loadData();
+}
+
 
 
 function handlePinText(val) {
@@ -1172,7 +1219,7 @@ function fmtTime(s) {
 }
 function setDefaultDates() {
   const tod = todayStr();
-  ['ev-date','tk-due','mem-date','fert-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
+  ['ev-date','tk-due','mem-date','fert-date','ex-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
 }
 
 let toastT;
