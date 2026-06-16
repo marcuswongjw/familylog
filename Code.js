@@ -1035,10 +1035,10 @@ function testDigest() {
 // ============================================================
 
 function scanInboxForPayLah() {
-  var query = 'from:paylah.alert@dbs.com -label:PayLah-Processed';
-  var threads = GmailApp.search(query, 0, 10);
-  if (threads.length === 0) return;
-  
+  scanInboxForTransactions();
+}
+
+function scanInboxForTransactions() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendingSheet = ss.getSheetByName('PendingExpenses');
   if (!pendingSheet) {
@@ -1046,46 +1046,179 @@ function scanInboxForPayLah() {
     pendingSheet.appendRow(['ID', 'Date', 'Account', 'Category', 'Amount', 'Note', 'Timestamp']);
   }
   
+  var expSheet = ss.getSheetByName('Expenses');
+  
   var label = GmailApp.getUserLabelByName('PayLah-Processed');
   if (!label) {
     label = GmailApp.createLabel('PayLah-Processed');
   }
   
-  threads.forEach(function(thread) {
-    var messages = thread.getMessages();
-    messages.forEach(function(msg) {
-      var body = msg.getPlainBody();
-      
-      // Parse details
-      var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
-      var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
-      var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
-      
-      if (amtMatch && toMatch) {
-        var amount = parseFloat(amtMatch[1]);
-        var merchant = toMatch[1].trim();
-        var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'}); // default
-        
-        if (dateMatch) {
-          var dateParts = dateMatch[1].trim().split(/\s+/);
-          if (dateParts.length >= 2) {
-            dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
+  var templates = [
+    {
+      name: 'paylah',
+      query: 'from:paylah.alert@dbs.com -label:PayLah-Processed',
+      priority: 1,
+      parse: function(body) {
+        var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
+        var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
+        var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+        if (amtMatch && toMatch) {
+          var amount = parseFloat(amtMatch[1]);
+          var merchant = toMatch[1].trim();
+          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+          if (dateMatch) {
+            var dateParts = dateMatch[1].trim().split(/\s+/);
+            if (dateParts.length >= 2) {
+              dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
+            }
+          }
+          return { amount: amount, merchant: merchant, dateStr: dateStr };
+        }
+        return null;
+      }
+    },
+    {
+      name: 'trust',
+      query: 'from:from_us@trustbank.sg -label:PayLah-Processed',
+      priority: 1,
+      parse: function(body) {
+        var amtMatch = body.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
+        var toMatch = body.match(/at\s+(.+?)\s+on\s+\d{1,2}\s+[a-z]{3}\s+\d{4}/i);
+        var dateMatch = body.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+        if (amtMatch && toMatch) {
+          var amount = parseFloat(amtMatch[1]);
+          var merchant = toMatch[1].trim();
+          merchant = merchant.replace(/\s+(Singapore SG|SG|Singapore)$/i, '').trim();
+          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+          if (dateMatch) dateStr = dateMatch[1].trim();
+          return { amount: amount, merchant: merchant, dateStr: dateStr };
+        }
+        return null;
+      }
+    },
+    {
+      name: 'shopee',
+      query: 'from:info@mail.shopee.sg -label:PayLah-Processed',
+      priority: 2,
+      parse: function(body) {
+        var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
+        var orderMatch = body.match(/Order ID:\s*(#?\w+)/i);
+        var dateMatch = body.match(/(?:Payment Date|Order Date):\s*(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+        var itemMatch = body.match(/^\s*1\.\s+(.+)$/m) || body.match(/1\.\s+(.+?)(?:\r|\n)/);
+        if (amtMatch) {
+          var amount = parseFloat(amtMatch[1]);
+          var orderId = orderMatch ? orderMatch[1].trim() : '';
+          var merchant = 'Shopee';
+          if (itemMatch) {
+            var itemName = itemMatch[1].trim();
+            if (itemName.length > 50) itemName = itemName.substring(0, 47) + '...';
+            merchant = 'Shopee: ' + itemName;
+          } else if (orderId) {
+            merchant = 'Shopee Order ' + orderId;
+          }
+          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+          if (dateMatch) dateStr = dateMatch[1].trim();
+          return { amount: amount, merchant: merchant, dateStr: dateStr };
+        }
+        return null;
+      }
+    }
+  ];
+  
+  templates.forEach(function(tpl) {
+    var threads = GmailApp.search(tpl.query, 0, 10);
+    threads.forEach(function(thread) {
+      var messages = thread.getMessages();
+      messages.forEach(function(msg) {
+        var body = msg.getPlainBody();
+        var parsed = tpl.parse(body);
+        if (parsed) {
+          var amount = parsed.amount;
+          var merchant = parsed.merchant;
+          var dateStr = parsed.dateStr;
+          var category = proposeCategory(tpl.name === 'shopee' ? 'Shopee' : merchant);
+          
+          // Check for duplicate in logged Expenses
+          var duplicateInLogged = findDuplicateInExpenses(expSheet, amount, dateStr);
+          if (duplicateInLogged) {
+            Logger.log('[' + tpl.name + '] Found duplicate in logged Expenses. Skipping.');
+            return;
+          }
+          
+          // Check for duplicate in PendingExpenses
+          var duplicateInPending = findDuplicateInPending(pendingSheet, amount, dateStr);
+          if (duplicateInPending) {
+            var existingId = duplicateInPending.id;
+            var existingRowIdx = duplicateInPending.rowIdx;
+            
+            // If the new transaction is Shopee (priority 2) and the existing one is low-priority (priority 1)
+            if (tpl.priority === 2 && (existingId.indexOf('p_paylah_') === 0 || existingId.indexOf('p_trust_') === 0)) {
+              // Merge/enrich existing pending record
+              pendingSheet.getRange(existingRowIdx, 4).setValue(category);
+              pendingSheet.getRange(existingRowIdx, 6).setValue(merchant);
+              var newId = 'p_shopee_' + existingId.split('_').slice(2).join('_');
+              pendingSheet.getRange(existingRowIdx, 1).setValue(newId);
+              
+              Logger.log('[' + tpl.name + '] Merged duplicate. Updated pending row ' + existingRowIdx + ' with Shopee details.');
+            } else {
+              Logger.log('[' + tpl.name + '] Duplicate found in Pending. Skipping new notification.');
+            }
+          } else {
+            // No duplicate: log new pending
+            var id = 'p_' + tpl.name + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+            pendingSheet.appendRow([id, dateStr, 'Family', category, amount, merchant, new Date()]);
+            sendApprovalEmail(id, dateStr, amount, merchant, category);
+            Logger.log('[' + tpl.name + '] Logged new pending transaction: ' + merchant + ' ($' + amount + ')');
           }
         }
-        
-        var id = 'p_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-        var category = proposeCategory(merchant);
-        
-        // Append to PendingExpenses
-        pendingSheet.appendRow([id, dateStr, 'Family', category, amount, merchant, new Date()]);
-        
-        // Send email with approval link
-        sendApprovalEmail(id, dateStr, amount, merchant, category);
-      }
+      });
+      thread.addLabel(label);
     });
-    // Mark thread as processed
-    thread.addLabel(label);
   });
+}
+
+function findDuplicateInPending(sheet, amount, dateStr) {
+  if (!sheet) return null;
+  var vals = sheet.getDataRange().getValues();
+  if (vals.length <= 1) return null;
+  
+  var targetDate = parseEventDate(dateStr, '');
+  if (!targetDate) return null;
+  
+  for (var i = 1; i < vals.length; i++) {
+    var rowAmt = parseFloat(vals[i][4]) || 0;
+    var rowDateStr = toStr(vals[i][1]);
+    var rowDate = parseEventDate(rowDateStr, '');
+    
+    if (Math.abs(rowAmt - amount) < 0.01) {
+      if (rowDate && Math.abs(rowDate.getTime() - targetDate.getTime()) <= 24 * 60 * 60 * 1000 * 1.5) {
+        return { id: toStr(vals[i][0]), rowIdx: i + 1, rowData: vals[i] };
+      }
+    }
+  }
+  return null;
+}
+
+function findDuplicateInExpenses(sheet, amount, dateStr) {
+  if (!sheet) return null;
+  var vals = sheet.getDataRange().getValues();
+  if (vals.length <= 1) return null;
+  
+  var targetDate = parseEventDate(dateStr, '');
+  if (!targetDate) return null;
+  
+  for (var i = 1; i < vals.length; i++) {
+    var rowAmt = parseFloat(vals[i][4]) || 0;
+    var rowDateStr = toStr(vals[i][1]);
+    var rowDate = parseEventDate(rowDateStr, '');
+    
+    if (Math.abs(rowAmt - amount) < 0.01) {
+      if (rowDate && Math.abs(rowDate.getTime() - targetDate.getTime()) <= 24 * 60 * 60 * 1000 * 1.5) {
+        return { rowIdx: i + 1, rowData: vals[i] };
+      }
+    }
+  }
+  return null;
 }
 
 function proposeCategory(merchant) {
@@ -1288,37 +1421,90 @@ function handleSubmitConfirmedExpense(params) {
 }
 
 function testPayLahScanner() {
-  var mockEmailBody = 'Transaction Alerts\n' +
-                      'Transaction Ref: IPS78160863519729871\n' +
-                      'Dear Sir / Madam,\n' +
-                      'We refer to your PayLah! Scan & Pay Transfer dated 16 Jun. We are pleased to confirm that the transaction was completed.\n' +
-                      'Date & Time:\t16 Jun 19:17 (SGT)\n' +
-                      'Amount:\tSGD10.50\n' +
-                      'From:\tPayLah! Wallet (Mobile ending 4128)\n' +
-                      'To:\tTOAST BOX COFFEE SHOP\n';
-                      
-  var amtMatch = mockEmailBody.match(/Amount:\s*SGD\s*([\d\.]+)/i);
-  var toMatch = mockEmailBody.match(/To:\s*(.+?)(?:\r|\n)/i);
-  var dateMatch = mockEmailBody.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+  testAllScanners();
+}
+
+function testAllScanners() {
+  var mockPayLah = 'Transaction Alerts\n' +
+                   'Transaction Ref: IPS78160863519729871\n' +
+                   'Dear Sir / Madam,\n' +
+                   'We refer to your PayLah! Scan & Pay Transfer dated 16 Jun. We are pleased to confirm that the transaction was completed.\n' +
+                   'Date & Time:\t16 Jun 19:17 (SGT)\n' +
+                   'Amount:\tSGD10.50\n' +
+                   'From:\tPayLah! Wallet (Mobile ending 4128)\n' +
+                   'To:\tTOAST BOX COFFEE SHOP\n';
+                   
+  var mockTrust = "You've spent SGD 1.60 at YHS VENDING MACHINE Singapore SG on 14 Jun 2026 14:14SGT with Trust Cashback card. You'll receive estimated S$0.02 cashback and up to 15% bonus cashback*. Not you? Alert us via the Trust App.";
   
-  if (amtMatch && toMatch) {
-    var amount = parseFloat(amtMatch[1]);
-    var merchant = toMatch[1].trim();
+  var mockShopee = "Hi marcuswong789,\n" +
+                   "Your payment for order #260609M02BTMY7 has been confirmed. The seller has also been notified.\n\n" +
+                   "ORDER DETAILS\n" +
+                   "Order ID: #260609M02BTMY7\n" +
+                   "Order Date: 09 Jun 2026 14:54:36\n" +
+                   "Seller: dtfnbvbrd3\n\n" +
+                   "1. [100%Original] Owala FreeSip 24/32oz Stainless-Steel Water Bottle with LockingPush-Button Lid\n" +
+                   "Variation: Zootopia-Pink,24oz (710ml)\n" +
+                   "Quantity: 1\n" +
+                   "Price: S$31.00\n\n" +
+                   "Merchandise Subtotal: S$31.00\n" +
+                   "Total Payment: S$18.90\n\n" +
+                   "PAYMENT DETAILS\n" +
+                   "Payment Method: Mari Credit Card Instant Checkout\n" +
+                   "Payment Date: 09 Jun 2026 14:54:39\n" +
+                   "Amount Paid: S$18.90";
+                   
+  Logger.log('=== TEST: PAYLAH SCANNER ===');
+  var paylahMatch = mockPayLah.match(/Amount:\s*SGD\s*([\d\.]+)/i);
+  var paylahTo = mockPayLah.match(/To:\s*(.+?)(?:\r|\n)/i);
+  var paylahDate = mockPayLah.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+  if (paylahMatch && paylahTo) {
+    var amt = parseFloat(paylahMatch[1]);
+    var merchant = paylahTo[1].trim();
     var dateStr = '16 Jun ' + new Date().getFullYear();
-    
-    if (dateMatch) {
-      var dateParts = dateMatch[1].trim().split(/\s+/);
-      if (dateParts.length >= 2) {
-        dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
-      }
+    if (paylahDate) {
+      var parts = paylahDate[1].trim().split(/\s+/);
+      if (parts.length >= 2) dateStr = parts[0] + ' ' + parts[1] + ' ' + new Date().getFullYear();
     }
-    
-    Logger.log('Parsed successfully!');
-    Logger.log('Amount: ' + amount);
-    Logger.log('Merchant: ' + merchant);
-    Logger.log('Date: ' + dateStr);
-    Logger.log('Proposed Category: ' + proposeCategory(merchant));
+    Logger.log('PayLah - Parsed successfully! Amt: ' + amt + ', Merchant: ' + merchant + ', Date: ' + dateStr + ', Cat: ' + proposeCategory(merchant));
   } else {
-    Logger.log('Failed to parse mock email');
+    Logger.log('PayLah - Parsing failed');
+  }
+
+  Logger.log('=== TEST: TRUST SCANNER ===');
+  var trustAmt = mockTrust.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
+  var trustTo = mockTrust.match(/at\s+(.+?)\s+on\s+\d{1,2}\s+[a-z]{3}\s+\d{4}/i);
+  var trustDate = mockTrust.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  if (trustAmt && trustTo) {
+    var amt = parseFloat(trustAmt[1]);
+    var merchant = trustTo[1].trim();
+    merchant = merchant.replace(/\s+(Singapore SG|SG|Singapore)$/i, '').trim();
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (trustDate) dateStr = trustDate[1].trim();
+    Logger.log('Trust - Parsed successfully! Amt: ' + amt + ', Merchant: ' + merchant + ', Date: ' + dateStr + ', Cat: ' + proposeCategory(merchant));
+  } else {
+    Logger.log('Trust - Parsing failed');
+  }
+
+  Logger.log('=== TEST: SHOPEE SCANNER ===');
+  var shopeeAmt = mockShopee.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
+  var shopeeOrder = mockShopee.match(/Order ID:\s*(#?\w+)/i);
+  var shopeeDate = mockShopee.match(/(?:Payment Date|Order Date):\s*(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  var shopeeItem = mockShopee.match(/^\s*1\.\s+(.+)$/m) || mockShopee.match(/1\.\s+(.+?)(?:\r|\n)/);
+  if (shopeeAmt) {
+    var amt = parseFloat(shopeeAmt[1]);
+    var orderId = shopeeOrder ? shopeeOrder[1].trim() : '';
+    var merchant = 'Shopee';
+    if (shopeeItem) {
+      var itemName = shopeeItem[1].trim();
+      if (itemName.length > 50) itemName = itemName.substring(0, 47) + '...';
+      merchant = 'Shopee: ' + itemName;
+    } else if (orderId) {
+      merchant = 'Shopee Order ' + orderId;
+    }
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (shopeeDate) dateStr = shopeeDate[1].trim();
+    Logger.log('Shopee - Parsed successfully! Amt: ' + amt + ', Merchant: ' + merchant + ', Date: ' + dateStr + ', Cat: ' + proposeCategory('Shopee'));
+  } else {
+    Logger.log('Shopee - Parsing failed');
   }
 }
