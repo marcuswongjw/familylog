@@ -616,6 +616,12 @@ function buildLogin() {
   ).join('');
   // PIN dots
   document.getElementById('pindots').innerHTML = [0,1,2,3].map(() => '<div class="pin-dot"></div>').join('');
+  // Keyboard PIN support
+  document.addEventListener('keydown', e => {
+    if (!selMember) return;
+    if (e.key >= '0' && e.key <= '9') pk(e.key);
+    if (e.key === 'Backspace') pk('⌫');
+  });
   // Keypad
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
   document.getElementById('pinpad').innerHTML = keys.map(k =>
@@ -1125,6 +1131,16 @@ async function gPost(payload) {
   } catch(e) { console.error(e); toast('Error saving. Try again.'); }
 }
 
+function handlePinText(val) {
+  // Sync typed input with pin buffer
+  pinBuf = val.slice(0, 4).replace(/\D/g,'');
+  updDots();
+  document.getElementById('pin-text-input').value = pinBuf;
+  if (pinBuf.length === 4) {
+    setTimeout(checkPin, 100);
+  }
+}
+  
 // ══ UTILS ══
 function v(id) { return document.getElementById(id)?.value?.trim()||''; }
 function clr(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
