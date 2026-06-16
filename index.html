@@ -2,694 +2,504 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Wong Family">
 <meta name="theme-color" content="#4f86c6">
 <title>Wong Family</title>
-<link rel="manifest" href="manifest.json">
 <style>
-/* ── TOKENS ───────────────────────────────────────────── */
-:root {
-  --blue:       #4f86c6;
-  --blue-dark:  #3a6fa8;
-  --blue-light: #e8f0fb;
-  --green:      #3aaa75;
-  --green-light:#e6f7ee;
-  --red:        #e05252;
-  --red-light:  #fdeaea;
-  --amber:      #d4861e;
-  --amber-light:#fdf3e3;
-  --purple:     #7c5cbf;
-  --purple-light:#f0ebfa;
-  --ink:        #1a1a2e;
-  --ink-soft:   #5a5a72;
-  --ink-faint:  #9898aa;
-  --surface:    #ffffff;
-  --surface-2:  #f5f6fa;
-  --border:     #e4e6ef;
-  --radius-sm:  8px;
-  --radius:     14px;
-  --radius-lg:  20px;
-  --shadow-sm:  0 1px 4px rgba(0,0,0,.07);
-  --shadow:     0 4px 16px rgba(0,0,0,.10);
-  --shadow-lg:  0 8px 32px rgba(0,0,0,.14);
-  --font:       'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --nav-h:      64px;
-  --header-h:   56px;
+/* ── RESET ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f6fa;color:#1a1a2e;-webkit-tap-highlight-color:transparent;}
+button{cursor:pointer;font-family:inherit;border:none;background:none;}
+input,textarea,select{font-family:inherit;}
+
+/* ── SCREENS ── */
+.screen{display:none;position:fixed;inset:0;}
+.screen.active{display:block;}
+
+/* ══ LOGIN ══════════════════════════════════════════ */
+#login-screen{
+  background:linear-gradient(160deg,#1a1a2e 0%,#2d2d5e 55%,#3a6fa8 100%);
+  display:flex;align-items:center;justify-content:center;
 }
+#login-screen.active{display:flex;}
+.login-box{width:100%;max-width:360px;padding:32px 24px;}
+.login-logo{text-align:center;margin-bottom:36px;}
+.login-logo .logo{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:32px;}
+.login-logo h1{color:#fff;font-size:24px;font-weight:700;}
+.login-logo p{color:rgba(255,255,255,.55);font-size:14px;margin-top:4px;}
+.member-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
+.member-btn{padding:16px 12px;border-radius:12px;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font-size:15px;font-weight:600;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.member-btn .av{font-size:28px;}
+.member-btn.sel{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.5);}
+.pin-box{display:none;}
+.pin-box.show{display:block;}
+.pin-lbl{color:rgba(255,255,255,.7);font-size:14px;text-align:center;margin-bottom:10px;}
+.pin-dots{display:flex;justify-content:center;gap:12px;margin-bottom:18px;}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:transparent;transition:all .15s;}
+.pin-dot.on{background:#fff;border-color:#fff;}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.pin-key{padding:16px;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-size:20px;font-weight:600;border:1px solid rgba(255,255,255,.15);transition:all .1s;text-align:center;}
+.pin-key:active{background:rgba(255,255,255,.25);transform:scale(.95);}
+.pin-err{color:#ff8a8a;font-size:13px;text-align:center;margin-top:8px;min-height:18px;}
 
-/* ── RESET ───────────────────────────────────────────── */
-*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-html { height:100%; -webkit-tap-highlight-color:transparent; }
-body { font-family:var(--font); background:var(--surface-2); color:var(--ink); min-height:100%; overscroll-behavior:none; }
-button { cursor:pointer; font-family:inherit; border:none; background:none; }
-input,textarea,select { font-family:inherit; }
-a { color:inherit; text-decoration:none; }
+/* ══ APP ════════════════════════════════════════════ */
+#app-screen{display:none;flex-direction:column;}
+#app-screen.active{display:flex;}
 
-/* ── SCREEN MANAGER ──────────────────────────────────── */
-.screen { display:none; flex-direction:column; height:100vh; overflow:hidden; }
-.screen.active { display:flex; }
+/* ── HEADER ── */
+.hdr{height:56px;background:#fff;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0;z-index:10;}
+.hdr-left{display:flex;align-items:center;gap:10px;}
+.hdr-av{width:34px;height:34px;border-radius:50%;background:#e8f0fb;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.hdr-name{font-size:16px;font-weight:700;}
+.hdr-date{font-size:11px;color:#9898aa;margin-top:1px;}
+.hdr-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:#5a5a72;}
 
-/* ── LOGIN ───────────────────────────────────────────── */
-#login-screen {
-  background: linear-gradient(145deg, #1a1a2e 0%, #2d2d5e 60%, #3a6fa8 100%);
-  align-items:center; justify-content:center; gap:0;
-}
-.login-wrap { width:100%; max-width:360px; padding:32px 24px; }
-.login-logo { text-align:center; margin-bottom:40px; }
-.login-logo .logo-mark {
-  width:72px; height:72px; border-radius:50%;
-  background:rgba(255,255,255,.12); border:2px solid rgba(255,255,255,.25);
-  display:flex; align-items:center; justify-content:center;
-  font-size:32px; margin:0 auto 16px;
-}
-.login-logo h1 { color:#fff; font-size:24px; font-weight:700; letter-spacing:-.3px; }
-.login-logo p  { color:rgba(255,255,255,.55); font-size:14px; margin-top:4px; }
-.member-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:28px; }
-.member-btn {
-  padding:18px 12px; border-radius:var(--radius); border:2px solid rgba(255,255,255,.15);
-  background:rgba(255,255,255,.08); color:#fff; font-size:15px; font-weight:600;
-  transition:all .15s; display:flex; flex-direction:column; align-items:center; gap:8px;
-}
-.member-btn .avatar { font-size:28px; }
-.member-btn:hover, .member-btn.selected {
-  background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.5);
-  transform:translateY(-2px);
-}
-.pin-section { display:none; }
-.pin-section.visible { display:block; }
-.pin-label { color:rgba(255,255,255,.7); font-size:14px; text-align:center; margin-bottom:12px; }
-.pin-dots { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
-.pin-dot {
-  width:14px; height:14px; border-radius:50%;
-  border:2px solid rgba(255,255,255,.4); background:transparent; transition:all .15s;
-}
-.pin-dot.filled { background:#fff; border-color:#fff; }
-.pin-keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-.pin-key {
-  padding:16px; border-radius:var(--radius-sm); background:rgba(255,255,255,.1);
-  color:#fff; font-size:20px; font-weight:600; border:1px solid rgba(255,255,255,.15);
-  transition:all .1s; text-align:center;
-}
-.pin-key:active { background:rgba(255,255,255,.25); transform:scale(.95); }
-.pin-key.del { font-size:16px; }
-.pin-error { color:#ff8a8a; font-size:13px; text-align:center; margin-top:8px; min-height:18px; }
+/* ── CONTENT ── */
+.content{flex:1;overflow:hidden;position:relative;}
+.section{display:none;position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.section.active{display:block;}
+.sec-body{padding:16px;display:flex;flex-direction:column;gap:14px;padding-bottom:24px;}
 
-/* ── APP SHELL ───────────────────────────────────────── */
-#app-screen { padding-bottom:var(--nav-h); flex-direction:column; overflow:hidden; }
+/* ── BOTTOM NAV ── */
+.bot-nav{height:60px;background:#fff;border-top:1px solid #e4e6ef;display:flex;flex-shrink:0;}
+.nav-it{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#9898aa;font-size:10px;font-weight:500;padding:6px 2px;}
+.nav-it .ni{font-size:20px;line-height:1;}
+.nav-it.act{color:#4f86c6;}
 
-/* ── HEADER ──────────────────────────────────────────── */
-.app-header {
-  height:var(--header-h); padding:0 16px;
-  display:flex; align-items:center; justify-content:space-between;
-  background:var(--surface); border-bottom:1px solid var(--border);
-  flex-shrink:0; position:sticky; top:0; z-index:100;
-}
-.header-left { display:flex; align-items:center; gap:10px; }
-.header-avatar {
-  width:34px; height:34px; border-radius:50%;
-  background:var(--blue-light); display:flex; align-items:center; justify-content:center;
-  font-size:16px; color:var(--blue);
-}
-.header-name { font-size:16px; font-weight:700; color:var(--ink); }
-.header-date { font-size:12px; color:var(--ink-faint); margin-top:1px; }
-.header-right { display:flex; gap:8px; align-items:center; }
-.icon-btn {
-  width:36px; height:36px; border-radius:50%; display:flex;
-  align-items:center; justify-content:center; color:var(--ink-soft);
-  transition:background .15s;
-}
-.icon-btn:hover { background:var(--surface-2); }
-.refresh-btn .spinning { animation:spin .8s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
+/* ── CARDS ── */
+.card{background:#fff;border-radius:14px;border:1px solid #e4e6ef;overflow:hidden;}
+.card-hdr{padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e4e6ef;}
+.card-title{font-size:15px;font-weight:700;}
+.card-body{padding:0;}
+.row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:flex-start;gap:10px;}
+.row:last-child{border-bottom:none;}
+.row-main{flex:1;min-width:0;}
+.row-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.row-sub{font-size:12px;color:#9898aa;margin-top:2px;}
+.empty{padding:32px 16px;text-align:center;color:#9898aa;font-size:14px;}
+.empty .ei{font-size:36px;margin-bottom:8px;}
 
-/* ── BOTTOM NAV ──────────────────────────────────────── */
-.bottom-nav {
-  position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
-  background:var(--surface); border-top:1px solid var(--border);
-  display:flex; z-index:200; padding-bottom:env(safe-area-inset-bottom);
-}
-.nav-item {
-  flex:1; display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:3px; color:var(--ink-faint);
-  font-size:10px; font-weight:500; padding:8px 4px; transition:color .15s;
-  border-radius:var(--radius-sm);
-}
-.nav-item svg { width:22px; height:22px; flex-shrink:0; display:block; }
-.nav-item.active { color:var(--blue); }
-.nav-item.active svg { stroke:var(--blue); }
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.b-blue{background:#e8f0fb;color:#3a6fa8;}
+.b-green{background:#e6f7ee;color:#1e7a50;}
+.b-red{background:#fdeaea;color:#b83232;}
+.b-amber{background:#fdf3e3;color:#a3600a;}
+.b-gray{background:#f5f6fa;color:#5a5a72;}
 
-/* ── SECTIONS ────────────────────────────────────────── */
-.section { display:none; flex-direction:column; min-height:0; height:calc(100vh - var(--header-h) - var(--nav-h)); overflow-y:auto; }
-.section.active { display:flex; }
-.section-body { padding:16px; display:flex; flex-direction:column; gap:16px; flex:1; }
+/* ── PROGRESS ── */
+.prog-track{height:6px;background:#e4e6ef;border-radius:3px;overflow:hidden;margin:6px 0;}
+.prog-fill{height:100%;border-radius:3px;}
 
-/* ── CARDS ───────────────────────────────────────────── */
-.card {
-  background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-sm);
-  border:1px solid var(--border); overflow:hidden;
-}
-.card-header {
-  padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;
-  border-bottom:1px solid var(--border);
-}
-.card-title { font-size:15px; font-weight:700; color:var(--ink); display:flex; align-items:center; gap:8px; }
-.card-body { padding:0; }
-.card-row {
-  padding:12px 16px; border-bottom:1px solid var(--border);
-  display:flex; align-items:flex-start; gap:12px;
-}
-.card-row:last-child { border-bottom:none; }
-.card-row-main { flex:1; min-width:0; }
-.card-row-title { font-size:14px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.card-row-sub { font-size:12px; color:var(--ink-faint); margin-top:2px; }
-.card-row-right { flex-shrink:0; text-align:right; }
-.card-empty { padding:32px 16px; text-align:center; color:var(--ink-faint); font-size:14px; }
-.card-empty .card-empty-icon { font-size:36px; margin-bottom:8px; }
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border-radius:10px;font-size:14px;font-weight:600;transition:all .15s;}
+.btn-p{background:#4f86c6;color:#fff;}
+.btn-s{background:#f5f6fa;color:#1a1a2e;border:1px solid #e4e6ef;}
+.btn-d{background:#fdeaea;color:#b83232;}
+.btn-g{background:#e6f7ee;color:#1e7a50;}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-full{width:100%;}
 
-/* ── TAGS / BADGES ───────────────────────────────────── */
-.badge {
-  display:inline-flex; align-items:center; padding:2px 8px;
-  border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap;
-}
-.badge-blue   { background:var(--blue-light);   color:var(--blue-dark); }
-.badge-green  { background:var(--green-light);  color:#1e7a50; }
-.badge-red    { background:var(--red-light);    color:#b83232; }
-.badge-amber  { background:var(--amber-light);  color:#a3600a; }
-.badge-purple { background:var(--purple-light); color:#5a3e9a; }
-.badge-gray   { background:var(--surface-2);    color:var(--ink-soft); }
+/* ── FAB ── */
+.fab{position:fixed;bottom:76px;right:16px;width:52px;height:52px;border-radius:50%;background:#4f86c6;color:#fff;font-size:26px;box-shadow:0 4px 16px rgba(79,134,198,.4);z-index:50;display:flex;align-items:center;justify-content:center;}
+.fab.hide{display:none;}
 
-/* ── PROGRESS BAR ────────────────────────────────────── */
-.progress-wrap { margin-top:6px; }
-.progress-track { height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
-.progress-fill  { height:100%; border-radius:3px; transition:width .4s ease; }
+/* ── MODAL ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-end;justify-content:center;}
+.overlay.open{display:flex;}
+.modal{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom,16px);}
+.modal-handle{width:40px;height:4px;background:#e4e6ef;border-radius:2px;margin:12px auto 0;}
+.modal-hdr{padding:16px 20px 12px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-size:17px;font-weight:700;}
+.modal-close{width:32px;height:32px;border-radius:50%;background:#f5f6fa;display:flex;align-items:center;justify-content:center;color:#5a5a72;font-size:18px;}
+.modal-body{padding:20px;display:flex;flex-direction:column;gap:14px;}
+.modal-foot{padding:0 20px 20px;display:flex;gap:10px;}
 
-/* ── BUTTONS ─────────────────────────────────────────── */
-.btn {
-  display:inline-flex; align-items:center; justify-content:center; gap:6px;
-  padding:10px 18px; border-radius:var(--radius-sm); font-size:14px; font-weight:600;
-  transition:all .15s; white-space:nowrap;
-}
-.btn-primary   { background:var(--blue);  color:#fff; }
-.btn-primary:hover   { background:var(--blue-dark); }
-.btn-secondary { background:var(--surface-2); color:var(--ink); border:1px solid var(--border); }
-.btn-secondary:hover { background:var(--border); }
-.btn-danger    { background:var(--red-light); color:var(--red); }
-.btn-success   { background:var(--green-light); color:var(--green); }
-.btn-sm { padding:6px 12px; font-size:12px; }
-.btn-full { width:100%; }
-.fab {
-  position:fixed; bottom:calc(var(--nav-h) + 16px); right:16px;
-  width:52px; height:52px; border-radius:50%; background:var(--blue);
-  color:#fff; font-size:24px; box-shadow:var(--shadow-lg); z-index:150;
-  display:flex; align-items:center; justify-content:center; transition:transform .15s;
-}
-.fab:hover { transform:scale(1.07); }
-.fab.hidden { display:none; }
+/* ── FORM ── */
+.field{display:flex;flex-direction:column;gap:6px;}
+.field label{font-size:13px;font-weight:600;color:#5a5a72;}
+.field input,.field select,.field textarea{padding:11px 14px;border:1.5px solid #e4e6ef;border-radius:10px;font-size:15px;color:#1a1a2e;background:#fff;outline:none;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#4f86c6;}
+.field textarea{resize:vertical;min-height:80px;}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 
-/* ── MODAL ───────────────────────────────────────────── */
-.modal-overlay {
-  display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
-  z-index:300; align-items:flex-end; justify-content:center;
-}
-.modal-overlay.open { display:flex; }
-.modal {
-  background:var(--surface); border-radius:var(--radius-lg) var(--radius-lg) 0 0;
-  width:100%; max-width:560px; max-height:90vh; overflow-y:auto;
-  padding:0 0 env(safe-area-inset-bottom);
-  animation:slideUp .25s ease;
-}
-@keyframes slideUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
-.modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:12px auto 0; }
-.modal-header { padding:16px 20px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
-.modal-title { font-size:17px; font-weight:700; color:var(--ink); }
-.modal-close { width:32px; height:32px; border-radius:50%; background:var(--surface-2); display:flex; align-items:center; justify-content:center; color:var(--ink-soft); font-size:18px; }
-.modal-body { padding:20px; display:flex; flex-direction:column; gap:16px; }
-.modal-footer { padding:0 20px 20px; display:flex; gap:10px; }
+/* ── CHIPS ── */
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{padding:6px 14px;border-radius:20px;border:1.5px solid #e4e6ef;font-size:13px;font-weight:500;color:#5a5a72;background:#fff;cursor:pointer;}
+.chip.sel{border-color:#4f86c6;background:#e8f0fb;color:#4f86c6;font-weight:600;}
 
-/* ── FORM ────────────────────────────────────────────── */
-.field { display:flex; flex-direction:column; gap:6px; }
-.field label { font-size:13px; font-weight:600; color:var(--ink-soft); }
-.field input, .field select, .field textarea {
-  padding:11px 14px; border:1.5px solid var(--border); border-radius:var(--radius-sm);
-  font-size:15px; color:var(--ink); background:var(--surface); outline:none; transition:border-color .15s;
-}
-.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--blue); }
-.field textarea { resize:vertical; min-height:80px; }
-.field-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* ── TOAST ── */
+#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%) translateY(20px);z-index:999;background:#1a1a2e;color:#fff;padding:10px 20px;border-radius:24px;font-size:14px;font-weight:500;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* ── CHIP SELECTOR ───────────────────────────────────── */
-.chip-group { display:flex; flex-wrap:wrap; gap:8px; }
-.chip {
-  padding:6px 14px; border-radius:20px; border:1.5px solid var(--border);
-  font-size:13px; font-weight:500; color:var(--ink-soft); background:var(--surface);
-  transition:all .15s; cursor:pointer;
-}
-.chip.selected { border-color:var(--blue); background:var(--blue-light); color:var(--blue); font-weight:600; }
+/* ── HOME ── */
+.greet{padding:20px 16px 4px;}
+.greet h2{font-size:22px;font-weight:800;}
+.greet p{font-size:13px;color:#9898aa;margin-top:2px;}
+.tile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.tile{background:#fff;border:1px solid #e4e6ef;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:6px;cursor:pointer;}
+.tile-icon{font-size:26px;}
+.tile-lbl{font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;}
+.tile-val{font-size:22px;font-weight:800;line-height:1;}
+.tile-sub{font-size:12px;color:#5a5a72;}
 
-/* ── TOAST ───────────────────────────────────────────── */
-#toast {
-  position:fixed; bottom:calc(var(--nav-h) + 16px); left:50%;
-  transform:translateX(-50%) translateY(20px); z-index:999;
-  background:#1a1a2e; color:#fff; padding:10px 20px; border-radius:24px;
-  font-size:14px; font-weight:500; opacity:0; pointer-events:none; transition:all .25s; white-space:nowrap;
-}
-#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+/* ── MORE GRID ── */
+.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;}
+.more-tile{background:#fff;border:1px solid #e4e6ef;border-radius:14px;padding:20px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;}
+.more-tile .mi{font-size:30px;}
+.more-tile .ml{font-size:13px;font-weight:600;}
 
-/* ── SECTION: HOME ───────────────────────────────────── */
-.home-greeting { padding:20px 16px 4px; }
-.home-greeting h2 { font-size:22px; font-weight:800; color:var(--ink); }
-.home-greeting p  { font-size:14px; color:var(--ink-faint); margin-top:2px; }
-.home-grid { padding:0 16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.home-tile {
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-  padding:16px; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadow-sm);
-  cursor:pointer; transition:all .15s;
-}
-.home-tile:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
-.home-tile .tile-icon { font-size:26px; }
-.home-tile .tile-label { font-size:11px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.5px; }
-.home-tile .tile-value { font-size:20px; font-weight:800; color:var(--ink); line-height:1; }
-.home-tile .tile-sub { font-size:12px; color:var(--ink-soft); }
+/* ── TASK ── */
+.task-row{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #e4e6ef;}
+.task-row:last-child{border-bottom:none;}
+.chk{width:22px;height:22px;border-radius:50%;border:2px solid #e4e6ef;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.chk.done{background:#3aaa75;border-color:#3aaa75;color:#fff;font-size:12px;font-weight:700;}
+.task-main{flex:1;min-width:0;}
+.task-ttl{font-size:14px;font-weight:500;}
+.task-meta{font-size:12px;color:#9898aa;margin-top:2px;}
 
-/* ── TODAY SUMMARY ───────────────────────────────────── */
-.today-card { margin:0 16px; }
+/* ── GROC ── */
+.groc-row{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #e4e6ef;}
+.groc-row:last-child{border-bottom:none;}
+.groc-chk{width:22px;height:22px;border-radius:6px;border:2px solid #e4e6ef;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.groc-chk.done{background:#4f86c6;border-color:#4f86c6;color:#fff;font-size:12px;font-weight:700;}
+.groc-lbl{flex:1;font-size:14px;}
+.groc-lbl.done{text-decoration:line-through;color:#9898aa;}
 
-/* ── SECTION: CALENDAR ───────────────────────────────── */
-.event-dot { width:8px; height:8px; border-radius:50%; background:var(--blue); flex-shrink:0; margin-top:5px; }
-.event-tag { display:inline-flex; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:600; margin:2px 2px 0 0; }
+/* ── MEMORY ── */
+.mem-row{padding:14px 16px;border-bottom:1px solid #e4e6ef;}
+.mem-row:last-child{border-bottom:none;}
+.mem-type{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#9898aa;margin-bottom:4px;}
+.mem-text{font-size:14px;line-height:1.5;}
+.mem-meta{font-size:12px;color:#9898aa;margin-top:6px;}
 
-/* ── SECTION: TASKS ──────────────────────────────────── */
-.task-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
-.task-check {
-  width:22px; height:22px; border-radius:50%; border:2px solid var(--border);
-  flex-shrink:0; display:flex; align-items:center; justify-content:center;
-  cursor:pointer; transition:all .15s;
-}
-.task-check:hover { border-color:var(--green); }
-.task-check.done { background:var(--green); border-color:var(--green); }
-.task-check.done::after { content:'✓'; color:#fff; font-size:12px; font-weight:700; }
-.task-main { flex:1; min-width:0; }
-.task-title { font-size:14px; font-weight:500; color:var(--ink); }
-.task-meta  { font-size:12px; color:var(--ink-faint); margin-top:2px; }
-.task-del { padding:6px; color:var(--ink-faint); opacity:0; transition:opacity .15s; }
-.task-row:hover .task-del { opacity:1; }
+/* ── FRIDGE ── */
+.fr-row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;justify-content:space-between;}
+.fr-row:last-child{border-bottom:none;}
+.fr-num{font-size:20px;font-weight:800;color:#4f86c6;}
 
-/* ── SECTION: GROCERY ────────────────────────────────── */
-.grocery-row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border); }
-.grocery-check { width:22px; height:22px; border-radius:var(--radius-sm); border:2px solid var(--border); flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
-.grocery-check:hover { border-color:var(--blue); }
-.grocery-check.bought { background:var(--blue); border-color:var(--blue); }
-.grocery-check.bought::after { content:'✓'; color:#fff; font-size:12px; font-weight:700; }
-.grocery-label { flex:1; font-size:14px; color:var(--ink); }
-.grocery-label.bought { text-decoration:line-through; color:var(--ink-faint); }
+/* ── RECURRING ── */
+.rec-row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;gap:10px;}
+.rec-row:last-child{border-bottom:none;}
+.rec-main{flex:1;min-width:0;}
+.rec-name{font-size:14px;font-weight:600;}
+.rec-meta{font-size:12px;color:#9898aa;margin-top:2px;}
+.rec-right{text-align:right;}
+.rec-amt{font-size:15px;font-weight:700;}
 
-/* ── SECTION: EXPENSES ───────────────────────────────── */
-.exp-amount { font-size:13px; font-weight:700; color:var(--ink); }
-.exp-category { font-size:11px; color:var(--ink-faint); margin-top:2px; }
-.pie-wrap { padding:16px; display:flex; flex-direction:column; gap:10px; }
-.pie-row { display:flex; align-items:center; gap:10px; }
-.pie-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-.pie-label { flex:1; font-size:13px; color:var(--ink); }
-.pie-val { font-size:13px; font-weight:600; color:var(--ink); }
+/* ── BD ── */
+.bd-row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;gap:12px;}
+.bd-row:last-child{border-bottom:none;}
+.bd-ic{font-size:24px;flex-shrink:0;}
+.bd-main{flex:1;}
+.bd-name{font-size:14px;font-weight:600;}
+.bd-meta{font-size:12px;color:#9898aa;margin-top:2px;}
 
-/* ── SECTION: BUDGETS ────────────────────────────────── */
-.budget-row { padding:14px 16px; border-bottom:1px solid var(--border); }
-.budget-row-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-.budget-group-name { font-size:14px; font-weight:600; color:var(--ink); }
-.budget-pct { font-size:12px; font-weight:700; }
+/* ── FERTILITY ── */
+.fert-stat{padding:13px 16px;border-bottom:1px solid #e4e6ef;display:flex;justify-content:space-between;align-items:center;}
+.fert-stat:last-child{border-bottom:none;}
+.fert-lbl{font-size:14px;color:#5a5a72;}
+.fert-val{font-size:14px;font-weight:600;}
 
-/* ── SECTION: MEMORIES ───────────────────────────────── */
-.memory-row { padding:14px 16px; border-bottom:1px solid var(--border); }
-.memory-type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-faint); margin-bottom:4px; }
-.memory-text { font-size:14px; color:var(--ink); line-height:1.5; }
-.memory-meta { font-size:12px; color:var(--ink-faint); margin-top:6px; }
+/* ── BUDGET ── */
+.bud-row{padding:14px 16px;border-bottom:1px solid #e4e6ef;}
+.bud-row:last-child{border-bottom:none;}
+.bud-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.bud-name{font-size:14px;font-weight:600;}
 
-/* ── SECTION: FERTILITY ──────────────────────────────── */
-.fertility-stat { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
-.fertility-label { font-size:14px; color:var(--ink-soft); }
-.fertility-value { font-size:14px; font-weight:600; color:var(--ink); }
+/* ── PIE LIST ── */
+.pie-wrap{padding:14px 16px;display:flex;flex-direction:column;gap:8px;}
+.pie-row{display:flex;align-items:center;gap:10px;}
+.pie-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.pie-lbl{flex:1;font-size:13px;}
+.pie-val{font-size:13px;font-weight:600;}
 
-/* ── SECTION: FRIDGE ─────────────────────────────────── */
-.fridge-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.fridge-name { font-size:14px; font-weight:500; color:var(--ink); }
-.fridge-stock { font-size:18px; font-weight:800; color:var(--blue); }
-.fridge-stale { color:var(--amber); }
-
-/* ── SECTION: RECURRING ──────────────────────────────── */
-.rec-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
-.rec-main { flex:1; min-width:0; }
-.rec-name { font-size:14px; font-weight:600; color:var(--ink); }
-.rec-meta { font-size:12px; color:var(--ink-faint); margin-top:2px; }
-.rec-amount { font-size:15px; font-weight:700; color:var(--ink); }
-
-/* ── SECTION: BIRTHDAYS ──────────────────────────────── */
-.bd-row { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
-.bd-icon { font-size:24px; flex-shrink:0; }
-.bd-main { flex:1; }
-.bd-name { font-size:14px; font-weight:600; color:var(--ink); }
-.bd-meta { font-size:12px; color:var(--ink-faint); margin-top:2px; }
-.bd-days { font-size:12px; font-weight:700; text-align:right; }
-
-/* ── LOADING ─────────────────────────────────────────── */
-.loading { display:flex; align-items:center; justify-content:center; padding:40px; color:var(--ink-faint); gap:8px; font-size:14px; }
-.loader { width:18px; height:18px; border:2.5px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
-
-/* ── MORE MENU ───────────────────────────────────────── */
-.more-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px; }
-.more-tile {
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-  padding:20px 16px; display:flex; flex-direction:column; align-items:center; gap:10px;
-  cursor:pointer; transition:all .15s; text-align:center;
-}
-.more-tile:hover { border-color:var(--blue); background:var(--blue-light); transform:translateY(-2px); }
-.more-tile .more-icon { font-size:30px; }
-.more-tile .more-label { font-size:13px; font-weight:600; color:var(--ink); }
-
-/* ── DESKTOP SIDEBAR ─────────────────────────────────── */
-@media (min-width:720px) {
-  #app-screen { flex-direction:row; padding-bottom:0; }
-  .bottom-nav { display:none; }
-  .sidebar {
-    width:220px; flex-shrink:0; border-right:1px solid var(--border);
-    background:var(--surface); display:flex; flex-direction:column;
-    padding:20px 12px; gap:4px; overflow-y:auto;
-  }
-  .sidebar-logo { padding:8px 12px 20px; font-size:16px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:10px; }
-  .sidebar-logo .logo-emoji { font-size:22px; }
-  .sidebar-item {
-    display:flex; align-items:center; gap:10px; padding:10px 12px;
-    border-radius:var(--radius-sm); color:var(--ink-soft); font-size:14px; font-weight:500;
-    cursor:pointer; transition:all .15s;
-  }
-  .sidebar-item svg { width:18px; height:18px; flex-shrink:0; }
-  .sidebar-item:hover { background:var(--surface-2); color:var(--ink); }
-  .sidebar-item.active { background:var(--blue-light); color:var(--blue); font-weight:600; }
-  .app-main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-  .app-header { position:sticky; }
-  .section { height:calc(100vh - var(--header-h)); }
-  .fab { bottom:24px; right:24px; }
-  #toast { bottom:24px; }
-  .more-grid { grid-template-columns:repeat(3,1fr); }
-}
+/* ── LOADING ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:#9898aa;gap:8px;font-size:14px;}
+.spin{width:18px;height:18px;border:2.5px solid #e4e6ef;border-top-color:#4f86c6;border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0;}
+@keyframes sp{to{transform:rotate(360deg);}}
 </style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════
-     LOGIN SCREEN
-══════════════════════════════════════════════════ -->
+<!-- LOGIN -->
 <div id="login-screen" class="screen active">
-  <div class="login-wrap">
+  <div class="login-box">
     <div class="login-logo">
-      <div class="logo-mark">🏠</div>
+      <div class="logo">🏠</div>
       <h1>Wong Family</h1>
       <p>Who's using the app?</p>
     </div>
-    <div class="member-grid" id="member-grid"></div>
-    <div class="pin-section" id="pin-section">
-      <p class="pin-label" id="pin-label">Enter your PIN</p>
-      <div class="pin-dots" id="pin-dots"></div>
-      <div class="pin-keypad" id="pin-keypad"></div>
-      <p class="pin-error" id="pin-error"></p>
+    <div class="member-grid" id="mgrid"></div>
+    <div class="pin-box" id="pinbox">
+      <p class="pin-lbl" id="pinlbl">Enter your PIN</p>
+      <div class="pin-dots" id="pindots"></div>
+      <div class="pin-pad" id="pinpad"></div>
+      <p class="pin-err" id="pinerr"></p>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════
-     APP SCREEN
-══════════════════════════════════════════════════ -->
+<!-- APP -->
 <div id="app-screen" class="screen">
 
-  <!-- Sidebar (desktop) -->
-  <nav class="sidebar" id="sidebar"></nav>
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-av" id="hav"></div>
+      <div>
+        <div class="hdr-name" id="hname"></div>
+        <div class="hdr-date" id="hdate"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;">
+      <button class="hdr-btn" id="rbtn" onclick="loadData()" title="Refresh">🔄</button>
+      <button class="hdr-btn" onclick="logout()" title="Switch user">🚪</button>
+    </div>
+  </div>
 
-  <div class="app-main" id="app-main" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+  <!-- Content -->
+  <div class="content">
 
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-left">
-        <div class="header-avatar" id="header-avatar"></div>
-        <div>
-          <div class="header-name" id="header-name"></div>
-          <div class="header-date" id="header-date"></div>
+    <!-- HOME -->
+    <div class="section active" id="s-home">
+      <div class="greet" id="greet"></div>
+      <div style="padding:0 16px 14px;" id="today-wrap"></div>
+      <div style="padding:0 16px 24px;">
+        <div class="tile-grid" id="home-tiles"></div>
+      </div>
+    </div>
+
+    <!-- CALENDAR -->
+    <div class="section" id="s-calendar">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">📅 Upcoming Events</span></div>
+          <div class="card-body" id="cal-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
       </div>
-      <div class="header-right">
-        <button class="icon-btn refresh-btn" id="refresh-btn" title="Refresh">
-          <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        </button>
-        <button class="icon-btn" id="logout-btn" title="Switch user">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </button>
+    </div>
+
+    <!-- TASKS -->
+    <div class="section" id="s-tasks">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">✅ To-Do List</span></div>
+          <div class="card-body" id="task-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
       </div>
-    </header>
+    </div>
 
-    <!-- Sections container -->
-    <div style="flex:1;overflow:hidden;position:relative;">
-
-      <!-- HOME -->
-      <div class="section active" id="section-home">
-        <div class="home-greeting" id="home-greeting"></div>
-        <div class="today-card" id="today-card"></div>
-        <div class="home-grid" id="home-grid"></div>
+    <!-- GROCERY -->
+    <div class="section" id="s-grocery">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">🛒 Grocery List</span></div>
+          <div class="card-body" id="groc-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
       </div>
+    </div>
 
-      <!-- CALENDAR -->
-      <div class="section" id="section-calendar">
-        <div class="section-body">
-          <div class="card" id="calendar-card">
-            <div class="card-header"><span class="card-title">📅 Upcoming Events</span></div>
-            <div class="card-body" id="calendar-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
+    <!-- EXPENSES -->
+    <div class="section" id="s-expenses">
+      <div class="sec-body" id="exp-body"><div class="loading"><div class="spin"></div>Loading…</div></div>
+    </div>
+
+    <!-- MORE -->
+    <div class="section" id="s-more">
+      <div class="more-grid" id="more-grid"></div>
+    </div>
+
+    <!-- BUDGETS -->
+    <div class="section" id="s-budgets">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-title">📊 Budgets</span>
+            <button class="btn btn-sm btn-p" onclick="openM('m-budget')">+ Set</button>
+          </div>
+          <div class="card-body" id="bud-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEMORIES -->
+    <div class="section" id="s-memories">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">💛 Family Memories</span></div>
+          <div class="card-body" id="mem-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FERTILITY -->
+    <div class="section" id="s-fertility">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">🌸 Fertility Tracker</span></div>
+          <div class="card-body" id="fert-body"><div class="loading"><div class="spin"></div>Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Log Entry</span></div>
+          <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+            <div class="chips" id="fert-chips"></div>
+            <div class="field"><label>Date</label><input type="date" id="fert-date"></div>
+            <div class="field"><label>Notes (optional)</label><input type="text" id="fert-notes" placeholder="e.g. light flow"></div>
+            <button class="btn btn-p btn-full" onclick="submitFert()">Log Entry</button>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- TASKS -->
-      <div class="section" id="section-tasks">
-        <div class="section-body">
-          <div class="card" id="tasks-card">
-            <div class="card-header"><span class="card-title">✅ To-Do List</span></div>
-            <div class="card-body" id="tasks-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
+    <!-- FRIDGE -->
+    <div class="section" id="s-fridge">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">🍎 Fridge Stock</span></div>
+          <div class="card-body" id="fridge-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
-      </div>
-
-      <!-- GROCERIES -->
-      <div class="section" id="section-grocery">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">🛒 Grocery List</span></div>
-            <div class="card-body" id="grocery-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- EXPENSES -->
-      <div class="section" id="section-expenses">
-        <div class="section-body" id="expenses-body">
-          <div class="loading"><div class="loader"></div>Loading…</div>
-        </div>
-      </div>
-
-      <!-- MORE (hub for secondary features) -->
-      <div class="section" id="section-more">
-        <div class="more-grid" id="more-grid"></div>
-      </div>
-
-      <!-- BUDGETS -->
-      <div class="section" id="section-budgets">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header">
-              <span class="card-title">📊 Budgets</span>
-              <button class="btn btn-sm btn-primary" onclick="openModal('modal-budget')">+ Set Budget</button>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Update Stock</span></div>
+          <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+            <div class="frow">
+              <div class="field"><label>Item</label><input type="text" id="fr-name" placeholder="e.g. Apple"></div>
+              <div class="field"><label>Qty</label><input type="number" id="fr-qty" min="1" value="1"></div>
             </div>
-            <div class="card-body" id="budgets-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- MEMORIES -->
-      <div class="section" id="section-memories">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">💛 Family Memories</span></div>
-            <div class="card-body" id="memories-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- FERTILITY -->
-      <div class="section" id="section-fertility">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">🌸 Fertility Tracker</span></div>
-            <div class="card-body" id="fertility-body"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><span class="card-title">Log Entry</span></div>
-            <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-              <div class="chip-group" id="fertility-type-chips"></div>
-              <div class="field"><label>Date</label><input type="date" id="fertility-date-input"></div>
-              <div class="field"><label>Notes (optional)</label><input type="text" id="fertility-notes-input" placeholder="e.g. light flow"></div>
-              <button class="btn btn-primary btn-full" onclick="submitFertility()">Log Entry</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- FRIDGE -->
-      <div class="section" id="section-fridge">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">🍎 Fridge Stock</span></div>
-            <div class="card-body" id="fridge-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><span class="card-title">Update Stock</span></div>
-            <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-              <div class="field-row">
-                <div class="field"><label>Item name</label><input type="text" id="fridge-name-input" placeholder="e.g. Apple"></div>
-                <div class="field"><label>Qty</label><input type="number" id="fridge-qty-input" min="1" value="1"></div>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn btn-success btn-full" onclick="updateFridge('add')">+ Add stock</button>
-                <button class="btn btn-danger btn-full" onclick="updateFridge('eat')">− Log eating</button>
-              </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-g btn-full" onclick="updateFridge('add')">＋ Add</button>
+              <button class="btn btn-d btn-full" onclick="updateFridge('eat')">－ Ate</button>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- RECURRING -->
-      <div class="section" id="section-recurring">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">🔄 Recurring Expenses</span></div>
-            <div class="card-body" id="recurring-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
+    <!-- RECURRING -->
+    <div class="section" id="s-recurring">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">🔄 Recurring Expenses</span></div>
+          <div class="card-body" id="rec-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
       </div>
+    </div>
 
-      <!-- BIRTHDAYS -->
-      <div class="section" id="section-birthdays">
-        <div class="section-body">
-          <div class="card">
-            <div class="card-header"><span class="card-title">🎂 Birthdays & Anniversaries</span></div>
-            <div class="card-body" id="birthdays-list"><div class="loading"><div class="loader"></div>Loading…</div></div>
-          </div>
+    <!-- BIRTHDAYS -->
+    <div class="section" id="s-birthdays">
+      <div class="sec-body">
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">🎂 Birthdays & Anniversaries</span></div>
+          <div class="card-body" id="bd-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
       </div>
+    </div>
 
-    </div><!-- end sections container -->
-  </div><!-- end app-main -->
+  </div><!-- end content -->
 
-  <!-- Bottom nav (mobile) -->
-  <nav class="bottom-nav" id="bottom-nav"></nav>
+  <!-- Bottom Nav -->
+  <div class="bot-nav">
+    <div class="nav-it act" id="nav-home" onclick="goTo('home')"><div class="ni">🏠</div><div>Home</div></div>
+    <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
+    <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
+    <div class="nav-it" id="nav-grocery" onclick="goTo('grocery')"><div class="ni">🛒</div><div>Grocery</div></div>
+    <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
+    <div class="nav-it" id="nav-more" onclick="goTo('more')"><div class="ni">⋯</div><div>More</div></div>
+  </div>
 
 </div><!-- end app-screen -->
 
 <!-- FAB -->
-<button class="fab hidden" id="fab" onclick="onFab()">+</button>
+<button class="fab hide" id="fab" onclick="onFab()">＋</button>
 
 <!-- Toast -->
 <div id="toast"></div>
 
-<!-- ══════════════════════════════════════════════════
-     MODALS
-══════════════════════════════════════════════════ -->
+<!-- ══ MODALS ══════════════════════════════════════════ -->
 
 <!-- Add Event -->
-<div class="modal-overlay" id="modal-event">
+<div class="overlay" id="m-event">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Add Event</span><button class="modal-close" onclick="closeModal('modal-event')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add Event</span><button class="modal-close" onclick="closeM('m-event')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Event Title</label><input type="text" id="ev-title" placeholder="e.g. Dentist appointment"></div>
-      <div class="field-row">
+      <div class="field"><label>Title</label><input type="text" id="ev-title" placeholder="e.g. Dentist"></div>
+      <div class="frow">
         <div class="field"><label>Date</label><input type="date" id="ev-date"></div>
-        <div class="field"><label>Time (optional)</label><input type="time" id="ev-time"></div>
+        <div class="field"><label>Time (opt)</label><input type="time" id="ev-time"></div>
       </div>
-      <div class="field"><label>End Time (optional)</label><input type="time" id="ev-end-time"></div>
-      <div class="field"><label>Notes (optional)</label><textarea id="ev-notes" placeholder="Any extra details…"></textarea></div>
+      <div class="field"><label>End Time (opt)</label><input type="time" id="ev-end"></div>
+      <div class="field"><label>Notes (opt)</label><textarea id="ev-notes" placeholder="Extra details…"></textarea></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-event')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitEvent()">Add Event</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-event')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitEvent()">Add Event</button>
     </div>
   </div>
 </div>
 
 <!-- Add Task -->
-<div class="modal-overlay" id="modal-task">
+<div class="overlay" id="m-task">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Add Task</span><button class="modal-close" onclick="closeModal('modal-task')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add Task</span><button class="modal-close" onclick="closeM('m-task')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Task</label><input type="text" id="task-title" placeholder="What needs to be done?"></div>
-      <div class="field"><label>Assign to</label>
-        <div class="chip-group" id="task-assign-chips"></div>
-      </div>
-      <div class="field"><label>Due Date (optional)</label><input type="date" id="task-due"></div>
+      <div class="field"><label>Task</label><input type="text" id="tk-title" placeholder="What needs doing?"></div>
+      <div class="field"><label>Assign to</label><div class="chips" id="tk-chips"></div></div>
+      <div class="field"><label>Due Date (opt)</label><input type="date" id="tk-due"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-task')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitTask()">Add Task</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-task')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitTask()">Add Task</button>
     </div>
   </div>
 </div>
 
 <!-- Add Grocery -->
-<div class="modal-overlay" id="modal-grocery">
+<div class="overlay" id="m-grocery">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Add to Grocery List</span><button class="modal-close" onclick="closeModal('modal-grocery')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add to Grocery List</span><button class="modal-close" onclick="closeM('m-grocery')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Item name</label><input type="text" id="grocery-item" placeholder="e.g. Milk, bread…"></div>
+      <div class="field"><label>Item name</label><input type="text" id="gr-item" placeholder="e.g. Milk, bread…"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-grocery')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitGrocery()">Add Item</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-grocery')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitGrocery()">Add Item</button>
     </div>
   </div>
 </div>
 
 <!-- Add Memory -->
-<div class="modal-overlay" id="modal-memory">
+<div class="overlay" id="m-memory">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Log a Memory</span><button class="modal-close" onclick="closeModal('modal-memory')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Log a Memory</span><button class="modal-close" onclick="closeM('m-memory')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Type</label>
-        <div class="chip-group" id="memory-type-chips"></div>
-      </div>
-      <div class="field"><label>About</label>
-        <div class="chip-group" id="memory-person-chips"></div>
-      </div>
-      <div class="field"><label>Memory</label><textarea id="memory-text" placeholder="Write the memory…"></textarea></div>
-      <div class="field"><label>Date</label><input type="date" id="memory-date"></div>
+      <div class="field"><label>Type</label><div class="chips" id="mem-type-chips"></div></div>
+      <div class="field"><label>About</label><div class="chips" id="mem-pers-chips"></div></div>
+      <div class="field"><label>Memory</label><textarea id="mem-text" placeholder="Write the memory…"></textarea></div>
+      <div class="field"><label>Date</label><input type="date" id="mem-date"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-memory')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitMemory()">Save Memory</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-memory')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitMemory()">Save</button>
     </div>
   </div>
 </div>
 
 <!-- Add Birthday -->
-<div class="modal-overlay" id="modal-birthday">
+<div class="overlay" id="m-birthday">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Add Birthday / Anniversary</span><button class="modal-close" onclick="closeModal('modal-birthday')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add Birthday / Anniversary</span><button class="modal-close" onclick="closeM('m-birthday')">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>Name</label><input type="text" id="bd-name" placeholder="e.g. Grandma Wong"></div>
-      <div class="field"><label>Type</label>
-        <div class="chip-group" id="bd-type-chips"></div>
-      </div>
-      <div class="field-row">
+      <div class="field"><label>Type</label><div class="chips" id="bd-type-chips"></div></div>
+      <div class="frow">
         <div class="field"><label>Month</label>
           <select id="bd-month">
             <option value="">Month</option>
@@ -703,54 +513,50 @@ a { color:inherit; text-decoration:none; }
         </div>
         <div class="field"><label>Day</label><input type="number" id="bd-day" min="1" max="31" placeholder="1–31"></div>
       </div>
-      <div class="field"><label>Year (optional)</label><input type="number" id="bd-year" placeholder="e.g. 1985" min="1900" max="2025"></div>
-      <div class="field"><label>Notes (optional)</label><input type="text" id="bd-notes" placeholder="e.g. favourite cake: chocolate"></div>
+      <div class="field"><label>Year (opt)</label><input type="number" id="bd-year" placeholder="e.g. 1985"></div>
+      <div class="field"><label>Notes (opt)</label><input type="text" id="bd-notes" placeholder="e.g. favourite cake"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-birthday')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitBirthday()">Save</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-birthday')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitBirthday()">Save</button>
     </div>
   </div>
 </div>
 
 <!-- Set Budget -->
-<div class="modal-overlay" id="modal-budget">
+<div class="overlay" id="m-budget">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Set Group Budget</span><button class="modal-close" onclick="closeModal('modal-budget')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Set Group Budget</span><button class="modal-close" onclick="closeM('m-budget')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Category Group</label>
-        <select id="budget-group-select"></select>
-      </div>
-      <div class="field"><label>Monthly Budget ($)</label><input type="number" id="budget-amount" placeholder="e.g. 500" min="0" step="0.01"></div>
+      <div class="field"><label>Group</label><select id="bud-grp"></select></div>
+      <div class="field"><label>Monthly Budget ($)</label><input type="number" id="bud-amt" placeholder="e.g. 500" min="0" step="0.01"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-budget')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitBudget()">Save Budget</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-budget')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitBudget()">Save Budget</button>
     </div>
   </div>
 </div>
 
-<!-- Add Recurring Expense -->
-<div class="modal-overlay" id="modal-recurring">
+<!-- Add Recurring -->
+<div class="overlay" id="m-recurring">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header"><span class="modal-title">Add Recurring Expense</span><button class="modal-close" onclick="closeModal('modal-recurring')">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title">Add Recurring Expense</span><button class="modal-close" onclick="closeM('m-recurring')">✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Name</label><input type="text" id="rec-name" placeholder="e.g. Netflix, Insurance"></div>
-      <div class="field-row">
-        <div class="field"><label>Amount ($)</label><input type="number" id="rec-amount" min="0" step="0.01" placeholder="0.00"></div>
-        <div class="field"><label>Day of Month</label><input type="number" id="rec-day" min="1" max="28" placeholder="1–28"></div>
+      <div class="field"><label>Name</label><input type="text" id="rc-name" placeholder="e.g. Netflix"></div>
+      <div class="frow">
+        <div class="field"><label>Amount ($)</label><input type="number" id="rc-amt" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="field"><label>Day (1–28)</label><input type="number" id="rc-day" min="1" max="28"></div>
       </div>
-      <div class="field"><label>Category Group</label><select id="rec-group-select"></select></div>
-      <div class="field"><label>Category</label><select id="rec-cat-select"></select></div>
-      <div class="field"><label>Account</label>
-        <div class="chip-group" id="rec-account-chips"></div>
-      </div>
+      <div class="field"><label>Category Group</label><select id="rc-grp" onchange="updateRcCats()"></select></div>
+      <div class="field"><label>Category</label><select id="rc-cat"></select></div>
+      <div class="field"><label>Account</label><div class="chips" id="rc-acct-chips"></div></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal('modal-recurring')">Cancel</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitRecurring()">Save</button>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-recurring')">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="submitRecurring()">Save</button>
     </div>
   </div>
 </div>
@@ -758,21 +564,19 @@ a { color:inherit; text-decoration:none; }
 <script>
 'use strict';
 
-// ══════════════════════════════════════════════════════
-// CONFIG — update GAS_URL before deploying
-// ══════════════════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec'; // e.g. https://script.google.com/macros/s/.../exec
+// ══ CONFIG — fill these in before deploying ══
+const GAS_URL = 'YOUR_GAS_WEB_APP_URL_HERE';
 
 const MEMBERS = [
-  { name:'Marcus',  emoji:'👨', pin:'1811' }, // ← replace PINs
-  { name:'Eleanor', emoji:'👩', pin:'2505' },
-  { name:'Mikaela', emoji:'👧', pin:'1212' },
-  { name:'Meaghan', emoji:'👧', pin:'3008' },
+  { name:'Marcus',  emoji:'👨', pin:'1234' },
+  { name:'Eleanor', emoji:'👩', pin:'5678' },
+  { name:'Mikaela', emoji:'👧', pin:'2345' },
+  { name:'Meaghan', emoji:'👧', pin:'3456' },
 ];
 
-const FAMILY_MEMBERS = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
-
-const EXPENSE_GROUPS = {
+const FAM = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
+const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#888'];
+const GROUPS = {
   '👶 Children':['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
   '👕 Clothing':['Clothing - Accessories','Clothing - Clothes','Clothing - Shoes'],
   '🍽 Eating Out':['Eating Out - Beverages','Eating Out - Breakfast','Eating Out - Dinner','Eating Out - Lunch','Eating Out - Snacks'],
@@ -789,233 +593,139 @@ const EXPENSE_GROUPS = {
   '🌍 Others':['Electronics','Misc','Missions'],
 };
 
-const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#7a7a7a'];
+// ══ STATE ══
+let user = null, section = 'home', data = {}, pinBuf = '', selMember = null;
 
-// ══════════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════════
-let currentUser   = null;
-let currentSection= 'home';
-let appData       = {};
-let pinBuffer     = '';
-let selectedMember= null;
-let fertTypeSelected = 'Period Start';
-
-// ══════════════════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+// ══ INIT ══
+window.addEventListener('DOMContentLoaded', () => {
   buildLogin();
-  buildNav();
   buildModals();
-  document.getElementById('refresh-btn').addEventListener('click', loadData);
-  document.getElementById('logout-btn').addEventListener('click', logout);
-
-  // Close modals on overlay click
-  document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+  buildMore();
+  document.querySelectorAll('.overlay').forEach(o => {
+    o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
   });
-
-  // Check saved session
   const saved = sessionStorage.getItem('wf_user');
   if (saved) loginAs(saved);
 });
 
-// ══════════════════════════════════════════════════════
-// LOGIN
-// ══════════════════════════════════════════════════════
+// ══ LOGIN ══
 function buildLogin() {
-  const grid = document.getElementById('member-grid');
-  grid.innerHTML = MEMBERS.map(m => `
-    <button class="member-btn" onclick="selectMember('${m.name}')">
-      <span class="avatar">${m.emoji}</span>${m.name}
-    </button>`).join('');
-
+  // Members
+  document.getElementById('mgrid').innerHTML = MEMBERS.map(m =>
+    `<button class="member-btn" onclick="selMem('${m.name}')"><span class="av">${m.emoji}</span>${m.name}</button>`
+  ).join('');
   // PIN dots
-  const dots = document.getElementById('pin-dots');
-  dots.innerHTML = [0,1,2,3].map(() => '<div class="pin-dot"></div>').join('');
-
+  document.getElementById('pindots').innerHTML = [0,1,2,3].map(() => '<div class="pin-dot"></div>').join('');
   // Keypad
-  const keypad = document.getElementById('pin-keypad');
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
-  keypad.innerHTML = keys.map(k => k === ''
-    ? '<div></div>'
-    : `<button class="pin-key${k==='⌫'?' del':''}" onclick="pinKey('${k}')">${k}</button>`
+  document.getElementById('pinpad').innerHTML = keys.map(k =>
+    k === '' ? '<div></div>' : `<button class="pin-key" onclick="pk('${k}')">${k}</button>`
   ).join('');
 }
 
-function selectMember(name) {
-  selectedMember = name;
-  pinBuffer = '';
-  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('selected'));
-  document.querySelectorAll('.member-btn').forEach(b => { if (b.textContent.trim() === name) b.classList.add('selected'); });
-  document.getElementById('pin-section').classList.add('visible');
-  document.getElementById('pin-label').textContent = `${name}'s PIN`;
-  document.getElementById('pin-error').textContent = '';
-  updatePinDots();
+function selMem(name) {
+  selMember = name; pinBuf = '';
+  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelectorAll('.member-btn').forEach(b => { if (b.textContent.trim() === name) b.classList.add('sel'); });
+  document.getElementById('pinbox').classList.add('show');
+  document.getElementById('pinlbl').textContent = name + "'s PIN";
+  document.getElementById('pinerr').textContent = '';
+  updDots();
 }
 
-function pinKey(key) {
-  if (key === '⌫') { pinBuffer = pinBuffer.slice(0,-1); updatePinDots(); return; }
-  if (pinBuffer.length >= 4) return;
-  pinBuffer += key;
-  updatePinDots();
-  if (pinBuffer.length === 4) checkPin();
+function pk(k) {
+  if (k === '⌫') { pinBuf = pinBuf.slice(0,-1); updDots(); return; }
+  if (pinBuf.length >= 4) return;
+  pinBuf += k; updDots();
+  if (pinBuf.length === 4) checkPin();
 }
 
-function updatePinDots() {
-  document.querySelectorAll('.pin-dot').forEach((d,i) => {
-    d.classList.toggle('filled', i < pinBuffer.length);
-  });
+function updDots() {
+  document.querySelectorAll('.pin-dot').forEach((d,i) => d.classList.toggle('on', i < pinBuf.length));
 }
 
 function checkPin() {
-  const member = MEMBERS.find(m => m.name === selectedMember);
-  if (member && pinBuffer === member.pin) {
-    sessionStorage.setItem('wf_user', selectedMember);
-    loginAs(selectedMember);
-  } else {
-    document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
-    setTimeout(() => { pinBuffer = ''; updatePinDots(); }, 600);
-  }
+  const m = MEMBERS.find(m => m.name === selMember);
+  if (m && pinBuf === m.pin) { sessionStorage.setItem('wf_user', selMember); loginAs(selMember); }
+  else { document.getElementById('pinerr').textContent = 'Incorrect PIN. Try again.'; setTimeout(() => { pinBuf = ''; updDots(); }, 600); }
 }
 
 function loginAs(name) {
-  currentUser = name;
-  const member = MEMBERS.find(m => m.name === name);
+  user = name;
+  const m = MEMBERS.find(m => m.name === name);
   document.getElementById('login-screen').classList.remove('active');
   document.getElementById('app-screen').classList.add('active');
-  document.getElementById('header-name').textContent = name;
-  document.getElementById('header-avatar').textContent = member ? member.emoji : '👤';
-  document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-SG', { weekday:'long', day:'numeric', month:'long' });
-  updateActiveNav('home');
+  document.getElementById('hname').textContent = name;
+  document.getElementById('hav').textContent   = m ? m.emoji : '👤';
+  document.getElementById('hdate').textContent = new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});
+  setDefaultDates();
+  goTo('home');
   loadData();
 }
 
 function logout() {
   sessionStorage.removeItem('wf_user');
-  currentUser = null; pinBuffer = ''; selectedMember = null;
+  user = null; pinBuf = ''; selMember = null;
   document.getElementById('app-screen').classList.remove('active');
   document.getElementById('login-screen').classList.add('active');
-  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById('pin-section').classList.remove('visible');
-  document.getElementById('pin-error').textContent = '';
-  updatePinDots();
+  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('pinbox').classList.remove('show');
+  document.getElementById('pinerr').textContent = '';
+  updDots();
 }
 
-// ══════════════════════════════════════════════════════
-// NAVIGATION
-// ══════════════════════════════════════════════════════
-const NAV_ITEMS = [
-  { id:'home',     label:'Home',     icon:'home'     },
-  { id:'calendar', label:'Calendar', icon:'calendar' },
-  { id:'tasks',    label:'Tasks',    icon:'check'    },
-  { id:'grocery',  label:'Grocery',  icon:'cart'     },
-  { id:'expenses', label:'Expenses', icon:'dollar'   },
-  { id:'more',     label:'More',     icon:'grid'     },
-];
+// ══ NAV ══
+const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays'];
 
-const ICONS = {
-  home:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
-  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-  check:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
-  cart:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
-  dollar:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
-  grid:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
-};
-
-function buildNav() {
-  // Bottom nav (mobile)
-  document.getElementById('bottom-nav').innerHTML = NAV_ITEMS.map(n => `
-    <button class="nav-item" id="nav-${n.id}" onclick="switchSection('${n.id}')">
-      ${ICONS[n.icon]}<span>${n.label}</span>
-    </button>`).join('');
-
-  // Sidebar (desktop)
-  document.getElementById('sidebar').innerHTML = `
-    <div class="sidebar-logo"><span class="logo-emoji">🏠</span>Wong Family</div>` +
-    NAV_ITEMS.map(n => `
-    <div class="sidebar-item" id="side-${n.id}" onclick="switchSection('${n.id}')">
-      ${ICONS[n.icon]} ${n.label}
-    </div>`).join('');
-
-  // More grid
-  const MORE_TILES = [
-    { id:'budgets',   icon:'📊', label:'Budgets'   },
-    { id:'memories',  icon:'💛', label:'Memories'  },
-    { id:'birthdays', icon:'🎂', label:'Birthdays' },
-    { id:'fertility', icon:'🌸', label:'Fertility' },
-    { id:'fridge',    icon:'🍎', label:'Fridge'    },
-    { id:'recurring', icon:'🔄', label:'Recurring' },
-  ];
-  document.getElementById('more-grid').innerHTML = MORE_TILES.map(t => `
-    <div class="more-tile" onclick="switchSection('${t.id}')">
-      <span class="more-icon">${t.icon}</span>
-      <span class="more-label">${t.label}</span>
-    </div>`).join('');
-}
-
-function switchSection(id) {
-  currentSection = id;
+function goTo(id) {
+  section = id;
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  const target = document.getElementById('section-' + id);
-  if (target) target.classList.add('active');
-  updateActiveNav(id);
-  updateFab(id);
-  renderSection(id);
-}
-
-function updateActiveNav(id) {
-  const navId = ['budgets','memories','birthdays','fertility','fridge','recurring'].includes(id) ? 'more' : id;
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
-  const nb = document.getElementById('nav-' + navId);
-  const sb = document.getElementById('side-' + navId);
-  if (nb) nb.classList.add('active');
-  if (sb) sb.classList.add('active');
-}
-
-function updateFab(id) {
+  const t = document.getElementById('s-'+id);
+  if (t) t.classList.add('active');
+  // Update nav highlight
+  const navId = NAV_SECONDARY.includes(id) ? 'more' : id;
+  document.querySelectorAll('.nav-it').forEach(n => n.classList.remove('act'));
+  const nb = document.getElementById('nav-'+navId);
+  if (nb) nb.classList.add('act');
+  // FAB
+  const FAB_MAP = {calendar:'m-event',tasks:'m-task',grocery:'m-grocery',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
   const fab = document.getElementById('fab');
-  const FAB_MAP = {
-    calendar:'modal-event', tasks:'modal-task', grocery:'modal-grocery',
-    memories:'modal-memory', birthdays:'modal-birthday', recurring:'modal-recurring',
-  };
-  if (FAB_MAP[id]) { fab.classList.remove('hidden'); fab._modal = FAB_MAP[id]; }
-  else fab.classList.add('hidden');
+  if (FAB_MAP[id]) { fab.classList.remove('hide'); fab._m = FAB_MAP[id]; }
+  else fab.classList.add('hide');
+  render(id);
 }
 
-function onFab() {
-  const fab = document.getElementById('fab');
-  if (fab._modal) openModal(fab._modal);
+function onFab() { if (document.getElementById('fab')._m) openM(document.getElementById('fab')._m); }
+
+function buildMore() {
+  const tiles = [
+    {id:'budgets',icon:'📊',label:'Budgets'},
+    {id:'memories',icon:'💛',label:'Memories'},
+    {id:'birthdays',icon:'🎂',label:'Birthdays'},
+    {id:'fertility',icon:'🌸',label:'Fertility'},
+    {id:'fridge',icon:'🍎',label:'Fridge'},
+    {id:'recurring',icon:'🔄',label:'Recurring'},
+  ];
+  document.getElementById('more-grid').innerHTML = tiles.map(t =>
+    `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
+  ).join('');
 }
 
-// ══════════════════════════════════════════════════════
-// DATA LOADING
-// ══════════════════════════════════════════════════════
+// ══ DATA ══
 async function loadData() {
-  const icon = document.getElementById('refresh-icon');
-  icon.classList.add('spinning');
   try {
-    const res  = await fetch(GAS_URL + '?action=get_all');
-    appData    = await res.json();
-    renderSection(currentSection);
+    const r = await fetch(GAS_URL + '?action=get_all');
+    data = await r.json();
+    render(section);
     renderHome();
-  } catch (e) {
-    showToast('Could not load data. Check connection.');
-    console.error(e);
-  } finally {
-    icon.classList.remove('spinning');
-  }
+  } catch(e) { toast('Could not load data'); }
 }
 
-// ══════════════════════════════════════════════════════
-// RENDER ROUTER
-// ══════════════════════════════════════════════════════
-function renderSection(id) {
+// ══ RENDER ROUTER ══
+function render(id) {
   switch(id) {
     case 'home':      renderHome();      break;
-    case 'calendar':  renderCalendar();  break;
+    case 'calendar':  renderCal();       break;
     case 'tasks':     renderTasks();     break;
     case 'grocery':   renderGrocery();   break;
     case 'expenses':  renderExpenses();  break;
@@ -1028,589 +738,419 @@ function renderSection(id) {
   }
 }
 
-// ══════════════════════════════════════════════════════
-// HOME
-// ══════════════════════════════════════════════════════
+// ══ HOME ══
 function renderHome() {
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  document.getElementById('home-greeting').innerHTML = `
-    <h2>${greeting}, ${currentUser}! 👋</h2>
-    <p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
-
-  // Today summary card
-  const events    = (appData.events||[]).filter(e => e.dateRaw === todayStr());
-  const tasks     = (appData.todos||[]).filter(t => t.dueRaw && t.dueRaw <= todayStr());
-  const groceries = (appData.groceries||[]).filter(g => !g.bought);
-  document.getElementById('today-card').innerHTML = `
-    <div class="card" style="margin-top:16px;">
-      <div class="card-header"><span class="card-title">Today at a Glance</span></div>
+  const h = new Date().getHours();
+  const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  document.getElementById('greet').innerHTML = `<h2>${g}, ${user}! 👋</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+  const tod = todayStr();
+  const evs = (data.events||[]).filter(e => e.dateRaw === tod);
+  const tks = (data.todos||[]).filter(t => t.dueRaw && t.dueRaw <= tod);
+  document.getElementById('today-wrap').innerHTML = `
+    <div class="card" style="margin-top:14px;">
+      <div class="card-hdr"><span class="card-title">Today at a Glance</span></div>
       <div class="card-body">
-        ${events.length === 0 && tasks.length === 0 ? '<div class="card-empty">Clear schedule today 🎉</div>' : ''}
-        ${events.map(e => `<div class="card-row"><div class="event-dot"></div><div class="card-row-main"><div class="card-row-title">${e.title}</div><div class="card-row-sub">${e.time}</div></div></div>`).join('')}
-        ${tasks.map(t => `<div class="card-row"><div style="font-size:16px;">✅</div><div class="card-row-main"><div class="card-row-title">${t.task}</div><div class="card-row-sub">Due today · ${t.assignee}</div></div></div>`).join('')}
+        ${!evs.length && !tks.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
+        ${evs.map(e => `<div class="row"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${e.title}</div><div class="row-sub">${e.time}</div></div></div>`).join('')}
+        ${tks.map(t => `<div class="row"><div style="font-size:16px">⚠️</div><div class="row-main"><div class="row-title">${t.task}</div><div class="row-sub">Due today · ${t.assignee}</div></div></div>`).join('')}
       </div>
     </div>`;
-
-  // Stats tiles
-  const expenses  = appData.expenses || {};
-  const budgets   = appData.budgets  || [];
-  const totalBudget = budgets.reduce((s,b) => s + b.budget, 0);
-  const overBudget  = budgets.filter(b => b.spent > b.budget).length;
-
-  document.getElementById('home-grid').innerHTML = `
-    <div class="home-tile" onclick="switchSection('grocery')">
-      <span class="tile-icon">🛒</span>
-      <span class="tile-label">To Buy</span>
-      <span class="tile-value">${groceries.length}</span>
-      <span class="tile-sub">items on list</span>
-    </div>
-    <div class="home-tile" onclick="switchSection('tasks')">
-      <span class="tile-icon">✅</span>
-      <span class="tile-label">Open Tasks</span>
-      <span class="tile-value">${(appData.todos||[]).length}</span>
-      <span class="tile-sub">to complete</span>
-    </div>
-    <div class="home-tile" onclick="switchSection('expenses')">
-      <span class="tile-icon">💰</span>
-      <span class="tile-label">Spent This Month</span>
-      <span class="tile-value">$${(expenses.total||0).toFixed(0)}</span>
-      <span class="tile-sub">family account</span>
-    </div>
-    <div class="home-tile" onclick="switchSection('budgets')">
-      <span class="tile-icon">${overBudget > 0 ? '⚠️' : '📊'}</span>
-      <span class="tile-label">Budgets</span>
-      <span class="tile-value">${budgets.length}</span>
-      <span class="tile-sub">${overBudget > 0 ? overBudget + ' over limit' : 'all on track'}</span>
-    </div>`;
+  const exp = data.expenses || {};
+  const buds = data.budgets || [];
+  const over = buds.filter(b => b.spent > b.budget).length;
+  const groc = (data.groceries||[]).filter(g => !g.bought).length;
+  const opn  = (data.todos||[]).length;
+  document.getElementById('home-tiles').innerHTML = `
+    <div class="tile" onclick="goTo('grocery')"><div class="tile-icon">🛒</div><div class="tile-lbl">To Buy</div><div class="tile-val">${groc}</div><div class="tile-sub">items on list</div></div>
+    <div class="tile" onclick="goTo('tasks')"><div class="tile-icon">✅</div><div class="tile-lbl">Open Tasks</div><div class="tile-val">${opn}</div><div class="tile-sub">to complete</div></div>
+    <div class="tile" onclick="goTo('expenses')"><div class="tile-icon">💰</div><div class="tile-lbl">Spent This Month</div><div class="tile-val">$${((exp.total||0)).toFixed(0)}</div><div class="tile-sub">family</div></div>
+    <div class="tile" onclick="goTo('budgets')"><div class="tile-icon">${over>0?'⚠️':'📊'}</div><div class="tile-lbl">Budgets</div><div class="tile-val">${buds.length}</div><div class="tile-sub">${over>0?over+' over limit':'all on track'}</div></div>`;
 }
 
-// ══════════════════════════════════════════════════════
-// CALENDAR
-// ══════════════════════════════════════════════════════
-function renderCalendar() {
-  const events = appData.events || [];
-  const el = document.getElementById('calendar-list');
-  if (!events.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">📅</div>No upcoming events</div>'; return; }
-  el.innerHTML = events.map(e => {
-    const tags = (e.tags||[]).map(t => `<span class="event-tag badge-blue">${t}</span>`).join('');
-    return `<div class="card-row">
-      <div class="event-dot"></div>
-      <div class="card-row-main">
-        <div class="card-row-title">${e.title}</div>
-        <div class="card-row-sub">${e.date} · ${e.time}${e.notes ? ' · ' + e.notes : ''}</div>
-        ${tags ? '<div style="margin-top:4px;">' + tags + '</div>' : ''}
+// ══ CALENDAR ══
+function renderCal() {
+  const evs = data.events || [];
+  const el  = document.getElementById('cal-list');
+  if (!evs.length) { el.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
+  el.innerHTML = evs.map(e => `
+    <div class="row">
+      <div style="font-size:22px;flex-shrink:0;">📅</div>
+      <div class="row-main">
+        <div class="row-title">${e.title}</div>
+        <div class="row-sub">${e.date} · ${e.time}${e.notes?' · '+e.notes:''}</div>
+        ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
       </div>
-      <button onclick="deleteEvent('${e.id}')" style="color:var(--ink-faint);font-size:18px;padding:4px 8px;opacity:.5;">✕</button>
-    </div>`;
-  }).join('');
+      <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:18px;padding:4px 6px;flex-shrink:0;">✕</button>
+    </div>`).join('');
 }
 
-async function deleteEvent(id) {
+async function delEvent(id) {
   if (!confirm('Delete this event?')) return;
-  await gasPost({ note:'delete_event', event_id: id });
-  appData.events = (appData.events||[]).filter(e => e.id !== id);
-  renderCalendar(); renderHome();
-  showToast('Event deleted');
+  await gPost({note:'delete_event',event_id:id});
+  data.events = (data.events||[]).filter(e => e.id !== id);
+  renderCal(); renderHome(); toast('Event deleted');
 }
 
-// ══════════════════════════════════════════════════════
-// TASKS
-// ══════════════════════════════════════════════════════
+// ══ TASKS ══
 function renderTasks() {
-  const todos = appData.todos || [];
-  const el = document.getElementById('tasks-list');
-  if (!todos.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">✅</div>No open tasks — all done!</div>'; return; }
-  const grouped = {};
-  FAMILY_MEMBERS.forEach(m => grouped[m] = []);
-  todos.forEach(t => { if (!grouped[t.assignee]) grouped[t.assignee] = []; grouped[t.assignee].push(t); });
-  el.innerHTML = FAMILY_MEMBERS.filter(m => grouped[m] && grouped[m].length > 0).map(m => `
-    <div style="padding:8px 16px 4px;font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;">${m}</div>
-    ${grouped[m].map(t => `
+  const todos = data.todos || [];
+  const el = document.getElementById('task-list');
+  if (!todos.length) { el.innerHTML = '<div class="empty"><div class="ei">✅</div>All done — no open tasks!</div>'; return; }
+  const g = {};
+  FAM.forEach(m => g[m] = []);
+  todos.forEach(t => { if (!g[t.assignee]) g[t.assignee]=[]; g[t.assignee].push(t); });
+  el.innerHTML = FAM.filter(m => g[m] && g[m].length).map(m =>
+    `<div style="padding:8px 16px 2px;font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;">${m}</div>`+
+    g[m].map(t => `
       <div class="task-row">
-        <div class="task-check" onclick="completeTask(${t.rowNum}, this)"></div>
+        <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
         <div class="task-main">
-          <div class="task-title">${t.task}</div>
-          <div class="task-meta">${t.due ? 'Due ' + t.due : 'No due date'}</div>
+          <div class="task-ttl">${t.task}</div>
+          <div class="task-meta">${t.due?'Due '+t.due:'No due date'}</div>
         </div>
-        <button class="task-del" onclick="deleteTask(${t.rowNum})" title="Delete">✕</button>
-      </div>`).join('')}`).join('');
+        <button onclick="delTask(${t.rowNum})" style="color:#9898aa;font-size:18px;padding:4px 6px;">✕</button>
+      </div>`).join('')
+  ).join('');
 }
 
-async function completeTask(rowNum, el) {
-  el.classList.add('done');
-  await gasPost({ note:'complete_todo', todo_id: rowNum });
-  appData.todos = (appData.todos||[]).filter(t => t.rowNum !== rowNum);
-  setTimeout(() => { renderTasks(); renderHome(); }, 400);
-  showToast('Task done! 🎉');
+async function doneTask(n, el) {
+  el.classList.add('done'); el.textContent = '✓';
+  await gPost({note:'complete_todo',todo_id:n});
+  data.todos = (data.todos||[]).filter(t => t.rowNum !== n);
+  setTimeout(()=>{ renderTasks(); renderHome(); }, 400);
+  toast('Task done! 🎉');
 }
 
-async function deleteTask(rowNum) {
-  if (!confirm('Delete this task?')) return;
-  await gasPost({ note:'delete_todo', todo_id: rowNum });
-  appData.todos = (appData.todos||[]).filter(t => t.rowNum !== rowNum);
-  renderTasks(); renderHome();
-  showToast('Task deleted');
+async function delTask(n) {
+  if (!confirm('Delete task?')) return;
+  await gPost({note:'delete_todo',todo_id:n});
+  data.todos = (data.todos||[]).filter(t => t.rowNum !== n);
+  renderTasks(); renderHome(); toast('Task deleted');
 }
 
-// ══════════════════════════════════════════════════════
-// GROCERY
-// ══════════════════════════════════════════════════════
+// ══ GROCERY ══
 function renderGrocery() {
-  const items = appData.groceries || [];
-  const el = document.getElementById('grocery-list');
+  const items = data.groceries || [];
+  const el = document.getElementById('groc-list');
+  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🛒</div>Grocery list is empty</div>'; return; }
   const toBuy  = items.filter(i => !i.bought);
   const bought = items.filter(i => i.bought);
-  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🛒</div>Grocery list is empty</div>'; return; }
   el.innerHTML =
-    toBuy.map(i => groceryRow(i)).join('') +
-    (bought.length ? `<div style="padding:8px 16px 4px;font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;">Bought</div>` + bought.map(i => groceryRow(i)).join('') : '');
+    toBuy.map(i => gRow(i)).join('') +
+    (bought.length ? `<div style="padding:8px 16px 2px;font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;">Bought</div>`+bought.map(i=>gRow(i)).join('') : '');
 }
 
-function groceryRow(i) {
-  return `<div class="grocery-row">
-    <div class="grocery-check ${i.bought?'bought':''}" onclick="toggleGrocery('${i.name}','${i.bought}',this)"></div>
-    <span class="grocery-label ${i.bought?'bought':''}">${i.name}</span>
+function gRow(i) {
+  return `<div class="groc-row">
+    <div class="groc-chk ${i.bought?'done':''}" onclick="togGroc('${i.name}',${i.bought},this)"></div>
+    <span class="groc-lbl ${i.bought?'done':''}">${i.name}</span>
   </div>`;
 }
 
-async function toggleGrocery(name, bought, el) {
-  if (!bought || bought === 'false') {
-    el.classList.add('bought');
-    el.nextElementSibling.classList.add('bought');
-    await gasPost({ note:'bought ' + name });
-    const item = (appData.groceries||[]).find(i => i.name === name);
-    if (item) item.bought = true;
-    setTimeout(renderGrocery, 400);
-    showToast(name + ' marked as bought');
-  }
+async function togGroc(name, bought, el) {
+  if (bought) return;
+  el.classList.add('done'); el.textContent = '✓';
+  el.nextElementSibling.classList.add('done');
+  await gPost({note:'bought '+name});
+  const it = (data.groceries||[]).find(i => i.name === name);
+  if (it) it.bought = true;
+  setTimeout(renderGrocery, 400);
+  toast(name + ' marked as bought ✓');
 }
 
-// ══════════════════════════════════════════════════════
-// EXPENSES
-// ══════════════════════════════════════════════════════
+// ══ EXPENSES ══
 function renderExpenses() {
-  const exp = appData.expenses || { rows:[], total:0, byCategory:{}, byAccount:{} };
-  const el  = document.getElementById('expenses-body');
-  const now = new Date();
-  const monthName = now.toLocaleDateString('en-SG', { month:'long', year:'numeric' });
-
-  const catEntries = Object.entries(exp.byCategory||{}).sort((a,b) => b[1]-a[1]);
-  const pieRows = catEntries.map((e,i) => `
-    <div class="pie-row">
-      <div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
-      <span class="pie-label">${e[0]}</span>
-      <span class="pie-val">$${e[1].toFixed(2)}</span>
-    </div>`).join('');
-
-  const recentRows = (exp.rows||[]).slice(0,15).map(r => `
-    <div class="card-row">
-      <div class="card-row-main">
-        <div class="card-row-title">${r.desc || r.category}</div>
-        <div class="card-row-sub">${r.date} · ${r.category} · ${r.account}</div>
-      </div>
-      <div class="card-row-right">
-        <div class="exp-amount">$${r.amount.toFixed(2)}</div>
-        <button onclick="deleteExpense(${r.rowNum})" style="color:var(--ink-faint);font-size:12px;margin-top:2px;">Delete</button>
-      </div>
-    </div>`).join('');
-
+  const exp = data.expenses || {rows:[],total:0,byCategory:{}};
+  const el  = document.getElementById('exp-body');
+  const month = new Date().toLocaleDateString('en-SG',{month:'long',year:'numeric'});
+  const cats  = Object.entries(exp.byCategory||{}).sort((a,b)=>b[1]-a[1]);
   el.innerHTML = `
     <div class="card">
-      <div class="card-header">
-        <span class="card-title">💰 ${monthName}</span>
-        <span class="badge badge-blue">$${(exp.total||0).toFixed(2)} total</span>
+      <div class="card-hdr"><span class="card-title">💰 ${month}</span><span class="badge b-blue">$${(exp.total||0).toFixed(2)}</span></div>
+      <div class="pie-wrap">${cats.map((e,i) => `
+        <div class="pie-row">
+          <div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
+          <span class="pie-lbl">${e[0]}</span>
+          <span class="pie-val">$${e[1].toFixed(2)}</span>
+        </div>`).join('') || '<div class="empty">No expenses this month</div>'}
       </div>
-      <div class="pie-wrap">${pieRows || '<div class="card-empty">No expenses this month</div>'}</div>
     </div>
     <div class="card">
-      <div class="card-header"><span class="card-title">Recent Entries</span></div>
-      <div class="card-body">${recentRows || '<div class="card-empty">No entries yet</div>'}</div>
+      <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
+      <div class="card-body">${(exp.rows||[]).slice(0,15).map(r => `
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">${r.desc||r.category}</div>
+            <div class="row-sub">${r.date} · ${r.category} · ${r.account}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:13px;font-weight:700;">$${r.amount.toFixed(2)}</div>
+            <button onclick="delExp(${r.rowNum})" style="font-size:12px;color:#9898aa;">Delete</button>
+          </div>
+        </div>`).join('') || '<div class="empty">No entries yet</div>'}
+      </div>
     </div>`;
 }
 
-async function deleteExpense(rowNum) {
-  if (!confirm('Delete this expense?')) return;
-  await gasPost({ note:'delete_expense', row_id: rowNum });
-  if (appData.expenses) {
-    const row = appData.expenses.rows.find(r => r.rowNum === rowNum);
-    if (row) { appData.expenses.total -= row.amount; appData.expenses.rows = appData.expenses.rows.filter(r => r.rowNum !== rowNum); }
-  }
-  renderExpenses();
-  showToast('Expense deleted');
+async function delExp(n) {
+  if (!confirm('Delete expense?')) return;
+  await gPost({note:'delete_expense',row_id:n});
+  if (data.expenses) { const r = data.expenses.rows.find(r=>r.rowNum===n); if(r){data.expenses.total-=r.amount;data.expenses.rows=data.expenses.rows.filter(r=>r.rowNum!==n);} }
+  renderExpenses(); toast('Expense deleted');
 }
 
-// ══════════════════════════════════════════════════════
-// BUDGETS
-// ══════════════════════════════════════════════════════
+// ══ BUDGETS ══
 function renderBudgets() {
-  const budgets = appData.budgets || [];
-  const el = document.getElementById('budgets-list');
-  if (!budgets.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">📊</div>No budgets set yet</div>'; return; }
-  el.innerHTML = budgets.sort((a,b) => a.group.localeCompare(b.group)).map(b => {
-    const pct    = b.budget > 0 ? Math.round(b.spent / b.budget * 100) : 0;
-    const over   = b.spent > b.budget;
-    const warn   = pct >= 80 && !over;
-    const color  = over ? 'var(--red)' : warn ? 'var(--amber)' : 'var(--green)';
-    const badge  = over ? 'badge-red' : warn ? 'badge-amber' : 'badge-green';
-    const label  = over ? '🚨 Over' : warn ? '⚠️ ' + pct + '%' : '✅ ' + pct + '%';
-    return `<div class="budget-row">
-      <div class="budget-row-header">
-        <span class="budget-group-name">${b.group}</span>
-        <span class="badge ${badge}">${label}</span>
-      </div>
-      <div class="progress-wrap">
-        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${color};"></div></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--ink-faint);">
+  const buds = data.budgets || [];
+  const el   = document.getElementById('bud-list');
+  if (!buds.length) { el.innerHTML = '<div class="empty"><div class="ei">📊</div>No budgets set yet</div>'; return; }
+  el.innerHTML = buds.sort((a,b)=>a.group.localeCompare(b.group)).map(b => {
+    const pct   = b.budget>0 ? Math.round(b.spent/b.budget*100) : 0;
+    const over  = b.spent > b.budget;
+    const warn  = pct >= 80 && !over;
+    const col   = over?'#e05252':warn?'#d4861e':'#3aaa75';
+    const cls   = over?'b-red':warn?'b-amber':'b-green';
+    const lbl   = over?'🚨 Over':warn?'⚠️ '+pct+'%':'✅ '+pct+'%';
+    return `<div class="bud-row">
+      <div class="bud-hdr"><span class="bud-name">${b.group}</span><span class="badge ${cls}">${lbl}</span></div>
+      <div class="prog-track"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${col};"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#9898aa;margin-top:4px;">
         <span>$${b.spent.toFixed(2)} spent</span><span>$${b.budget.toFixed(2)} budget</span>
       </div>
     </div>`;
   }).join('');
 }
 
-// ══════════════════════════════════════════════════════
-// MEMORIES
-// ══════════════════════════════════════════════════════
+// ══ MEMORIES ══
 function renderMemories() {
-  const memories = appData.memories || [];
-  const el = document.getElementById('memories-list');
-  if (!memories.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">💛</div>No memories yet — log your first one!</div>'; return; }
-  const typeEmoji = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
-  el.innerHTML = memories.map(m => `
-    <div class="memory-row">
-      <div class="memory-type">${typeEmoji(m.type)} ${m.type.split(' ').slice(1).join(' ')} · ${m.person}</div>
-      <div class="memory-text">${m.memory}</div>
-      <div class="memory-meta">📅 ${m.date} · logged by ${m.loggedBy}</div>
+  const mems = data.memories || [];
+  const el   = document.getElementById('mem-list');
+  if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>No memories yet</div>'; return; }
+  const te = t => t.includes('Milestone')?'🏆':t.includes('Quote')?'💬':'💛';
+  el.innerHTML = mems.map(m => `
+    <div class="mem-row">
+      <div class="mem-type">${te(m.type)} ${m.type.split(' ').slice(1).join(' ')} · ${m.person}</div>
+      <div class="mem-text">${m.memory}</div>
+      <div class="mem-meta">📅 ${m.date} · logged by ${m.loggedBy}</div>
     </div>`).join('');
 }
 
-// ══════════════════════════════════════════════════════
-// FERTILITY
-// ══════════════════════════════════════════════════════
+// ══ FERTILITY ══
 function renderFertility() {
-  const f  = appData.fertility || {};
-  const el = document.getElementById('fertility-body');
-  if (!f.lastPeriodStart) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🌸</div>No data yet. Log your first entry below.</div>'; return; }
+  const f  = data.fertility || {};
+  const el = document.getElementById('fert-body');
+  if (!f.lastPeriodStart) { el.innerHTML = '<div class="empty"><div class="ei">🌸</div>No data yet. Log your first entry below.</div>'; return; }
   const rows = [
     ['Last Period Start', f.lastPeriodStart],
     ['Next Period (est.)', f.nextPeriod],
-    ['Fertile Window', f.fertileStart && f.fertileEnd ? f.fertileStart + ' – ' + f.fertileEnd : '—'],
-    ['Period Duration', f.duration ? f.duration + ' days' : '—'],
-    ['Last Ovulation', f.lastOvulation || '—'],
+    ['Fertile Window', f.fertileStart&&f.fertileEnd ? f.fertileStart+' – '+f.fertileEnd : '—'],
+    ['Period Duration', f.duration ? f.duration+' days' : '—'],
+    ['Last Ovulation', f.lastOvulation||'—'],
   ];
-  el.innerHTML = rows.map(r => `
-    <div class="fertility-stat">
-      <span class="fertility-label">${r[0]}</span>
-      <span class="fertility-value">${r[1] || '—'}</span>
-    </div>`).join('') +
-    ((f.symptoms||[]).length ? `
-    <div style="padding:12px 16px;border-top:1px solid var(--border);">
-      <div style="font-size:12px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Symptoms</div>
-      ${f.symptoms.map(s => `<div style="font-size:14px;color:var(--ink);padding:4px 0;border-bottom:1px solid var(--border);">${s.date} · ${s.note}</div>`).join('')}
-    </div>` : '');
+  el.innerHTML = rows.map(r => `<div class="fert-stat"><span class="fert-lbl">${r[0]}</span><span class="fert-val">${r[1]||'—'}</span></div>`).join('') +
+    ((f.symptoms||[]).length ? `<div style="padding:12px 16px;"><div style="font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Symptoms</div>${f.symptoms.map(s=>`<div style="font-size:14px;padding:4px 0;border-bottom:1px solid #e4e6ef;">${s.date} · ${s.note}</div>`).join('')}</div>` : '');
 }
 
-// ══════════════════════════════════════════════════════
-// FRIDGE
-// ══════════════════════════════════════════════════════
+// ══ FRIDGE ══
 function renderFridge() {
-  const items = appData.fridge || [];
+  const items = (data.fridge||[]).filter(i => i.stock > 0);
   const el = document.getElementById('fridge-list');
-  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🍎</div>Fridge is empty</div>'; return; }
-  el.innerHTML = items.filter(i => i.stock > 0).map(i => `
-    <div class="fridge-row">
-      <div>
-        <div class="fridge-name">${i.name}</div>
-        <div style="font-size:12px;color:var(--ink-faint);">Updated ${i.lastUpdated}${i.stale ? ' · ⚠️ stale' : ''}</div>
-      </div>
-      <div class="fridge-stock ${i.stale ? 'fridge-stale' : ''}">${i.stock}</div>
-    </div>`).join('') || '<div class="card-empty">All items depleted</div>';
+  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🍎</div>Fridge is empty</div>'; return; }
+  el.innerHTML = items.map(i => `
+    <div class="fr-row">
+      <div><div style="font-size:14px;font-weight:600;">${i.name}</div><div style="font-size:12px;color:#9898aa;">Updated ${i.lastUpdated}${i.stale?' · ⚠️ stale':''}</div></div>
+      <div class="fr-num ${i.stale?'':''}">×${i.stock}</div>
+    </div>`).join('');
 }
 
-// ══════════════════════════════════════════════════════
-// RECURRING
-// ══════════════════════════════════════════════════════
+// ══ RECURRING ══
 function renderRecurring() {
-  const items = appData.recurring || [];
-  const el = document.getElementById('recurring-list');
-  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🔄</div>No recurring expenses set up</div>'; return; }
-  const suffix = d => d===1?'st':d===2?'nd':d===3?'rd':'th';
+  const items = data.recurring || [];
+  const el = document.getElementById('rec-list');
+  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🔄</div>No recurring expenses</div>'; return; }
+  const sfx = d => d===1?'st':d===2?'nd':d===3?'rd':'th';
   el.innerHTML = items.map(r => {
-    const when = r.daysLeft === 0 ? '<span class="badge badge-red">Due today</span>' : r.daysLeft === 1 ? '<span class="badge badge-amber">Tomorrow</span>' : `<span class="badge badge-gray">In ${r.daysLeft} days</span>`;
+    const w = r.daysLeft===0?'<span class="badge b-red">Today</span>':r.daysLeft===1?'<span class="badge b-amber">Tomorrow</span>':`<span class="badge b-gray">In ${r.daysLeft}d</span>`;
     return `<div class="rec-row">
       <div class="rec-main">
         <div class="rec-name">${r.name}</div>
-        <div class="rec-meta">${r.category} · ${r.account} · ${r.day}${suffix(r.day)} of month</div>
+        <div class="rec-meta">${r.category} · ${r.day}${sfx(r.day)} of month</div>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-        <span class="rec-amount">$${r.amount.toFixed(2)}</span>
-        ${when}
-        <button onclick="deleteRecurring(${r.rowNum})" style="font-size:12px;color:var(--ink-faint);">Remove</button>
+      <div class="rec-right">
+        <div class="rec-amt">$${r.amount.toFixed(2)}</div>
+        <div style="margin-top:4px;">${w}</div>
+        <button onclick="delRec(${r.rowNum})" style="font-size:12px;color:#9898aa;margin-top:4px;">Remove</button>
       </div>
     </div>`;
   }).join('');
 }
 
-async function deleteRecurring(rowNum) {
-  if (!confirm('Remove this recurring expense?')) return;
-  await gasPost({ note:'delete_recurring', row_num: rowNum });
-  appData.recurring = (appData.recurring||[]).filter(r => r.rowNum !== rowNum);
-  renderRecurring();
-  showToast('Removed');
+async function delRec(n) {
+  if (!confirm('Remove recurring expense?')) return;
+  await gPost({note:'delete_recurring',row_num:n});
+  data.recurring = (data.recurring||[]).filter(r => r.rowNum !== n);
+  renderRecurring(); toast('Removed');
 }
 
-// ══════════════════════════════════════════════════════
-// BIRTHDAYS
-// ══════════════════════════════════════════════════════
+// ══ BIRTHDAYS ══
 function renderBirthdays() {
-  const items = appData.birthdays || [];
-  const el = document.getElementById('birthdays-list');
-  if (!items.length) { el.innerHTML = '<div class="card-empty"><div class="card-empty-icon">🎂</div>No birthdays saved yet</div>'; return; }
+  const items = data.birthdays || [];
+  const el = document.getElementById('bd-list');
+  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🎂</div>No birthdays saved yet</div>'; return; }
   el.innerHTML = items.map(b => {
-    const icon  = b.type === 'Birthday' ? '🎂' : '💍';
-    const when  = b.daysAway === 0 ? '<span class="badge badge-red">Today! 🥳</span>' : b.daysAway === 1 ? '<span class="badge badge-amber">Tomorrow!</span>' : b.daysAway <= 7 ? `<span class="badge badge-amber">In ${b.daysAway} days</span>` : `<span class="badge badge-gray">In ${b.daysAway} days</span>`;
+    const ic = b.type==='Birthday'?'🎂':'💍';
+    const w  = b.daysAway===0?'<span class="badge b-red">Today! 🥳</span>':b.daysAway===1?'<span class="badge b-amber">Tomorrow!</span>':b.daysAway<=7?`<span class="badge b-amber">In ${b.daysAway} days</span>`:`<span class="badge b-gray">In ${b.daysAway} days</span>`;
     return `<div class="bd-row">
-      <div class="bd-icon">${icon}</div>
+      <div class="bd-ic">${ic}</div>
       <div class="bd-main">
         <div class="bd-name">${b.name}</div>
-        <div class="bd-meta">${b.dateLabel}${b.agePart ? ' · ' + b.agePart : ''}${b.notes ? ' · ' + b.notes : ''}</div>
+        <div class="bd-meta">${b.dateLabel}${b.agePart?' · '+b.agePart:''}${b.notes?' · '+b.notes:''}</div>
       </div>
-      <div class="bd-days">${when}</div>
+      <div>${w}</div>
     </div>`;
   }).join('');
 }
 
-// ══════════════════════════════════════════════════════
-// MODALS & FORMS
-// ══════════════════════════════════════════════════════
+// ══ MODALS ══
 function buildModals() {
-  // Task assignee chips
-  buildChips('task-assign-chips', FAMILY_MEMBERS, 'Everyone', 'task-assign');
-
-  // Memory type chips
-  buildChips('memory-type-chips', ['🏆 Milestone','💬 Quote','💛 Moment'], '💛 Moment', 'mem-type');
-
-  // Memory person chips
-  buildChips('memory-person-chips', FAMILY_MEMBERS, 'Everyone', 'mem-person');
-
-  // Birthday type chips
-  buildChips('bd-type-chips', ['Birthday','Wedding Anniversary'], 'Birthday', 'bd-type');
-
-  // Fertility type chips
-  const fertTypes = ['Period Start','Period End','Ovulation','Symptom'];
-  buildChips('fertility-type-chips', fertTypes, 'Period Start', 'fert-type');
-
-  // Recurring account chips
-  buildChips('rec-account-chips', ['Personal Account','Family'], 'Family', 'rec-acct');
-
+  chips('tk-chips', FAM, 'Everyone', 'tk-a');
+  chips('mem-type-chips', ['🏆 Milestone','💬 Quote','💛 Moment'], '💛 Moment', 'mt');
+  chips('mem-pers-chips', FAM, 'Everyone', 'mp');
+  chips('bd-type-chips', ['Birthday','Wedding Anniversary'], 'Birthday', 'bdt');
+  chips('fert-chips', ['Period Start','Period End','Ovulation','Symptom'], 'Period Start', 'ft');
+  chips('rc-acct-chips', ['Personal Account','Family'], 'Family', 'rca');
   // Budget group select
-  const bgSel = document.getElementById('budget-group-select');
-  bgSel.innerHTML = Object.keys(EXPENSE_GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
-
-  // Recurring group select (updates category select on change)
-  const rgSel = document.getElementById('rec-group-select');
-  rgSel.innerHTML = Object.keys(EXPENSE_GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
-  rgSel.addEventListener('change', () => updateRecurringCats());
-  updateRecurringCats();
-
-  // Default dates to today
-  const today = todayStr();
-  ['ev-date','task-due','memory-date','fertility-date-input'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = today;
-  });
+  const bgs = document.getElementById('bud-grp');
+  bgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  // Recurring group select
+  const rgs = document.getElementById('rc-grp');
+  rgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  updateRcCats();
 }
 
-function buildChips(containerId, options, defaultVal, key) {
-  const el = document.getElementById(containerId);
+function chips(id, opts, def, key) {
+  const el = document.getElementById(id);
   if (!el) return;
-  el.innerHTML = options.map(o => `<span class="chip${o===defaultVal?' selected':''}" data-key="${key}" data-val="${o}" onclick="selectChip(this,'${key}')">${o}</span>`).join('');
+  el.innerHTML = opts.map(o => `<span class="chip${o===def?' sel':''}" data-k="${key}" data-v="${o}" onclick="selChip(this,'${key}')">${o}</span>`).join('');
 }
 
-function selectChip(el, key) {
-  el.closest('.chip-group').querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
+function selChip(el, key) {
+  el.closest('.chips').querySelectorAll('.chip').forEach(c => c.classList.remove('sel'));
+  el.classList.add('sel');
 }
 
-function getChip(key) {
-  const el = document.querySelector(`.chip[data-key="${key}"].selected`);
-  return el ? el.dataset.val : null;
+function gc(key) {
+  const el = document.querySelector(`.chip[data-k="${key}"].sel`);
+  return el ? el.dataset.v : null;
 }
 
-function updateRecurringCats() {
-  const group = document.getElementById('rec-group-select').value;
-  const cats  = EXPENSE_GROUPS[group] || [];
-  document.getElementById('rec-cat-select').innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+function updateRcCats() {
+  const g = document.getElementById('rc-grp').value;
+  document.getElementById('rc-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
+function openM(id) { document.getElementById(id).classList.add('open'); }
+function closeM(id) { document.getElementById(id).classList.remove('open'); }
 
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-// Submit functions
+// ══ FORM SUBMITS ══
 async function submitEvent() {
-  const title = document.getElementById('ev-title').value.trim();
-  const date  = document.getElementById('ev-date').value;
-  if (!title || !date) { showToast('Please fill in title and date'); return; }
-  const time    = document.getElementById('ev-time').value;
-  const endTime = document.getElementById('ev-end-time').value;
-  const notes   = document.getElementById('ev-notes').value.trim();
-  await gasPost({ note:'add_event', event_title:title, event_date:formatDateForGAS(date), event_time:formatTimeForGAS(time), event_end_time:formatTimeForGAS(endTime), event_notes:notes });
-  closeModal('modal-event');
-  document.getElementById('ev-title').value = '';
-  document.getElementById('ev-notes').value = '';
-  showToast('Event added! ✅');
-  await loadData();
+  const title = v('ev-title'); const date = v('ev-date');
+  if (!title||!date) { toast('Please fill in title and date'); return; }
+  await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:v('ev-notes')});
+  closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added! ✅'); await loadData();
 }
 
 async function submitTask() {
-  const task = document.getElementById('task-title').value.trim();
-  if (!task) { showToast('Please enter a task'); return; }
-  const assignee = getChip('task-assign') || 'Everyone';
-  const due      = document.getElementById('task-due').value;
-  await gasPost({ note:'add_todo', todo_task:task, todo_assignee:assignee, todo_due:due ? formatDateForGAS(due) : '' });
-  closeModal('modal-task');
-  document.getElementById('task-title').value = '';
-  showToast('Task added! ✅');
-  await loadData();
+  const task = v('tk-title');
+  if (!task) { toast('Please enter a task'); return; }
+  await gPost({note:'add_todo',todo_task:task,todo_assignee:gc('tk-a')||'Everyone',todo_due:v('tk-due')?fmtDate(v('tk-due')):''});
+  closeM('m-task'); clr('tk-title'); toast('Task added! ✅'); await loadData();
 }
 
 async function submitGrocery() {
-  const item = document.getElementById('grocery-item').value.trim();
-  if (!item) { showToast('Please enter an item'); return; }
-  await gasPost({ note:'+' + item });
-  closeModal('modal-grocery');
-  document.getElementById('grocery-item').value = '';
-  showToast(item + ' added to list! 🛒');
-  await loadData();
+  const item = v('gr-item');
+  if (!item) { toast('Please enter an item'); return; }
+  await gPost({note:'+'+item});
+  closeM('m-grocery'); clr('gr-item'); toast(item+' added! 🛒'); await loadData();
 }
 
 async function submitMemory() {
-  const text = document.getElementById('memory-text').value.trim();
-  if (!text) { showToast('Please write the memory'); return; }
-  const type   = getChip('mem-type')   || '💛 Moment';
-  const person = getChip('mem-person') || 'Everyone';
-  const date   = document.getElementById('memory-date').value;
-  await gasPost({ note:'add_memory', memory_type:type, memory_person:person, memory_text:text, memory_date:date ? formatDateForGAS(date) : '' });
-  closeModal('modal-memory');
-  document.getElementById('memory-text').value = '';
-  showToast('Memory saved! 💛');
-  await loadData();
+  const text = v('mem-text');
+  if (!text) { toast('Please write the memory'); return; }
+  await gPost({note:'add_memory',memory_type:gc('mt')||'💛 Moment',memory_person:gc('mp')||'Everyone',memory_text:text,memory_date:v('mem-date')?fmtDate(v('mem-date')):''});
+  closeM('m-memory'); clr('mem-text'); toast('Memory saved! 💛'); await loadData();
 }
 
 async function submitBirthday() {
-  const name = document.getElementById('bd-name').value.trim();
-  const month = document.getElementById('bd-month').value;
-  const day   = document.getElementById('bd-day').value;
-  if (!name || !month || !day) { showToast('Please fill in name, month, and day'); return; }
-  const type  = getChip('bd-type') || 'Birthday';
-  const year  = document.getElementById('bd-year').value;
-  const notes = document.getElementById('bd-notes').value.trim();
-  const dateStr = month + '-' + String(day).padStart(2,'0');
-  await gasPost({ note:'add_birthday', name, type, date:dateStr, year, notes });
-  closeModal('modal-birthday');
-  document.getElementById('bd-name').value = '';
-  document.getElementById('bd-day').value  = '';
-  document.getElementById('bd-year').value = '';
-  showToast('Saved! 🎂');
-  await loadData();
+  const name = v('bd-name'); const month = v('bd-month'); const day = v('bd-day');
+  if (!name||!month||!day) { toast('Please fill in name, month, and day'); return; }
+  await gPost({note:'add_birthday',name,type:gc('bdt')||'Birthday',date:month+'-'+String(day).padStart(2,'0'),year:v('bd-year'),notes:v('bd-notes')});
+  closeM('m-birthday'); clr('bd-name','bd-day','bd-year','bd-notes'); toast('Saved! 🎂'); await loadData();
 }
 
 async function submitBudget() {
-  const group  = document.getElementById('budget-group-select').value;
-  const amount = parseFloat(document.getElementById('budget-amount').value);
-  if (!group || isNaN(amount) || amount <= 0) { showToast('Please enter a valid amount'); return; }
-  await gasPost({ note:'set_budget', group, budget:amount });
-  closeModal('modal-budget');
-  document.getElementById('budget-amount').value = '';
-  showToast('Budget saved! 📊');
-  await loadData();
+  const group = v('bud-grp'); const amt = parseFloat(v('bud-amt'));
+  if (!group||isNaN(amt)||amt<=0) { toast('Please enter a valid amount'); return; }
+  await gPost({note:'set_budget',group,budget:amt});
+  closeM('m-budget'); clr('bud-amt'); toast('Budget saved! 📊'); await loadData();
 }
 
-async function submitFertility() {
-  const type  = getChip('fert-type') || 'Period Start';
-  const date  = document.getElementById('fertility-date-input').value;
-  const notes = document.getElementById('fertility-notes-input').value.trim();
-  if (!date) { showToast('Please select a date'); return; }
-  await gasPost({ note:'add_fertility', fertility_type:type, fertility_date:formatDateForGAS(date), fertility_notes:notes });
-  document.getElementById('fertility-notes-input').value = '';
-  showToast('Logged! 🌸');
-  await loadData();
+async function submitFert() {
+  const date = v('fert-date');
+  if (!date) { toast('Please select a date'); return; }
+  await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')});
+  clr('fert-notes'); toast('Logged! 🌸'); await loadData();
 }
 
 async function updateFridge(type) {
-  const name = document.getElementById('fridge-name-input').value.trim();
-  const qty  = parseInt(document.getElementById('fridge-qty-input').value) || 1;
-  if (!name) { showToast('Please enter an item name'); return; }
-  const prefix = type === 'add' ? '+' : '-';
-  await gasPost({ note:`${prefix}fruits ${name} ${qty}` });
-  document.getElementById('fridge-name-input').value = '';
-  document.getElementById('fridge-qty-input').value  = '1';
-  showToast(type === 'add' ? 'Stock added! 🍎' : 'Eating logged! 😋');
-  await loadData();
+  const name = v('fr-name'); const qty = parseInt(v('fr-qty'))||1;
+  if (!name) { toast('Please enter an item name'); return; }
+  await gPost({note:(type==='add'?'+':'-')+'fruits '+name+' '+qty});
+  clr('fr-name'); document.getElementById('fr-qty').value='1';
+  toast(type==='add'?'Stock added! 🍎':'Eating logged! 😋'); await loadData();
 }
 
 async function submitRecurring() {
-  const name    = document.getElementById('rec-name').value.trim();
-  const amount  = parseFloat(document.getElementById('rec-amount').value);
-  const day     = parseInt(document.getElementById('rec-day').value);
-  const group   = document.getElementById('rec-group-select').value;
-  const cat     = document.getElementById('rec-cat-select').value;
-  const account = getChip('rec-acct') || 'Family';
-  if (!name || isNaN(amount) || isNaN(day) || day < 1 || day > 28) { showToast('Please fill all fields (day must be 1–28)'); return; }
-  await gasPost({ note:'add_recurring', rec_name:name, rec_amount:amount, rec_day:day, rec_category:cat, rec_account:account });
-  closeModal('modal-recurring');
-  document.getElementById('rec-name').value   = '';
-  document.getElementById('rec-amount').value = '';
-  document.getElementById('rec-day').value    = '';
-  showToast('Recurring expense saved! 🔄');
-  await loadData();
+  const name = v('rc-name'); const amt = parseFloat(v('rc-amt')); const day = parseInt(v('rc-day'));
+  if (!name||isNaN(amt)||isNaN(day)||day<1||day>28) { toast('Please fill all fields (day: 1–28)'); return; }
+  await gPost({note:'add_recurring',rec_name:name,rec_amount:amt,rec_day:day,rec_category:v('rc-cat'),rec_account:gc('rca')||'Family'});
+  closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved! 🔄'); await loadData();
 }
 
-// ══════════════════════════════════════════════════════
-// GAS API
-// ══════════════════════════════════════════════════════
-async function gasPost(data) {
+// ══ GAS ══
+async function gPost(payload) {
   try {
-    data.user = currentUser || 'Unknown';
-    await fetch(GAS_URL, { method:'POST', body:JSON.stringify(data) });
-  } catch (e) { console.error('GAS POST error:', e); showToast('Error saving. Try again.'); }
+    payload.user = user || 'Unknown';
+    await fetch(GAS_URL, {method:'POST', body:JSON.stringify(payload)});
+  } catch(e) { console.error(e); toast('Error saving. Try again.'); }
 }
 
-// ══════════════════════════════════════════════════════
-// UTILITIES
-// ══════════════════════════════════════════════════════
-function todayStr() {
-  return new Date().toISOString().slice(0,10);
+// ══ UTILS ══
+function v(id) { return document.getElementById(id)?.value?.trim()||''; }
+function clr(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s+'T00:00:00');
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+function fmtTime(s) {
+  if (!s) return '';
+  const [h,m] = s.split(':').map(Number);
+  return `${h===0?12:h>12?h-12:h}:${String(m).padStart(2,'0')}${h>=12?'pm':'am'}`;
+}
+function setDefaultDates() {
+  const tod = todayStr();
+  ['ev-date','tk-due','mem-date','fert-date'].forEach(id => { const el=document.getElementById(id); if(el) el.value=tod; });
 }
 
-function formatDateForGAS(isoDate) {
-  if (!isoDate) return '';
-  const d = new Date(isoDate + 'T00:00:00');
-  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-}
-
-function formatTimeForGAS(timeStr) {
-  if (!timeStr) return '';
-  const [h, m] = timeStr.split(':').map(Number);
-  const mer = h >= 12 ? 'pm' : 'am';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2,'0')}${mer}`;
-}
-
-let toastTimer;
-function showToast(msg) {
+let toastT;
+function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>el.classList.remove('show'), 2800);
 }
 </script>
-
 </body>
 </html>
