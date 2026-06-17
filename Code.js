@@ -1263,7 +1263,7 @@ function scanInboxForTransactions() {
   var templates = [
     {
       name: 'paylah',
-      query: 'from:paylah.alert@dbs.com -label:PayLah-Processed',
+      query: 'from:paylah.alert@dbs.com label:inbox -label:PayLah-Processed',
       priority: 1,
       parse: function(body) {
         var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
@@ -1286,7 +1286,7 @@ function scanInboxForTransactions() {
     },
     {
       name: 'trust',
-      query: 'from:from_us@trustbank.sg -label:PayLah-Processed',
+      query: 'from:from_us@trustbank.sg label:inbox -label:PayLah-Processed',
       priority: 1,
       parse: function(body) {
         var amtMatch = body.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
@@ -1305,7 +1305,7 @@ function scanInboxForTransactions() {
     },
     {
       name: 'shopee',
-      query: 'from:info@mail.shopee.sg -label:PayLah-Processed',
+      query: 'from:info@mail.shopee.sg label:inbox -label:PayLah-Processed',
       priority: 2,
       parse: function(body) {
         var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
