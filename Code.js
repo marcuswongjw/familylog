@@ -795,18 +795,19 @@ function doPost(e) {
 // DATA FETCH FUNCTIONS (called by doGet)
 // ============================================================
 function getAllDashboardData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   return {
     events:    getEvents(),
-    todos:     getTodos(),
-    groceries: getGroceries(),
-    expenses:  getExpensesData(),
-    budgets:   getBudgets(),
-    birthdays: getBirthdays(),
-    memories:  getMemories(),
-    fertility: getFertilityData(),
-    fridge:    getFridgeData(),
-    recurring: getRecurring(),
-    travel:    getTravelData(),
+    todos:     getTodos(ss),
+    groceries: getGroceries(ss),
+    expenses:  getExpensesData(ss),
+    budgets:   getBudgets(ss),
+    birthdays: getBirthdays(ss),
+    memories:  getMemories(ss),
+    fertility: getFertilityData(ss),
+    fridge:    getFridgeData(ss),
+    recurring: getRecurring(ss),
+    travel:    getTravelData(ss),
     expenseGroups: EXPENSE_GROUPS
   };
 }
@@ -846,8 +847,8 @@ function getEvents() {
   } catch (e) { return []; }
 }
 
-function getTodos() {
-  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+function getTodos(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var tdSheet = ss.getSheetByName('ToDo');
   if (!tdSheet) return [];
   var tdVals = tdSheet.getDataRange().getValues();
@@ -868,8 +869,8 @@ function getTodos() {
   return result;
 }
 
-function getGroceries() {
-  var ss           = SpreadsheetApp.getActiveSpreadsheet();
+function getGroceries(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var grocerySheet = ss.getSheetByName('Groceries');
   if (!grocerySheet) return [];
   var gData  = grocerySheet.getDataRange().getValues();
@@ -882,8 +883,8 @@ function getGroceries() {
   return result;
 }
 
-function getExpensesData() {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+function getExpensesData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
   if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0, familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {}, familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0 };
   var eVals      = expSheet.getDataRange().getValues();
@@ -998,8 +999,8 @@ function getExpensesData() {
   };
 }
 
-function getBudgets() {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+function getBudgets(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var bdgSheet = ss.getSheetByName('Budgets');
   if (!bdgSheet) return [];
   var bdgVals  = bdgSheet.getDataRange().getValues();
@@ -1037,8 +1038,8 @@ function getBudgets() {
   return budgets;
 }
 
-function getBirthdays() {
-  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+function getBirthdays(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var bdSheet = ss.getSheetByName('Birthdays');
   if (!bdSheet) return [];
   var bdVals = bdSheet.getDataRange().getValues();
@@ -1063,8 +1064,8 @@ function getBirthdays() {
   return result;
 }
 
-function getMemories() {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+function getMemories(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var memSheet = ss.getSheetByName('Memories');
   if (!memSheet) return [];
   var memVals = memSheet.getDataRange().getValues();
@@ -1078,8 +1079,8 @@ function getMemories() {
   return result.slice(0, 20);
 }
 
-function getFertilityData() {
-  var ss        = SpreadsheetApp.getActiveSpreadsheet();
+function getFertilityData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var fertSheet = ss.getSheetByName('Fertility');
   if (!fertSheet) return {};
   var fertVals        = fertSheet.getDataRange().getValues();
@@ -1109,8 +1110,8 @@ function getFertilityData() {
   return result;
 }
 
-function getFridgeData() {
-  var ss          = SpreadsheetApp.getActiveSpreadsheet();
+function getFridgeData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var fruitsSheet = ss.getSheetByName('Fruits');
   if (!fruitsSheet) return [];
   var fVals  = fruitsSheet.getDataRange().getValues();
@@ -1125,8 +1126,8 @@ function getFridgeData() {
   return result;
 }
 
-function getRecurring() {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+function getRecurring(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var recSheet = ss.getSheetByName('RecurringExpenses');
   if (!recSheet) return [];
   var recVals = recSheet.getDataRange().getValues();
@@ -1143,8 +1144,8 @@ function getRecurring() {
   return result;
 }
 
-function getTravelData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function getTravelData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var travelSheet = ss.getSheetByName('Travel');
   if (!travelSheet) {
     travelSheet = ss.insertSheet('Travel');
