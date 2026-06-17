@@ -1149,7 +1149,7 @@ function scanInboxForTransactions() {
   var templates = [
     {
       name: 'paylah',
-      query: 'from:paylah.alert@dbs.com label:inbox -label:PayLah-Processed',
+      query: 'from:paylah.alert@dbs.com label:inbox',
       priority: 1,
       parse: function(body) {
         var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
@@ -1172,7 +1172,7 @@ function scanInboxForTransactions() {
     },
     {
       name: 'trust',
-      query: 'from:from_us@trustbank.sg label:inbox -label:PayLah-Processed',
+      query: 'from:from_us@trustbank.sg label:inbox',
       priority: 1,
       parse: function(body) {
         var amtMatch = body.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
@@ -1191,7 +1191,7 @@ function scanInboxForTransactions() {
     },
     {
       name: 'shopee',
-      query: 'from:info@mail.shopee.sg label:inbox -label:PayLah-Processed',
+      query: 'from:info@mail.shopee.sg label:inbox',
       priority: 2,
       parse: function(body) {
         var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
@@ -1223,6 +1223,8 @@ function scanInboxForTransactions() {
     threads.forEach(function(thread) {
       var messages = thread.getMessages();
       messages.forEach(function(msg) {
+        if (msg.isStarred()) return;
+        
         var body = msg.getPlainBody();
         var parsed = tpl.parse(body);
         if (parsed) {
@@ -1238,6 +1240,7 @@ function scanInboxForTransactions() {
           var duplicateInLogged = findDuplicateInExpenses(expSheet, amount, dateStr);
           if (duplicateInLogged) {
             Logger.log('[' + tpl.name + '] Found duplicate in logged Expenses. Skipping.');
+            msg.star();
             return;
           }
           
@@ -1267,6 +1270,7 @@ function scanInboxForTransactions() {
             Logger.log('[' + tpl.name + '] Logged new pending transaction: ' + merchant + ' ($' + amount + ')');
           }
         }
+        msg.star();
       });
       thread.addLabel(label);
       thread.moveToArchive();
