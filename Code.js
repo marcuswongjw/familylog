@@ -1131,6 +1131,114 @@ function scanInboxForPayLah() {
   scanInboxForTransactions();
 }
 
+function parsePayLah(body) {
+  var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
+  var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
+  var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
+  if (amtMatch && toMatch) {
+    var amount = parseFloat(amtMatch[1]);
+    var merchant = toMatch[1].trim();
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) {
+      var dateParts = dateMatch[1].trim().split(/\s+/);
+      if (dateParts.length >= 2) {
+        dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
+      }
+    }
+    return { amount: amount, merchant: merchant, dateStr: dateStr };
+  }
+  return null;
+}
+
+function parseTrust(body) {
+  var amtMatch = body.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
+  var toMatch = body.match(/at\s+(.+?)\s+on\s+\d{1,2}\s+[a-z]{3}\s+\d{4}/i);
+  var dateMatch = body.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  if (amtMatch && toMatch) {
+    var amount = parseFloat(amtMatch[1]);
+    var merchant = toMatch[1].trim();
+    merchant = merchant.replace(/\s+(Singapore SG|SG|Singapore)$/i, '').trim();
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) dateStr = dateMatch[1].trim();
+    return { amount: amount, merchant: merchant, dateStr: dateStr };
+  }
+  return null;
+}
+
+function parseShopee(body) {
+  var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
+  var orderMatch = body.match(/Order ID:\s*(#?\w+)/i);
+  var dateMatch = body.match(/(?:Payment Date|Order Date):\s*(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  var itemMatch = body.match(/^\s*1\.\s+(.+)$/m) || body.match(/1\.\s+(.+?)(?:\r|\n)/);
+  if (amtMatch) {
+    var amount = parseFloat(amtMatch[1]);
+    var orderId = orderMatch ? orderMatch[1].trim() : '';
+    var merchant = 'Shopee';
+    if (itemMatch) {
+      var itemName = itemMatch[1].trim();
+      if (itemName.length > 50) itemName = itemName.substring(0, 47) + '...';
+      merchant = 'Shopee: ' + itemName;
+    } else if (orderId) {
+      merchant = 'Shopee Order ' + orderId;
+    }
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) dateStr = dateMatch[1].trim();
+    return { amount: amount, merchant: merchant, dateStr: dateStr };
+  }
+  return null;
+}
+
+function parseGenericExpense(body, msg) {
+  var amount = 0.0;
+  var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
+                 body.match(/Total(?:\s+Amount)?\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i) ||
+                 body.match(/(?:Amount|Price)\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i);
+  if (amtMatch) {
+    var cleanAmt = amtMatch[1].replace(/,/g, '');
+    amount = parseFloat(cleanAmt) || 0.0;
+  }
+  
+  var merchant = '';
+  var subject = msg ? msg.getSubject() : '';
+  var fromName = msg ? msg.getFrom() : '';
+  
+  if (fromName) {
+    var nameMatch = fromName.match(/^"?([^"<]+)"?\s*</);
+    if (nameMatch) {
+      merchant = nameMatch[1].trim();
+    } else {
+      merchant = fromName.trim();
+    }
+  }
+  
+  if (subject) {
+    var cleanSubject = subject.replace(/^(?:Re|Fwd):\s*/i, '').trim();
+    if (cleanSubject) {
+      merchant = merchant ? merchant + ' (' + cleanSubject + ')' : cleanSubject;
+    }
+  }
+  
+  if (!merchant) {
+    merchant = 'Generic Expense';
+  }
+  
+  if (merchant.length > 50) {
+    merchant = merchant.substring(0, 47) + '...';
+  }
+  
+  var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+  if (msg) {
+    try {
+      var msgDate = msg.getDate();
+      if (msgDate) {
+        dateStr = msgDate.toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+      }
+    } catch(e) {}
+  }
+  
+  return { amount: amount, merchant: merchant, dateStr: dateStr };
+}
+
 function scanInboxForTransactions() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendingSheet = ss.getSheetByName('PendingExpenses');
@@ -1141,9 +1249,9 @@ function scanInboxForTransactions() {
   
   var expSheet = ss.getSheetByName('Expenses');
   
-  var label = GmailApp.getUserLabelByName('PayLah-Processed');
+  var label = GmailApp.getUserLabelByName('Expenses-Processed');
   if (!label) {
-    label = GmailApp.createLabel('PayLah-Processed');
+    label = GmailApp.createLabel('Expenses-Processed');
   }
   
   var templates = [
@@ -1151,69 +1259,30 @@ function scanInboxForTransactions() {
       name: 'paylah',
       query: 'from:paylah.alert@dbs.com label:inbox',
       priority: 1,
-      parse: function(body) {
-        var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
-        var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
-        var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n)/i);
-        if (amtMatch && toMatch) {
-          var amount = parseFloat(amtMatch[1]);
-          var merchant = toMatch[1].trim();
-          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-          if (dateMatch) {
-            var dateParts = dateMatch[1].trim().split(/\s+/);
-            if (dateParts.length >= 2) {
-              dateStr = dateParts[0] + ' ' + dateParts[1] + ' ' + new Date().getFullYear();
-            }
-          }
-          return { amount: amount, merchant: merchant, dateStr: dateStr };
-        }
-        return null;
-      }
+      parse: parsePayLah
     },
     {
       name: 'trust',
       query: 'from:from_us@trustbank.sg label:inbox',
       priority: 1,
-      parse: function(body) {
-        var amtMatch = body.match(/spent\s+SGD\s+([\d\.]+)\s+at/i);
-        var toMatch = body.match(/at\s+(.+?)\s+on\s+\d{1,2}\s+[a-z]{3}\s+\d{4}/i);
-        var dateMatch = body.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
-        if (amtMatch && toMatch) {
-          var amount = parseFloat(amtMatch[1]);
-          var merchant = toMatch[1].trim();
-          merchant = merchant.replace(/\s+(Singapore SG|SG|Singapore)$/i, '').trim();
-          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-          if (dateMatch) dateStr = dateMatch[1].trim();
-          return { amount: amount, merchant: merchant, dateStr: dateStr };
-        }
-        return null;
-      }
+      parse: parseTrust
     },
     {
       name: 'shopee',
       query: 'from:info@mail.shopee.sg label:inbox',
       priority: 2,
-      parse: function(body) {
-        var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
-        var orderMatch = body.match(/Order ID:\s*(#?\w+)/i);
-        var dateMatch = body.match(/(?:Payment Date|Order Date):\s*(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
-        var itemMatch = body.match(/^\s*1\.\s+(.+)$/m) || body.match(/1\.\s+(.+?)(?:\r|\n)/);
-        if (amtMatch) {
-          var amount = parseFloat(amtMatch[1]);
-          var orderId = orderMatch ? orderMatch[1].trim() : '';
-          var merchant = 'Shopee';
-          if (itemMatch) {
-            var itemName = itemMatch[1].trim();
-            if (itemName.length > 50) itemName = itemName.substring(0, 47) + '...';
-            merchant = 'Shopee: ' + itemName;
-          } else if (orderId) {
-            merchant = 'Shopee Order ' + orderId;
-          }
-          var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-          if (dateMatch) dateStr = dateMatch[1].trim();
-          return { amount: amount, merchant: merchant, dateStr: dateStr };
-        }
-        return null;
+      parse: parseShopee
+    },
+    {
+      name: 'expenses_label',
+      query: 'label:inbox (label:expenses OR label:expense)',
+      priority: 1,
+      parse: function(body, msg) {
+        var from = msg.getFrom().toLowerCase();
+        if (from.indexOf('paylah.alert@dbs.com') !== -1) return parsePayLah(body);
+        if (from.indexOf('from_us@trustbank.sg') !== -1) return parseTrust(body);
+        if (from.indexOf('info@mail.shopee.sg') !== -1) return parseShopee(body);
+        return parseGenericExpense(body, msg);
       }
     }
   ];
@@ -1226,7 +1295,7 @@ function scanInboxForTransactions() {
         if (msg.isStarred()) return;
         
         var body = msg.getPlainBody();
-        var parsed = tpl.parse(body);
+        var parsed = tpl.parse(body, msg);
         if (parsed) {
           var amount = parsed.amount;
           var merchant = parsed.merchant;
@@ -1352,9 +1421,20 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category) {
   var webAppUrl = ScriptApp.getService().getUrl();
   var approvalUrl = webAppUrl + '?action=confirm_expense_page&id=' + id;
   
-  var subject = '❓ Confirm PayLah! Expense: $' + amount.toFixed(2) + ' at ' + merchant;
+  var sourceTitle = 'Expense';
+  if (id.indexOf('p_paylah_') === 0) {
+    sourceTitle = 'DBS PayLah!';
+  } else if (id.indexOf('p_trust_') === 0) {
+    sourceTitle = 'Trust Bank';
+  } else if (id.indexOf('p_shopee_') === 0) {
+    sourceTitle = 'Shopee';
+  } else if (id.indexOf('p_expenses_label_') === 0) {
+    sourceTitle = 'Tagged Expense';
+  }
+  
+  var subject = '❓ Confirm ' + sourceTitle + ': $' + amount.toFixed(2) + ' at ' + merchant;
   var htmlBody = '<div style="font-family:sans-serif;max-width:400px;border:1px solid #e4e6ef;border-radius:10px;padding:20px;background:#f9f9fb;">' +
-                 '<h3 style="color:#2c7a4b;margin-top:0;border-bottom:1px solid #e4e6ef;padding-bottom:10px;">DBS PayLah! Expense Detected</h3>' +
+                 '<h3 style="color:#2c7a4b;margin-top:0;border-bottom:1px solid #e4e6ef;padding-bottom:10px;">' + sourceTitle + ' Detected</h3>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Merchant:</strong> ' + merchant + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> $' + amount.toFixed(2) + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ' + dateStr + '</p>' +
