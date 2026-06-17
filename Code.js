@@ -1481,7 +1481,10 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category) {
 function renderConfirmExpensePage(id) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('PendingExpenses');
-  if (!sheet) return HtmlService.createHtmlOutput('<h3>Error: PendingExpenses sheet not found.</h3>');
+  if (!sheet) {
+    return HtmlService.createHtmlOutput('<h3 style="font-family:sans-serif;text-align:center;margin-top:50px;color:#d9534f;">Error: PendingExpenses sheet not found.</h3>')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   
   var vals = sheet.getDataRange().getValues();
   var rowIdx = -1;
@@ -1490,7 +1493,8 @@ function renderConfirmExpensePage(id) {
   }
   
   if (rowIdx === -1) {
-    return HtmlService.createHtmlOutput('<h3 style="font-family:sans-serif;color:#e74c3c;text-align:center;margin-top:50px;">This transaction has already been logged or dismissed.</h3>');
+    return HtmlService.createHtmlOutput('<h3 style="font-family:sans-serif;color:#e74c3c;text-align:center;margin-top:50px;padding:20px;">This transaction has already been logged or dismissed.</h3>')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   
   var dateStr = toStr(vals[rowIdx-1][1]);
@@ -1518,8 +1522,9 @@ function renderConfirmExpensePage(id) {
     '<head>' +
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
       '<style>' +
-        'body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#f5f6fa; color:#1a1a2e; padding:16px; margin:0; }' +
-        '.card { background:#fff; border-radius:14px; border:1px solid #e4e6ef; padding:20px; max-width:400px; margin:20px auto; box-shadow:0 4px 12px rgba(0,0,0,0.05); }' +
+        '* { box-sizing: border-box; }' +
+        'body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#f5f6fa; color:#1a1a2e; padding:12px; margin:0; }' +
+        '.card { background:#fff; border-radius:14px; border:1px solid #e4e6ef; padding:20px; max-width:480px; width:100%; margin:20px auto; box-shadow:0 4px 12px rgba(0,0,0,0.05); }' +
         'h3 { margin-top:0; color:#2c7a4b; text-align:center; }' +
         '.field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }' +
         'label { font-size:12px; font-weight:600; color:#5a5a72; }' +
@@ -1577,7 +1582,7 @@ function renderConfirmExpensePage(id) {
       '</script>' +
     '</body>' +
     '</html>';
-  return HtmlService.createHtmlOutput(html);
+  return HtmlService.createHtmlOutput(html).addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function handleSubmitConfirmedExpense(params) {
