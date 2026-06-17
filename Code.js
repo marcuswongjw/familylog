@@ -1249,9 +1249,9 @@ function scanInboxForTransactions() {
   
   var expSheet = ss.getSheetByName('Expenses');
   
-  var label = GmailApp.getUserLabelByName('Expenses-Processed');
+  var label = GmailApp.getUserLabelByName('Expense-Processed');
   if (!label) {
-    label = GmailApp.createLabel('Expenses-Processed');
+    label = GmailApp.createLabel('Expense-Processed');
   }
   
   var templates = [
