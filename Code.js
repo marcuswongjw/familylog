@@ -1469,7 +1469,13 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category) {
                    '<a href="' + approvalUrl + '" style="background:#4f86c6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;font-size:14px;">Verify & Log Expense</a>' +
                  '</div>' +
                  '</div>';
-  sendFamilyEmail(subject, htmlBody);
+  var plainBody = htmlBody.replace(/<[^>]+>/g, '').replace(/\n\n+/g, '\n').trim();
+  try {
+    MailApp.sendEmail({ to: "marcuswongjw@gmail.com", subject: subject, body: plainBody, htmlBody: htmlBody });
+    Logger.log('✅ email sent to: marcuswongjw@gmail.com');
+  } catch (err) {
+    Logger.log('❌ email failed (marcuswongjw@gmail.com): ' + err);
+  }
 }
 
 function renderConfirmExpensePage(id) {
