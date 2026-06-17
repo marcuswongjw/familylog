@@ -2143,7 +2143,7 @@ function handleLocInput(val) {
 
 async function fetchLocSuggestions(q) {
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(q)}&limit=5`;
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
     const res = await fetch(url);
     const data = await res.json();
     const sug = document.getElementById('tr-loc-suggestions');
