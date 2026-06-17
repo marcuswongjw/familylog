@@ -129,20 +129,6 @@ function sendMorningDigest(now) {
       body += '<ul style="margin:0;padding-left:20px;font-family:sans-serif;color:#333;">' + taskItems + '</ul>';
     }
   }
-
-  var grocerySheet = ss.getSheetByName('Groceries');
-  if (grocerySheet) {
-    var gData = grocerySheet.getDataRange().getValues(); var gItems = ''; var gCount = 0;
-    for (var g = 1; g < gData.length; g++) {
-      var s = toStr(gData[g][3]).toLowerCase();
-      if (s !== 'bought' && s !== 'true' && gData[g][1] !== '') { gCount++; if (gCount <= 5) gItems += _li(toStr(gData[g][1])); }
-    }
-    if (gCount > 0) {
-      body += _h('h3', '🛒 Grocery List (' + gCount + ' items)', 'font-family:sans-serif;color:#333;margin-bottom:4px;margin-top:20px;');
-      body += '<ul style="margin:0;padding-left:20px;font-family:sans-serif;color:#333;">' + gItems + (gCount > 5 ? _li('<em>...and ' + (gCount - 5) + ' more</em>') : '') + '</ul>';
-    }
-  }
-
   body += _h('p', 'Have a blessed day! 🙏', 'font-family:sans-serif;color:#666;margin-top:24px;');
   sendFamilyEmail('🌅 Wong Family Morning Digest — ' + dateStr, body);
 }
@@ -464,13 +450,11 @@ function doGet(e) {
       case 'get_all':       output = getAllDashboardData(); break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos();            break;
-      case 'get_groceries': output = getGroceries();        break;
       case 'get_expenses':  output = getExpensesData();     break;
       case 'get_budgets':   output = getBudgets();          break;
       case 'get_birthdays': output = getBirthdays();        break;
       case 'get_memories':  output = getMemories();         break;
       case 'get_fertility': output = getFertilityData();    break;
-      case 'get_fridge':    output = getFridgeData();       break;
       case 'get_recurring': output = getRecurring();        break;
       case 'get_travel':    output = getTravelData();       break;
       case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
@@ -510,53 +494,6 @@ function handleWrite(data) {
   var user      = toStr(data.user) || 'Unknown';
 
   try {
-
-    // FRUIT: add/eat
-    if (noteLower.indexOf('+fruits ') === 0 || noteLower.indexOf('-fruits ') === 0) {
-      var fruitsSheet  = ss.getSheetByName('Fruits');
-      var grocerySheet = ss.getSheetByName('Groceries');
-      if (fruitsSheet) {
-        var type  = noteLower.charAt(0) === '+' ? 'add' : 'eat';
-        var items = note.substring(8).split(',');
-        for (var i = 0; i < items.length; i++) {
-          var parts = items[i].trim().split(' ');
-          if (parts.length >= 2) {
-            var fQty = parseInt(parts.pop());
-            var fName = parts.join(' ');
-            if (!isNaN(fQty)) updateFruitStock(fruitsSheet, grocerySheet, fName, fQty, type, user);
-          }
-        }
-      }
-      return { status: 'ok' };
-    }
-
-    // GROCERY: add
-    if (noteLower.indexOf('+') === 0 || noteLower.indexOf('buy ') === 0) {
-      var grocerySheet = ss.getSheetByName('Groceries');
-      if (grocerySheet) {
-        var gItemName = note.replace('+', '').replace(/buy\s+/i, '').trim();
-        var gData = grocerySheet.getDataRange().getValues(); var foundRow = -1;
-        for (var k = 1; k < gData.length; k++) { if (toStr(gData[k][1]).toLowerCase() === gItemName.toLowerCase()) { foundRow = k + 1; break; } }
-        if (foundRow !== -1) {
-          var status = toStr(gData[foundRow - 1][3]).toLowerCase();
-          if (status === 'bought' || status === 'true') grocerySheet.getRange(foundRow, 4).setValue('To Buy');
-        } else {
-          grocerySheet.appendRow(['', gItemName, '-', 'New', user, '']);
-        }
-      }
-      return { status: 'ok' };
-    }
-
-    // GROCERY: mark bought
-    if (noteLower.indexOf('bought ') === 0) {
-      var grocerySheet = ss.getSheetByName('Groceries');
-      if (grocerySheet) {
-        var bItem = note.substring(7).trim().toLowerCase();
-        var bData = grocerySheet.getDataRange().getValues();
-        for (var n = 1; n < bData.length; n++) { if (toStr(bData[n][1]).toLowerCase() === bItem) grocerySheet.getRange(n + 1, 4).setValue('bought'); }
-      }
-      return { status: 'ok' };
-    }
 
     // CALENDAR: add
     if (noteLower === 'add_event') {
@@ -799,13 +736,11 @@ function getAllDashboardData() {
   return {
     events:    getEvents(),
     todos:     getTodos(ss),
-    groceries: getGroceries(ss),
     expenses:  getExpensesData(ss),
     budgets:   getBudgets(ss),
     birthdays: getBirthdays(ss),
     memories:  getMemories(ss),
     fertility: getFertilityData(ss),
-    fridge:    getFridgeData(ss),
     recurring: getRecurring(ss),
     travel:    getTravelData(ss),
     expenseGroups: EXPENSE_GROUPS
@@ -865,20 +800,6 @@ function getTodos(ss) {
       addedBy:  toStr(row[4]),
       status:   toStr(row[5]) || 'Open'
     });
-  }
-  return result;
-}
-
-function getGroceries(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var grocerySheet = ss.getSheetByName('Groceries');
-  if (!grocerySheet) return [];
-  var gData  = grocerySheet.getDataRange().getValues();
-  var result = [];
-  for (var i = 1; i < gData.length; i++) {
-    var row = gData[i]; if (!row[1]) continue;
-    var status = toStr(row[3]).toLowerCase();
-    result.push({ rowNum: i + 1, name: toStr(row[1]), status: status, addedBy: toStr(row[4]), bought: status === 'bought' || status === 'true' });
   }
   return result;
 }
@@ -1110,22 +1031,6 @@ function getFertilityData(ss) {
   return result;
 }
 
-function getFridgeData(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var fruitsSheet = ss.getSheetByName('Fruits');
-  if (!fruitsSheet) return [];
-  var fVals  = fruitsSheet.getDataRange().getValues();
-  var tz     = Session.getScriptTimeZone();
-  var result = [];
-  for (var i = 1; i < fVals.length; i++) {
-    if (!fVals[i][0]) continue;
-    var lastUpdated = fVals[i][4] ? Utilities.formatDate(new Date(fVals[i][4]), tz, 'dd MMM yyyy') : '';
-    var isStale     = fVals[i][4] ? (new Date() - new Date(fVals[i][4])) > 7 * 24 * 60 * 60 * 1000 : false;
-    result.push({ rowNum: i + 1, name: toStr(fVals[i][0]), stock: Number(fVals[i][1]) || 0, lastUpdated: lastUpdated, stale: isStale });
-  }
-  return result;
-}
-
 function getRecurring(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var recSheet = ss.getSheetByName('RecurringExpenses');
@@ -1201,26 +1106,6 @@ function parseEventDate(dateStr, timeStr) {
     else if (t24) { parsed.setHours(parseInt(t24[1]), parseInt(t24[2]), 0, 0); }
   } else { parsed.setHours(0, 0, 0, 0); }
   return parsed;
-}
-
-function updateFruitStock(fSheet, gSheet, name, qty, type, user) {
-  var data = fSheet.getDataRange().getValues(); var found = false;
-  for (var i = 1; i < data.length; i++) {
-    if (toStr(data[i][0]).toLowerCase() === toStr(name).toLowerCase()) {
-      var col = (type === 'add') ? 3 : 4; var currentVal = fSheet.getRange(i + 1, col).getValue() || 0;
-      fSheet.getRange(i + 1, col).setValue(currentVal + qty);
-      fSheet.getRange(i + 1, 5).setValue(new Date());
-      var totalStock = fSheet.getRange(i + 1, 2).getValue();
-      if (type === 'eat' && totalStock <= 0 && gSheet) {
-        var gData = gSheet.getDataRange().getValues(); var gFoundRow = -1;
-        for (var j = 1; j < gData.length; j++) { if (toStr(gData[j][1]).toLowerCase() === toStr(name).toLowerCase()) { gFoundRow = j + 1; break; } }
-        if (gFoundRow !== -1) { var s = toStr(gData[gFoundRow - 1][3]).toLowerCase(); if (s === 'bought' || s === 'true') gSheet.getRange(gFoundRow, 4).setValue('Restock'); }
-        else { gSheet.appendRow(['', name, '-', 'Restock', 'Bot (Auto)']); }
-      }
-      found = true; break;
-    }
-  }
-  if (!found && type === 'add') fSheet.appendRow([name, qty, qty, 0, new Date()]);
 }
 
 function daysInMonth(date) {

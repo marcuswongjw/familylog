@@ -162,26 +162,12 @@ input,textarea,select{font-family:inherit;}
 .task-main{flex:1;min-width:0;}
 .task-ttl{font-size:14px;font-weight:500;}
 .task-meta{font-size:12px;color:#9898aa;margin-top:2px;}
-
-/* ── GROC ── */
-.groc-row{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #e4e6ef;}
-.groc-row:last-child{border-bottom:none;}
-.groc-chk{width:22px;height:22px;border-radius:6px;border:2px solid #e4e6ef;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.groc-chk.done{background:#4f86c6;border-color:#4f86c6;color:#fff;font-size:12px;font-weight:700;}
-.groc-lbl{flex:1;font-size:14px;}
-.groc-lbl.done{text-decoration:line-through;color:#9898aa;}
-
 /* ── MEMORY ── */
 .mem-row{padding:14px 16px;border-bottom:1px solid #e4e6ef;}
 .mem-row:last-child{border-bottom:none;}
 .mem-type{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#9898aa;margin-bottom:4px;}
 .mem-text{font-size:14px;line-height:1.5;}
 .mem-meta{font-size:12px;color:#9898aa;margin-top:6px;}
-
-/* ── FRIDGE ── */
-.fr-row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;justify-content:space-between;}
-.fr-row:last-child{border-bottom:none;}
-.fr-num{font-size:20px;font-weight:800;color:#4f86c6;}
 
 /* ── RECURRING ── */
 .rec-row{padding:12px 16px;border-bottom:1px solid #e4e6ef;display:flex;align-items:center;gap:10px;}
@@ -328,6 +314,9 @@ input,textarea,select{font-family:inherit;}
 .cal-dot { width: 4px; height: 4px; border-radius: 50%; }
 .cal-dot.Mikaela { background: #4f86c6; }
 .cal-dot.Meaghan { background: #f4a261; }
+.cal-dot.Eleanor { background: #e05252; }
+.cal-dot.Marcus { background: #3aaa75; }
+.cal-dot.Everyone { background: #9b59b6; }
 .cal-day-cell.selected { background: #edf4fc; }
 
 /* ── GLOBAL LOADING PROGRESS BAR ── */
@@ -412,7 +401,16 @@ input,textarea,select{font-family:inherit;}
     <div class="section" id="s-calendar">
       <div class="sec-body">
         <div class="card">
-          <div class="card-hdr"><span class="card-title">📅 Upcoming Events</span></div>
+          <div class="card-hdr">
+            <span class="card-title">📅 Family Calendar</span>
+            <button class="btn btn-sm btn-p" onclick="openM('m-event')">+ Add Event</button>
+          </div>
+          <!-- View Toggle Pills (List vs Week vs Month Grid) -->
+          <div style="display:flex;background:#e4e6ef;padding:3px;border-radius:8px;margin:8px 16px 12px;">
+            <button class="toggle-pill active" id="cal-view-list" onclick="toggleCalView('list')" style="flex:1;text-align:center;">List View</button>
+            <button class="toggle-pill" id="cal-view-week" onclick="toggleCalView('week')" style="flex:1;text-align:center;">Week View</button>
+            <button class="toggle-pill" id="cal-view-month" onclick="toggleCalView('month')" style="flex:1;text-align:center;">Month Grid</button>
+          </div>
           <div class="card-body" id="cal-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
         </div>
       </div>
@@ -429,14 +427,7 @@ input,textarea,select{font-family:inherit;}
     </div>
 
     <!-- GROCERY -->
-    <div class="section" id="s-grocery">
-      <div class="sec-body">
-        <div class="card">
-          <div class="card-hdr"><span class="card-title">🛒 Grocery List</span></div>
-          <div class="card-body" id="groc-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
-        </div>
-      </div>
-    </div>
+
 
     <!-- EXPENSES -->
     <div class="section" id="s-expenses">
@@ -513,28 +504,7 @@ input,textarea,select{font-family:inherit;}
       </div>
     </div>
 
-    <!-- FRIDGE -->
-    <div class="section" id="s-fridge">
-      <div class="sec-body">
-        <div class="card">
-          <div class="card-hdr"><span class="card-title">🍎 Fridge Stock</span></div>
-          <div class="card-body" id="fridge-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
-        </div>
-        <div class="card">
-          <div class="card-hdr"><span class="card-title">Update Stock</span></div>
-          <div class="card-body" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-            <div class="frow">
-              <div class="field"><label>Item</label><input type="text" id="fr-name" placeholder="e.g. Apple"></div>
-              <div class="field"><label>Qty</label><input type="number" id="fr-qty" min="1" value="1"></div>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-g btn-full" onclick="updateFridge('add')">＋ Add</button>
-              <button class="btn btn-d btn-full" onclick="updateFridge('eat')">－ Ate</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+
 
     <!-- RECURRING -->
     <div class="section" id="s-recurring">
@@ -578,7 +548,6 @@ input,textarea,select{font-family:inherit;}
     <div class="nav-it act" id="nav-home" onclick="goTo('home')"><div class="ni">🏠</div><div>Home</div></div>
     <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
     <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
-    <div class="nav-it" id="nav-grocery" onclick="goTo('grocery')"><div class="ni">🛒</div><div>Grocery</div></div>
     <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
     <div class="nav-it" id="nav-more" onclick="goTo('more')"><div class="ni">⋯</div><div>More</div></div>
   </div>
@@ -631,20 +600,7 @@ input,textarea,select{font-family:inherit;}
   </div>
 </div>
 
-<!-- Add Grocery -->
-<div class="overlay" id="m-grocery">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-hdr"><span class="modal-title">Add to Grocery List</span><button class="modal-close" onclick="closeM('m-grocery')">✕</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Item name</label><input type="text" id="gr-item" placeholder="e.g. Milk, bread…"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-s" onclick="closeM('m-grocery')">Cancel</button>
-      <button class="btn btn-p" style="flex:1" onclick="submitGrocery()">Add Item</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- Add Memory -->
 <div class="overlay" id="m-memory">
@@ -954,8 +910,7 @@ function logout() {
   updDots();
 }
 
-// ══ NAV ══
-const NAV_SECONDARY = ['budgets','memories','fertility','fridge','recurring','birthdays','schedules','travel'];
+const NAV_SECONDARY = ['budgets','memories','fertility','recurring','birthdays','schedules','travel'];
 
 function goTo(id) {
   section = id;
@@ -968,7 +923,7 @@ function goTo(id) {
   const nb = document.getElementById('nav-'+navId);
   if (nb) nb.classList.add('act');
   // FAB
-  const FAB_MAP = {calendar:'m-event',tasks:'m-task',grocery:'m-grocery',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
+  const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
   const fab = document.getElementById('fab');
   if (FAB_MAP[id]) { fab.classList.remove('hide'); fab._m = FAB_MAP[id]; }
   else fab.classList.add('hide');
@@ -983,7 +938,6 @@ function buildMore() {
     {id:'memories',icon:'💛',label:'Memories'},
     {id:'birthdays',icon:'🎂',label:'Birthdays'},
     {id:'fertility',icon:'🌸',label:'Fertility'},
-    {id:'fridge',icon:'🍎',label:'Fridge'},
     {id:'recurring',icon:'🔄',label:'Recurring'},
     {id:'schedules',icon:'⛵',label:'Schedules'},
     {id:'travel',icon:'✈️',label:'Travel'},
@@ -1086,18 +1040,15 @@ function gPost(payload) {
   });
 }
 
-// ══ RENDER ROUTER ══
 function render(id) {
   switch(id) {
     case 'home':      renderHome();      break;
     case 'calendar':  renderCal();       break;
     case 'tasks':     renderTasks();     break;
-    case 'grocery':   renderGrocery();   break;
     case 'expenses':  renderExpenses();  break;
     case 'budgets':   renderBudgets();   break;
     case 'memories':  renderMemories();  break;
     case 'fertility': renderFertility(); break;
-    case 'fridge':    renderFridge();    break;
     case 'recurring': renderRecurring(); break;
     case 'birthdays': renderBirthdays(); break;
     case 'schedules': renderSchedules(); break;
@@ -1125,22 +1076,98 @@ function renderHome() {
   const exp = data.expenses || {};
   const buds = data.budgets || [];
   const over = buds.filter(b => b.spent > b.budget).length;
-  const groc = (data.groceries||[]).filter(g => !g.bought).length;
   const opn  = (data.todos||[]).length;
   document.getElementById('home-tiles').innerHTML = `
-    <div class="tile" onclick="goTo('grocery')"><div class="tile-icon">🛒</div><div class="tile-lbl">To Buy</div><div class="tile-val">${groc}</div><div class="tile-sub">items on list</div></div>
     <div class="tile" onclick="goTo('tasks')"><div class="tile-icon">✅</div><div class="tile-lbl">Open Tasks</div><div class="tile-val">${opn}</div><div class="tile-sub">to complete</div></div>
     <div class="tile" onclick="goTo('expenses')"><div class="tile-icon">💰</div><div class="tile-lbl">Spent This Month</div><div class="tile-val">$${((exp.total||0)).toFixed(0)}</div><div class="tile-sub">family</div></div>
     <div class="tile" onclick="goTo('budgets')"><div class="tile-icon">${over>0?'⚠️':'📊'}</div><div class="tile-lbl">Budgets</div><div class="tile-val">${buds.length}</div><div class="tile-sub">${over>0?over+' over limit':'all on track'}</div></div>`;
 }
 
 // ══ CALENDAR ══
+let calView = 'list';
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let selectedCalDayStr = new Date().toISOString().slice(0, 10);
+let calWeekStart = getStartOfWeek(new Date());
+
+function getStartOfWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day;
+  return new Date(date.setDate(diff));
+}
+
+function toggleCalView(view) {
+  calView = view;
+  document.getElementById('cal-view-list').classList.toggle('active', view === 'list');
+  document.getElementById('cal-view-week').classList.toggle('active', view === 'week');
+  document.getElementById('cal-view-month').classList.toggle('active', view === 'month');
+  renderCal();
+}
+
+function prevCalMonth() {
+  calMonth--;
+  if (calMonth < 0) {
+    calMonth = 11;
+    calYear--;
+  }
+  renderCal();
+}
+
+function nextCalMonth() {
+  calMonth++;
+  if (calMonth > 11) {
+    calMonth = 0;
+    calYear++;
+  }
+  renderCal();
+}
+
+function prevCalWeek() {
+  calWeekStart.setDate(calWeekStart.getDate() - 7);
+  renderCal();
+}
+
+function nextCalWeek() {
+  calWeekStart.setDate(calWeekStart.getDate() + 7);
+  renderCal();
+}
+
+function snapCalWeekToday() {
+  calWeekStart = getStartOfWeek(new Date());
+  renderCal();
+}
+
+function snapCalMonthToday() {
+  const d = new Date();
+  calMonth = d.getMonth();
+  calYear = d.getFullYear();
+  selectedCalDayStr = d.toISOString().slice(0, 10);
+  renderCal();
+}
+
+function selectCalDay(dayStr) {
+  selectedCalDayStr = dayStr;
+  renderCal();
+}
+
 function renderCal() {
+  if (calView === 'month') {
+    renderCalMonth();
+  } else if (calView === 'week') {
+    renderCalWeek();
+  } else {
+    renderCalList();
+  }
+}
+
+function renderCalList() {
   const today = todayStr();
   const evs = (data.events || []).filter(e => e.dateRaw >= today);
-  const el  = document.getElementById('cal-list');
-  if (!evs.length) { el.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
-  el.innerHTML = evs.map(e => `
+  const container = document.getElementById('cal-list');
+  if (!container) return;
+  if (!evs.length) { container.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
+  container.innerHTML = evs.map(e => `
     <div class="row">
       <div style="font-size:22px;flex-shrink:0;">📅</div>
       <div class="row-main">
@@ -1148,13 +1175,191 @@ function renderCal() {
         <div class="row-sub">${e.date} · ${e.time}${e.notes?' · '+e.notes:''}</div>
         ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
       </div>
-      <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:18px;padding:4px 6px;flex-shrink:0;">✕</button>
+      <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:18px;padding:4px 6px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
     </div>`).join('');
+}
+
+function renderCalWeek() {
+  const evs = data.events || [];
+  const container = document.getElementById('cal-list');
+  if (!container) return;
+  
+  const weekStart = new Date(calWeekStart);
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth()+1).padStart(2,'0')}-${String(weekStart.getDate()).padStart(2,'0')}`;
+  
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid #e4e6ef;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="prevCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+        <button onclick="snapCalWeekToday()" style="background:#edf4fc;border:none;font-size:11px;font-weight:700;color:#4f86c6;padding:4px 8px;border-radius:6px;cursor:pointer;">Today</button>
+      </div>
+      <span style="font-weight:700;font-size:14px;color:#1a1a2e;">Week of ${fmtDate(weekStartStr)}</span>
+      <button onclick="nextCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+    </div>
+    <div class="week-container" style="padding:8px 16px;">
+  `;
+  
+  const today = todayStr();
+  
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const isToday = dStr === today;
+    
+    const dayEvents = evs.filter(e => e.dateRaw === dStr);
+    
+    let eventsHtml = '';
+    if (dayEvents.length > 0) {
+      eventsHtml = dayEvents.map(e => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed #f1f2f6;">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;color:#1a1a2e;">${e.title}</div>
+            <div style="font-size:11px;color:#9898aa;">${e.time}${e.endTime ? ' - ' + e.endTime : ''}${e.location ? ' · ' + e.location : ''}</div>
+            ${e.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${e.notes}"</div>` : ''}
+            ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;font-size:9px;padding:1px 4px;">${t}</span>`).join('')}
+          </div>
+          <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:16px;padding:4px;border:none;background:transparent;cursor:pointer;">✕</button>
+        </div>
+      `).join('');
+    } else {
+      eventsHtml = '<div style="font-size:11px;color:#cbd5e1;padding:4px 0;">No events</div>';
+    }
+    
+    const dayStyle = isToday ? 'background:#edf4fc;border-left:3px solid #4f86c6;padding:8px;border-radius:4px;margin-bottom:8px;' : 'padding:8px;margin-bottom:8px;';
+    html += `
+      <div style="${dayStyle}border-bottom:1px solid #e4e6ef;">
+        <div style="font-weight:700;font-size:12px;color:${isToday ? '#4f86c6' : '#5a5a72'};margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+          <span>${daysOfWeek[d.getDay()]}, ${d.getDate()} ${monthNamesShort[d.getMonth()]}</span>
+          ${isToday ? '<span style="font-size:10px;background:#4f86c6;color:#fff;padding:1px 6px;border-radius:10px;">TODAY</span>' : ''}
+        </div>
+        <div style="padding-left:4px;">
+          ${eventsHtml}
+        </div>
+      </div>
+    `;
+  }
+  
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function renderCalMonth() {
+  const evs = data.events || [];
+  const container = document.getElementById('cal-list');
+  if (!container) return;
+  
+  const firstDayOfMonth = new Date(calYear, calMonth, 1);
+  const startDayOfWeek = firstDayOfMonth.getDay();
+  const numDays = new Date(calYear, calMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(calYear, calMonth, 0).getDate();
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid #e4e6ef;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="prevCalMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+        <button onclick="snapCalMonthToday()" style="background:#edf4fc;border:none;font-size:11px;font-weight:700;color:#4f86c6;padding:4px 8px;border-radius:6px;cursor:pointer;">Today</button>
+      </div>
+      <span style="font-weight:700;font-size:14px;color:#1a1a2e;">${monthNames[calMonth]} ${calYear}</span>
+      <button onclick="nextCalMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+    </div>
+    <div class="cal-grid-hdr">
+      <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+    </div>
+    <div class="cal-grid">
+  `;
+  
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const dVal = prevMonthDays - i;
+    html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${dVal}</span></div>`;
+  }
+  
+  const today = todayStr();
+  
+  for (let day = 1; day <= numDays; day++) {
+    const dayStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const isToday = today === dayStr;
+    const isSelected = selectedCalDayStr === dayStr;
+    
+    const dayEvents = evs.filter(e => e.dateRaw === dayStr);
+    
+    let dotsHtml = '';
+    if (dayEvents.length > 0) {
+      dotsHtml = '<div class="cal-dots-wrap">';
+      const uniqueTags = new Set();
+      dayEvents.forEach(e => {
+        if (e.tags && e.tags.length > 0) {
+          e.tags.forEach(t => uniqueTags.add(t));
+        } else {
+          uniqueTags.add('Everyone');
+        }
+      });
+      uniqueTags.forEach(tag => {
+        dotsHtml += `<span class="cal-dot ${tag}"></span>`;
+      });
+      dotsHtml += '</div>';
+    }
+    
+    const cellClass = `cal-day-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`;
+    html += `
+      <div class="${cellClass}" onclick="selectCalDay('${dayStr}')">
+        <span class="cal-day-num">${day}</span>
+        ${dotsHtml}
+      </div>
+    `;
+  }
+  
+  const totalCellsUsed = startDayOfWeek + numDays;
+  const nextDaysCount = 42 - totalCellsUsed;
+  for (let d = 1; d <= nextDaysCount; d++) {
+    html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${d}</span></div>`;
+  }
+  
+  html += `</div>`;
+  
+  const selectedDayEvents = evs.filter(e => e.dateRaw === selectedCalDayStr);
+  let selectedDayHtml = '';
+  if (selectedDayEvents.length > 0) {
+    selectedDayHtml = selectedDayEvents.map(e => {
+      return `
+        <div class="row" style="padding:10px 16px;">
+          <div style="font-size:20px;flex-shrink:0;margin-right:6px;">📅</div>
+          <div class="row-main">
+            <div class="row-title" style="font-weight:600;">${e.title}</div>
+            <div class="row-sub">${e.time}${e.endTime ? ' - ' + e.endTime : ''}${e.location ? ' · ' + e.location : ''}</div>
+            ${e.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${e.notes}"</div>` : ''}
+            ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
+          </div>
+          <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+        </div>
+      `;
+    }).join('');
+  } else {
+    selectedDayHtml = '<div class="empty">No events scheduled for this day</div>';
+  }
+  
+  html += `
+    <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5a5a72;padding:0 16px 4px;border-bottom:2px solid #e4e6ef;">
+      📅 Events: ${fmtDate(selectedCalDayStr)}
+    </div>
+    <div class="card-body" style="padding:0;">
+      ${selectedDayHtml}
+    </div>
+  `;
+  
+  container.innerHTML = html;
 }
 
 async function delEvent(id) {
   if (!confirm('Delete this event?')) return;
+  document.body.classList.add('loading-state');
   await gPost({note:'delete_event',event_id:id});
+  document.body.classList.remove('loading-state');
   data.events = (data.events||[]).filter(e => e.id !== id);
   renderCal(); renderHome(); toast('Event deleted');
 }
@@ -1196,35 +1401,7 @@ async function delTask(n) {
   renderTasks(); renderHome(); toast('Task deleted');
 }
 
-// ══ GROCERY ══
-function renderGrocery() {
-  const items = data.groceries || [];
-  const el = document.getElementById('groc-list');
-  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🛒</div>Grocery list is empty</div>'; return; }
-  const toBuy  = items.filter(i => !i.bought);
-  const bought = items.filter(i => i.bought);
-  el.innerHTML =
-    toBuy.map(i => gRow(i)).join('') +
-    (bought.length ? `<div style="padding:8px 16px 2px;font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;">Bought</div>`+bought.map(i=>gRow(i)).join('') : '');
-}
 
-function gRow(i) {
-  return `<div class="groc-row">
-    <div class="groc-chk ${i.bought?'done':''}" onclick="togGroc('${i.name}',${i.bought},this)"></div>
-    <span class="groc-lbl ${i.bought?'done':''}">${i.name}</span>
-  </div>`;
-}
-
-async function togGroc(name, bought, el) {
-  if (bought) return;
-  el.classList.add('done'); el.textContent = '✓';
-  el.nextElementSibling.classList.add('done');
-  await gPost({note:'bought '+name});
-  const it = (data.groceries||[]).find(i => i.name === name);
-  if (it) it.bought = true;
-  setTimeout(renderGrocery, 400);
-  toast(name + ' marked as bought ✓');
-}
 
 // ══ EXPENSES ══
 function renderExpenses() {
@@ -1474,17 +1651,7 @@ function renderFertility() {
     ((f.symptoms||[]).length ? `<div style="padding:12px 16px;"><div style="font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Symptoms</div>${f.symptoms.map(s=>`<div style="font-size:14px;padding:4px 0;border-bottom:1px solid #e4e6ef;">${s.date} · ${s.note}</div>`).join('')}</div>` : '');
 }
 
-// ══ FRIDGE ══
-function renderFridge() {
-  const items = (data.fridge||[]).filter(i => i.stock > 0);
-  const el = document.getElementById('fridge-list');
-  if (!items.length) { el.innerHTML = '<div class="empty"><div class="ei">🍎</div>Fridge is empty</div>'; return; }
-  el.innerHTML = items.map(i => `
-    <div class="fr-row">
-      <div><div style="font-size:14px;font-weight:600;">${i.name}</div><div style="font-size:12px;color:#9898aa;">Updated ${i.lastUpdated}${i.stale?' · ⚠️ stale':''}</div></div>
-      <div class="fr-num ${i.stale?'':''}">×${i.stock}</div>
-    </div>`).join('');
-}
+
 
 // ══ RECURRING ══
 function renderRecurring() {
@@ -1585,7 +1752,13 @@ function buildDynamicSelectors() {
   updateExCats();
 }
 
-function openM(id) { document.getElementById(id).classList.add('open'); }
+function openM(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'm-event' && typeof selectedCalDayStr !== 'undefined' && selectedCalDayStr) {
+    const el = document.getElementById('ev-date');
+    if (el) el.value = selectedCalDayStr;
+  }
+}
 function closeM(id) { document.getElementById(id).classList.remove('open'); }
 
 // ══ FORM SUBMITS ══
@@ -1603,12 +1776,7 @@ async function submitTask() {
   closeM('m-task'); clr('tk-title'); toast('Task added! ✅'); await loadData();
 }
 
-async function submitGrocery() {
-  const item = v('gr-item');
-  if (!item) { toast('Please enter an item'); return; }
-  await gPost({note:'+'+item});
-  closeM('m-grocery'); clr('gr-item'); toast(item+' added! 🛒'); await loadData();
-}
+
 
 async function submitMemory() {
   const text = v('mem-text');
@@ -1639,13 +1807,7 @@ async function submitFert() {
   clr('fert-notes'); toast('Logged! 🌸'); await loadData();
 }
 
-async function updateFridge(type) {
-  const name = v('fr-name'); const qty = parseInt(v('fr-qty'))||1;
-  if (!name) { toast('Please enter an item name'); return; }
-  await gPost({note:(type==='add'?'+':'-')+'fruits '+name+' '+qty});
-  clr('fr-name'); document.getElementById('fr-qty').value='1';
-  toast(type==='add'?'Stock added! 🍎':'Eating logged! 😋'); await loadData();
-}
+
 
 async function submitRecurring() {
   const name = v('rc-name'); const amt = parseFloat(v('rc-amt')); const day = parseInt(v('rc-day'));
