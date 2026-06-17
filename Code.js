@@ -1342,6 +1342,9 @@ function scanInboxForTransactions() {
         if (parsed) {
           var amount = parsed.amount;
           var merchant = parsed.merchant;
+          if (merchant.toLowerCase().indexOf('fairprice') !== -1) {
+            merchant = 'NTUC FairPrice';
+          }
           var dateStr = parsed.dateStr;
           var category = proposeCategory(tpl.name === 'shopee' ? 'Shopee' : merchant);
           
