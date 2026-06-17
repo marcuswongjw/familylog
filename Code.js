@@ -1383,6 +1383,7 @@ function scanInboxForTransactions() {
         }
       });
       thread.addLabel(label);
+      thread.moveToArchive();
     });
   });
 }
