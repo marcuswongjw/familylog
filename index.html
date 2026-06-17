@@ -90,6 +90,7 @@ input,textarea,select{font-family:inherit;}
 .b-green{background:#e6f7ee;color:#1e7a50;}
 .b-red{background:#fdeaea;color:#b83232;}
 .b-amber{background:#fdf3e3;color:#a3600a;}
+.b-purple{background:#f3e8fa;color:#7e3aa8;}
 .b-gray{background:#f5f6fa;color:#5a5a72;}
 
 /* ── PROGRESS ── */
@@ -569,6 +570,7 @@ input,textarea,select{font-family:inherit;}
     <div class="modal-hdr"><span class="modal-title">Add Event</span><button class="modal-close" onclick="closeM('m-event')">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>Title</label><input type="text" id="ev-title" placeholder="e.g. Dentist"></div>
+      <div class="field"><label>Tag (Family Member)</label><div class="chips" id="ev-chips"></div></div>
       <div class="frow">
         <div class="field"><label>Date</label><input type="date" id="ev-date"></div>
         <div class="field"><label>Time (opt)</label><input type="time" id="ev-time"></div>
@@ -1173,7 +1175,7 @@ function renderCalList() {
       <div class="row-main">
         <div class="row-title">${e.title}</div>
         <div class="row-sub">${e.date} · ${e.time}${e.notes?' · '+e.notes:''}</div>
-        ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
+        ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
       </div>
       <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:18px;padding:4px 6px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
     </div>`).join('');
@@ -1220,7 +1222,7 @@ function renderCalWeek() {
             <div style="font-weight:600;font-size:13px;color:#1a1a2e;">${e.title}</div>
             <div style="font-size:11px;color:#9898aa;">${e.time}${e.endTime ? ' - ' + e.endTime : ''}${e.location ? ' · ' + e.location : ''}</div>
             ${e.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${e.notes}"</div>` : ''}
-            ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;font-size:9px;padding:1px 4px;">${t}</span>`).join('')}
+            ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;font-size:9px;padding:1px 4px;">${t}</span>`).join('')}
           </div>
           <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:16px;padding:4px;border:none;background:transparent;cursor:pointer;">✕</button>
         </div>
@@ -1333,7 +1335,7 @@ function renderCalMonth() {
             <div class="row-title" style="font-weight:600;">${e.title}</div>
             <div class="row-sub">${e.time}${e.endTime ? ' - ' + e.endTime : ''}${e.location ? ' · ' + e.location : ''}</div>
             ${e.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${e.notes}"</div>` : ''}
-            ${(e.tags||[]).map(t=>`<span class="badge b-blue" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
+            ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${t}</span>`).join('')}
           </div>
           <button onclick="delEvent('${e.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
         </div>
@@ -1374,15 +1376,28 @@ function renderTasks() {
   todos.forEach(t => { if (!g[t.assignee]) g[t.assignee]=[]; g[t.assignee].push(t); });
   el.innerHTML = FAM.filter(m => g[m] && g[m].length).map(m =>
     `<div style="padding:8px 16px 2px;font-size:11px;font-weight:700;color:#9898aa;text-transform:uppercase;letter-spacing:.5px;">${m}</div>`+
-    g[m].map(t => `
+    g[m].map(t => {
+      const today = todayStr();
+      let dueHtml = 'No due date';
+      if (t.due) {
+        if (t.dueRaw < today) {
+          dueHtml = `<span style="color:#b83232;font-weight:600;">⚠️ Overdue · ${t.due}</span>`;
+        } else if (t.dueRaw === today) {
+          dueHtml = `<span style="color:#a3600a;font-weight:600;">⏳ Due today</span>`;
+        } else {
+          dueHtml = `Due ${t.due}`;
+        }
+      }
+      return `
       <div class="task-row">
         <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
         <div class="task-main">
           <div class="task-ttl">${t.task}</div>
-          <div class="task-meta">${t.due?'Due '+t.due:'No due date'}</div>
+          <div class="task-meta">${dueHtml}</div>
         </div>
-        <button onclick="delTask(${t.rowNum})" style="color:#9898aa;font-size:18px;padding:4px 6px;">✕</button>
-      </div>`).join('')
+        <button onclick="delTask(${t.rowNum})" style="color:#9898aa;font-size:18px;padding:4px 6px;border:none;background:transparent;cursor:pointer;">✕</button>
+      </div>`;
+    }).join('')
   ).join('');
 }
 
@@ -1703,6 +1718,7 @@ function renderBirthdays() {
 
 // ══ MODALS ══
 function buildModals() {
+  chips('ev-chips', FAM, 'Everyone', 'ev-tag');
   chips('tk-chips', FAM, 'Everyone', 'tk-a');
   chips('mem-type-chips', ['🏆 Milestone','💬 Quote','💛 Moment'], '💛 Moment', 'mt');
   chips('mem-pers-chips', FAM, 'Everyone', 'mp');
@@ -1754,9 +1770,12 @@ function buildDynamicSelectors() {
 
 function openM(id) {
   document.getElementById(id).classList.add('open');
-  if (id === 'm-event' && typeof selectedCalDayStr !== 'undefined' && selectedCalDayStr) {
-    const el = document.getElementById('ev-date');
-    if (el) el.value = selectedCalDayStr;
+  if (id === 'm-event') {
+    if (typeof selectedCalDayStr !== 'undefined' && selectedCalDayStr) {
+      const el = document.getElementById('ev-date');
+      if (el) el.value = selectedCalDayStr;
+    }
+    chips('ev-chips', FAM, 'Everyone', 'ev-tag');
   }
 }
 function closeM(id) { document.getElementById(id).classList.remove('open'); }
@@ -1765,7 +1784,12 @@ function closeM(id) { document.getElementById(id).classList.remove('open'); }
 async function submitEvent() {
   const title = v('ev-title'); const date = v('ev-date');
   if (!title||!date) { toast('Please fill in title and date'); return; }
-  await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:v('ev-notes')});
+  const tag = gc('ev-tag');
+  let notes = v('ev-notes');
+  if (tag && tag !== 'Everyone') {
+    notes = (notes ? notes + '\n' : '') + 'Tag: ' + tag;
+  }
+  await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes});
   closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added! ✅'); await loadData();
 }
 
@@ -2348,6 +2372,17 @@ document.addEventListener('click', function(e) {
 });
 
 // ══ UTILS ══
+function getMemberBadgeClass(tag) {
+  switch(tag) {
+    case 'Mikaela': return 'b-blue';
+    case 'Meaghan': return 'b-amber';
+    case 'Eleanor': return 'b-red';
+    case 'Marcus': return 'b-green';
+    case 'Everyone': return 'b-purple';
+    default: return 'b-gray';
+  }
+}
+
 function v(id) { return document.getElementById(id)?.value?.trim()||''; }
 function clr(...ids) { ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
 function todayStr() { return new Date().toISOString().slice(0,10); }
