@@ -7,6 +7,7 @@
 
 var CALENDAR_ID    = "family09091668338066744284@group.calendar.google.com";
 var FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"];
+var WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec";
 
 var NOTIFY_EMAILS = [
   "marcuswongjw@gmail.com",
@@ -1418,7 +1419,7 @@ function proposeCategory(merchant) {
 }
 
 function sendApprovalEmail(id, dateStr, amount, merchant, category) {
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = WEB_APP_URL;
   var approvalUrl = webAppUrl + '?action=confirm_expense_page&id=' + id;
   
   var sourceTitle = 'Expense';
@@ -1489,7 +1490,7 @@ function renderConfirmExpensePage(id) {
     groupOptionsHtml += '</optgroup>';
   }
   
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = WEB_APP_URL;
   
   var html = '<!DOCTYPE html>' +
     '<html>' +
