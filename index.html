@@ -339,6 +339,61 @@ input,textarea,select{font-family:inherit;}
   transition: width 0.4s cubic-bezier(0.1, 0.8, 0.3, 1), opacity 0.3s ease;
   opacity: 0;
 }
+
+/* Pulsing Radar Markers */
+.custom-pin {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+  position: relative;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+.custom-pin:hover {
+  transform: scale(1.3);
+}
+.custom-pin::after {
+  content: '';
+  width: 300%;
+  height: 300%;
+  border-radius: 50%;
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  animation: radar-pulse 2s infinite ease-out;
+  pointer-events: none;
+}
+@keyframes radar-pulse {
+  0% { transform: scale(0.2); opacity: 1; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+/* Family Member Specific Pin Colors */
+.pin-blue { background-color: #4f86c6; }
+.pin-blue::after { background-color: rgba(79, 134, 198, 0.4); }
+
+.pin-amber { background-color: #f4a261; }
+.pin-amber::after { background-color: rgba(244, 162, 97, 0.4); }
+
+.pin-red { background-color: #e05252; }
+.pin-red::after { background-color: rgba(224, 82, 82, 0.4); }
+
+.pin-green { background-color: #3aaa75; }
+.pin-green::after { background-color: rgba(58, 170, 117, 0.4); }
+
+.pin-purple { background-color: #9b59b6; }
+.pin-purple::after { background-color: rgba(155, 89, 182, 0.4); }
+
+/* Animated Flight Lines */
+@keyframes dash-move {
+  to { stroke-dashoffset: -20; }
+}
+.animated-flight-path {
+  animation: dash-move 1.5s linear infinite;
+  stroke-linecap: round;
+}
 </style>
 </head>
 <body>
@@ -533,7 +588,28 @@ input,textarea,select{font-family:inherit;}
         <div class="card">
           <div class="card-hdr">
             <span class="card-title">🗺️ Travel Map</span>
-            <button class="btn btn-sm btn-p" onclick="openM('m-trip-add')">+ Add Trip</button>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm" id="btn-play-timeline" onclick="playTravelTimeline()" style="background:#e8f0fb;color:#4f86c6;border:1px solid #cce0f5;font-weight:600;display:flex;align-items:center;gap:4px;"><span>▶</span><span>Play Timeline</span></button>
+              <button class="btn btn-sm btn-p" onclick="openM('m-trip-add')">+ Add Trip</button>
+            </div>
+          </div>
+          <!-- Travel Stats Panel -->
+          <div class="travel-stats" style="display:flex;gap:10px;margin:12px;margin-bottom:4px;">
+            <div style="flex:1;background:#fafafa;border:1px solid #e4e6ef;border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:16px;">✈️</div>
+              <div id="stat-trips-count" style="font-size:15px;font-weight:bold;color:#1a1a2e;margin-top:2px;">0</div>
+              <div style="font-size:9px;color:#9898aa;text-transform:uppercase;font-weight:600;letter-spacing:0.3px;">Trips</div>
+            </div>
+            <div style="flex:1;background:#fafafa;border:1px solid #e4e6ef;border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:16px;">🌍</div>
+              <div id="stat-countries-count" style="font-size:15px;font-weight:bold;color:#1a1a2e;margin-top:2px;">0</div>
+              <div style="font-size:9px;color:#9898aa;text-transform:uppercase;font-weight:600;letter-spacing:0.3px;">Countries</div>
+            </div>
+            <div style="flex:1;background:#fafafa;border:1px solid #e4e6ef;border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:16px;">🏆</div>
+              <div id="stat-top-traveler" style="font-size:14px;font-weight:bold;color:#1a1a2e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="None">None</div>
+              <div style="font-size:9px;color:#9898aa;text-transform:uppercase;font-weight:600;letter-spacing:0.3px;">Top Traveler</div>
+            </div>
           </div>
           <div id="travel-map" style="height:350px;border-radius:12px;margin:12px;border:1.5px solid #e4e6ef;box-shadow:0 4px 12px rgba(0,0,0,0.05);position:relative;z-index:1;"></div>
           <div class="card-hdr" style="border-top:1px solid #e4e6ef;margin-top:10px;"><span class="card-title">✈️ Visited Places</span></div>
@@ -916,6 +992,12 @@ const NAV_SECONDARY = ['budgets','memories','fertility','recurring','birthdays',
 
 function goTo(id) {
   section = id;
+  if (id !== 'travel' && timelineInterval) {
+    clearInterval(timelineInterval);
+    timelineInterval = null;
+    const playBtn = document.getElementById('btn-play-timeline');
+    if (playBtn) playBtn.innerHTML = '<span>▶</span><span>Play Timeline</span>';
+  }
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   const t = document.getElementById('s-'+id);
   if (t) t.classList.add('active');
@@ -2188,27 +2270,70 @@ function handlePinText(val) {
 // ══ TRAVEL TRACKER ══
 let travelMap = null;
 let travelMarkers = [];
+let travelPaths = [];
+let timelineInterval = null;
 
 function renderTravel() {
   const trips = data.travel || [];
   const el = document.getElementById('trip-list');
   if (!el) return;
   
-  // Render Trip List below map
+  // Calculate and Render Stats
+  const tripsCount = trips.length;
+  const uniqueCountries = new Set();
+  const travelerCounts = {};
+  
+  trips.forEach(t => {
+    if (t.country) uniqueCountries.add(t.country.trim());
+    if (t.members && t.members.length) {
+      t.members.forEach(m => {
+        travelerCounts[m] = (travelerCounts[m] || 0) + 1;
+      });
+    } else {
+      travelerCounts['Everyone'] = (travelerCounts['Everyone'] || 0) + 1;
+    }
+  });
+  
+  const countriesCount = uniqueCountries.size;
+  
+  let topTraveler = 'None';
+  let maxTrips = 0;
+  for (const person in travelerCounts) {
+    if (travelerCounts[person] > maxTrips) {
+      maxTrips = travelerCounts[person];
+      topTraveler = person;
+    }
+  }
+  if (topTraveler !== 'None' && maxTrips > 0) {
+    topTraveler = `${topTraveler} (${maxTrips})`;
+  }
+  
+  const tripsCountEl = document.getElementById('stat-trips-count');
+  const countriesCountEl = document.getElementById('stat-countries-count');
+  const topTravelerEl = document.getElementById('stat-top-traveler');
+  
+  if (tripsCountEl) tripsCountEl.textContent = tripsCount;
+  if (countriesCountEl) countriesCountEl.textContent = countriesCount;
+  if (topTravelerEl) {
+    topTravelerEl.textContent = topTraveler;
+    topTravelerEl.title = topTraveler;
+  }
+  
+  // Render Trip List below map with Fly-To click handler
   if (!trips.length) {
     el.innerHTML = '<div class="empty"><div class="ei">✈️</div>No trips logged yet</div>';
   } else {
     el.innerHTML = trips.map(t => {
       const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
       return `
-        <div class="row" style="padding:10px 16px;border-bottom:1px solid #e4e6ef;">
+        <div class="row" style="padding:10px 16px;border-bottom:1px solid #e4e6ef;cursor:pointer;transition:background 0.2s;" onclick="focusTrip('${t.id}', ${t.lat}, ${t.lng})">
           <div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div>
           <div class="row-main">
             <div class="row-title" style="font-weight:600;">${t.city}, ${t.country}</div>
             <div class="row-sub">${t.date} · Travelers: ${membersStr}</div>
             ${t.notes ? `<div style="font-size:11px;color:#888;margin-top:2px;font-style:italic;">"${t.notes}"</div>` : ''}
           </div>
-          <button onclick="delTrip('${t.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
+          <button onclick="event.stopPropagation(); delTrip('${t.id}')" style="color:#9898aa;font-size:16px;padding:4px;flex-shrink:0;border:none;background:transparent;cursor:pointer;">✕</button>
         </div>`;
     }).join('');
   }
@@ -2229,14 +2354,34 @@ function renderTravel() {
         }).addTo(travelMap);
       }
       
-      // Clear existing markers
+      // Clear existing markers & paths
       travelMarkers.forEach(m => m.remove());
       travelMarkers = [];
+      travelPaths.forEach(p => p.remove());
+      travelPaths = [];
       
-      // Draw new markers
+      const homeBase = [1.3521, 103.8198]; // Singapore
+      
+      // Draw new markers and animated flight paths
       trips.forEach(t => {
         if (t.lat !== 0 || t.lng !== 0) {
-          const marker = L.marker([t.lat, t.lng]).addTo(travelMap);
+          let pinColorClass = 'pin-purple';
+          if (t.members && t.members.length === 1) {
+            const traveler = t.members[0];
+            if (traveler === 'Mikaela') pinColorClass = 'pin-blue';
+            else if (traveler === 'Meaghan') pinColorClass = 'pin-amber';
+            else if (traveler === 'Eleanor') pinColorClass = 'pin-red';
+            else if (traveler === 'Marcus') pinColorClass = 'pin-green';
+          }
+          
+          const customIcon = L.divIcon({
+            html: `<div class="custom-pin ${pinColorClass}"></div>`,
+            className: 'custom-pin-container',
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          });
+          
+          const marker = L.marker([t.lat, t.lng], { icon: customIcon }).addTo(travelMap);
           const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
           const popupContent = `
             <div style="font-family:sans-serif;padding:2px;min-width:150px;">
@@ -2246,7 +2391,24 @@ function renderTravel() {
               ${t.notes ? `<div style="font-size:11px;color:#888;font-style:italic;border-top:1px solid #eee;padding-top:4px;margin-top:4px;">"${t.notes}"</div>` : ''}
             </div>`;
           marker.bindPopup(popupContent);
+          
+          marker.tripId = t.id;
           travelMarkers.push(marker);
+          
+          // Draw animated flight path line
+          const pathCoords = [homeBase, [t.lat, t.lng]];
+          const polyline = L.polyline(pathCoords, {
+            color: pinColorClass === 'pin-blue' ? '#4f86c6' :
+                   pinColorClass === 'pin-amber' ? '#f4a261' :
+                   pinColorClass === 'pin-red' ? '#e05252' :
+                   pinColorClass === 'pin-green' ? '#3aaa75' : '#9b59b6',
+            weight: 2,
+            dashArray: '6, 8',
+            className: 'animated-flight-path',
+            opacity: 0.65
+          }).addTo(travelMap);
+          
+          travelPaths.push(polyline);
         }
       });
       
@@ -2256,6 +2418,65 @@ function renderTravel() {
       console.error('Leaflet Map Error:', e);
     }
   }, 100);
+}
+
+function focusTrip(id, lat, lng) {
+  if (!travelMap) return;
+  travelMap.flyTo([lat, lng], 6, {
+    animate: true,
+    duration: 1.2
+  });
+  const marker = travelMarkers.find(m => m.tripId === id);
+  if (marker) {
+    setTimeout(() => {
+      marker.openPopup();
+    }, 1200);
+  }
+}
+
+function playTravelTimeline() {
+  const trips = data.travel || [];
+  const validTrips = trips.filter(t => t.lat !== 0 || t.lng !== 0);
+  if (!validTrips.length) {
+    toast('No trip locations to play!');
+    return;
+  }
+  
+  const sortedTrips = [...validTrips].sort((a, b) => {
+    return new Date(a.date) - new Date(b.date);
+  });
+  
+  const playBtn = document.getElementById('btn-play-timeline');
+  if (timelineInterval) {
+    clearInterval(timelineInterval);
+    timelineInterval = null;
+    if (playBtn) playBtn.innerHTML = '<span>▶</span><span>Play Timeline</span>';
+    toast('Timeline stopped');
+    return;
+  }
+  
+  if (playBtn) playBtn.innerHTML = '<span>⏹</span><span>Stop Play</span>';
+  toast('Starting travel tour! ✈️');
+  
+  let i = 0;
+  function nextStep() {
+    if (i >= sortedTrips.length) {
+      clearInterval(timelineInterval);
+      timelineInterval = null;
+      if (playBtn) playBtn.innerHTML = '<span>▶</span><span>Play Timeline</span>';
+      toast('Travel tour completed! 🎉');
+      setTimeout(() => {
+        if (travelMap) travelMap.setView([20, 0], 2);
+      }, 2000);
+      return;
+    }
+    const t = sortedTrips[i];
+    focusTrip(t.id, t.lat, t.lng);
+    i++;
+  }
+  
+  nextStep();
+  timelineInterval = setInterval(nextStep, 3800);
 }
 
 async function submitTrip() {
