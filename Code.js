@@ -1304,7 +1304,9 @@ function scanInboxForTransactions() {
             merchant = 'NTUC FairPrice';
           }
           var dateStr = parsed.dateStr;
-          var category = proposeCategory(tpl.name === 'shopee' ? 'Shopee' : merchant);
+          var details = proposeExpenseDetails(tpl.name === 'shopee' ? 'Shopee' : merchant);
+          var category = details.category;
+          var account = details.account;
           
           // Check for duplicate in logged Expenses
           var duplicateInLogged = findDuplicateInExpenses(expSheet, amount, dateStr);
@@ -1335,8 +1337,8 @@ function scanInboxForTransactions() {
           } else {
             // No duplicate: log new pending
             var id = 'p_' + tpl.name + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-            pendingSheet.appendRow([id, dateStr, 'Family', category, amount, merchant, new Date()]);
-            sendApprovalEmail(id, dateStr, amount, merchant, category);
+            pendingSheet.appendRow([id, dateStr, account, category, amount, merchant, new Date()]);
+            sendApprovalEmail(id, dateStr, amount, merchant, category, account);
             Logger.log('[' + tpl.name + '] Logged new pending transaction: ' + merchant + ' ($' + amount + ')');
           }
         }
@@ -1418,7 +1420,40 @@ function proposeCategory(merchant) {
   return 'Misc';
 }
 
-function sendApprovalEmail(id, dateStr, amount, merchant, category) {
+function proposeExpenseDetails(merchant) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var expSheet = ss.getSheetByName('Expenses');
+  
+  var category = '';
+  var account = 'Family';
+  
+  if (expSheet) {
+    var vals = expSheet.getDataRange().getValues();
+    var mLower = merchant.toLowerCase();
+    for (var i = vals.length - 1; i >= 1; i--) {
+      var pastNote = toStr(vals[i][5]).toLowerCase();
+      var pastAcc = toStr(vals[i][2]);
+      var pastCat = toStr(vals[i][3]);
+      
+      if (!pastNote || pastNote.trim().length < 2) continue;
+      
+      if (mLower.indexOf(pastNote) !== -1 || pastNote.indexOf(mLower) !== -1) {
+        category = pastCat;
+        account = pastAcc || 'Family';
+        Logger.log('💡 Proposing details from past record: ' + pastNote + ' -> Cat: ' + category + ', Acc: ' + account);
+        break;
+      }
+    }
+  }
+  
+  if (!category) {
+    category = proposeCategory(merchant);
+  }
+  
+  return { category: category, account: account };
+}
+
+function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
   var webAppUrl = WEB_APP_URL;
   var approvalUrl = webAppUrl + '?action=confirm_expense_page&id=' + id;
   
@@ -1439,6 +1474,7 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category) {
                  '<p style="margin:8px 0;font-size:14px;"><strong>Merchant:</strong> ' + merchant + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> $' + amount.toFixed(2) + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ' + dateStr + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Account:</strong> ' + account + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Category:</strong> ' + category + '</p>' +
                  '<div style="margin-top:20px;text-align:center;">' +
                    '<a href="' + approvalUrl + '" style="background:#4f86c6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;font-size:14px;">Verify & Log Expense</a>' +
