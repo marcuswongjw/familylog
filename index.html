@@ -155,6 +155,307 @@ input,textarea,select{font-family:inherit;}
 .more-tile .mi{font-size:30px;}
 .more-tile .ml{font-size:13px;font-weight:600;}
 
+/* ── US / RELATIONSHIP SPACE ── */
+#s-us {
+  background: linear-gradient(135deg, #fff5f6 0%, #fdebee 50%, #fae1e6 100%);
+}
+.us-header {
+  text-align: center;
+  padding: 16px 8px;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(253, 235, 238, 0.8);
+  margin-bottom: 8px;
+}
+.us-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #6b2d5c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.us-header p {
+  font-size: 13px;
+  color: #a85f89;
+  margin-top: 4px;
+}
+.us-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 16px;
+  border: 1.5px solid rgba(253, 222, 228, 0.8);
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(107, 45, 92, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.us-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #6b2d5c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Appreciation Jar Visual */
+.jar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  position: relative;
+}
+.jar-graphic {
+  width: 90px;
+  height: 120px;
+  border: 3.5px solid #a85f89;
+  border-radius: 20px 20px 25px 25px;
+  position: relative;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 15px rgba(168, 95, 137, 0.1), 0 8px 24px rgba(168, 95, 137, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer;
+}
+.jar-graphic:hover {
+  transform: scale(1.05);
+}
+.jar-lid {
+  width: 60px;
+  height: 14px;
+  background: #a85f89;
+  border-radius: 4px;
+  position: absolute;
+  top: -12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.jar-neck {
+  width: 44px;
+  height: 6px;
+  background: transparent;
+  border-left: 3.5px solid #a85f89;
+  border-right: 3.5px solid #a85f89;
+  position: absolute;
+  top: -6px;
+}
+.jar-label {
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px dashed #a85f89;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b2d5c;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transform: rotate(-3deg);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.heart-float {
+  font-size: 18px;
+  position: absolute;
+  animation: floatUp 3s infinite ease-in-out;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+@keyframes floatUp {
+  0% { transform: translateY(30px) scale(0.6); opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { transform: translateY(-70px) scale(1.1) translateX(var(--rx, 0px)); opacity: 0; }
+}
+/* Locked & Unlocked Envelopes */
+.envelope {
+  background: #fff;
+  border: 1px solid rgba(253, 222, 228, 0.8);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(107, 45, 92, 0.03);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-left: 4px solid #a85f89;
+}
+.envelope-locked {
+  background: #fbf6f7;
+  border-left: 4px dashed #9898aa;
+  opacity: 0.85;
+}
+.envelope-message {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #2d2d3a;
+  white-space: pre-wrap;
+}
+.envelope-meta {
+  font-size: 10px;
+  color: #9898aa;
+  margin-top: 6px;
+  font-weight: 500;
+}
+/* Roulette Widget */
+.roulette-wrapper {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid rgba(253, 222, 228, 0.8);
+  padding: 16px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+.roulette-tabs {
+  display: flex;
+  background: rgba(253, 222, 228, 0.3);
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  width: 100%;
+}
+.roulette-tab {
+  flex: 1;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b2d5c;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+.roulette-tab.active {
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(107, 45, 92, 0.08);
+}
+.roulette-card {
+  perspective: 1000px;
+  width: 100%;
+  max-width: 280px;
+  height: 120px;
+  cursor: pointer;
+}
+.roulette-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transform-style: preserve-3d;
+}
+.roulette-card.spinning .roulette-card-inner {
+  transform: rotateY(180deg);
+  animation: spinEffect 0.6s ease-in-out;
+}
+@keyframes spinEffect {
+  0% { transform: scale(1) rotateY(0); }
+  50% { transform: scale(0.9) rotateY(90deg) rotate(5deg); }
+  100% { transform: scale(1) rotateY(180deg); }
+}
+.roulette-front, .roulette-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
+}
+.roulette-front {
+  background: linear-gradient(135deg, #a85f89 0%, #6b2d5c 100%);
+  color: #fff;
+  border: 1px solid #6b2d5c;
+}
+.roulette-back {
+  background: #fff5f7;
+  color: #6b2d5c;
+  transform: rotateY(180deg);
+  border: 1px solid rgba(253, 222, 228, 0.9);
+  overflow-y: auto;
+}
+.roulette-back-content {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #6b2d5c;
+}
+.roulette-back-sub {
+  font-size: 10px;
+  color: #a85f89;
+  margin-top: 4px;
+}
+/* Checkin Form Elements */
+.battery-slider {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.battery-heart {
+  font-size: 26px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  color: #e4e6ef;
+}
+.battery-heart.active {
+  color: #ef4444;
+  transform: scale(1.15);
+}
+.us-placeholder {
+  text-align: center;
+  padding: 48px 16px;
+  color: #a85f89;
+}
+.us-placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  animation: pulse-heart 2s infinite;
+}
+@keyframes pulse-heart {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+.adults-only {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.checkin-tag {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid #e4e6ef;
+  font-size: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #5a5a72;
+}
+.checkin-tag.sel {
+  border-color: #a85f89;
+  background: #fff0f3;
+  color: #a85f89;
+  font-weight: 600;
+}
+
 /* ── TASK ── */
 .task-row{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #e4e6ef;}
 .task-row:last-child{border-bottom:none;}
@@ -618,6 +919,11 @@ input,textarea,select{font-family:inherit;}
       </div>
     </div>
 
+    <!-- US (CONNECTION SPACE) -->
+    <div class="section" id="s-us">
+      <div class="sec-body" id="us-container"></div>
+    </div>
+
   </div><!-- end content -->
 
   <!-- Bottom Nav -->
@@ -626,6 +932,7 @@ input,textarea,select{font-family:inherit;}
     <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
     <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
     <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
+    <div class="nav-it" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
     <div class="nav-it" id="nav-more" onclick="goTo('more')"><div class="ni">⋯</div><div>More</div></div>
   </div>
 
@@ -870,6 +1177,78 @@ input,textarea,select{font-family:inherit;}
     <div class="modal-foot">
       <button class="btn btn-s" onclick="closeM('m-expense')">Cancel</button>
       <button class="btn btn-p" style="flex:1" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- Drop Appreciation Note -->
+<div class="overlay" id="m-love-note">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Drop Note in Jar</span><button class="modal-close" onclick="closeM('m-love-note')">✕</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Write an encouraging note or appreciation</label>
+        <textarea id="love-note-msg" placeholder="Write something you appreciate about your partner..."></textarea>
+      </div>
+      <p style="font-size:11px; color:#a85f89; margin:0; line-height:1.4;">
+        ⚠️ Note will remain locked in the jar until the upcoming Friday at 6:00 PM date night!
+      </p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-love-note')">Cancel</button>
+      <button class="btn btn-p" style="flex:1; background:#6b2d5c; border:none;" onclick="submitAppreciation()">Drop in Jar 🍯</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Weekly Check-in -->
+<div class="overlay" id="m-love-checkin">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><span class="modal-title">Weekly Relationship Check-in</span><button class="modal-close" onclick="closeM('m-love-checkin')">✕</button></div>
+    <div class="modal-body">
+      <!-- Battery hearts -->
+      <div class="field">
+        <label>Relationship Battery Level</label>
+        <div class="battery-slider" id="checkin-battery-slider">
+          <span class="battery-heart" data-val="1" onclick="setCheckinBattery(1)">❤️</span>
+          <span class="battery-heart" data-val="2" onclick="setCheckinBattery(2)">❤️</span>
+          <span class="battery-heart" data-val="3" onclick="setCheckinBattery(3)">❤️</span>
+          <span class="battery-heart" data-val="4" onclick="setCheckinBattery(4)">❤️</span>
+          <span class="battery-heart" data-val="5" onclick="setCheckinBattery(5)">❤️</span>
+        </div>
+      </div>
+      
+      <!-- Mood chips -->
+      <div class="field">
+        <label>How are you feeling about Us this week?</label>
+        <div class="chips" id="checkin-moods">
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Loved</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Stressed</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Connected</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Tired</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Distant</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Grateful</span>
+          <span class="checkin-tag" onclick="toggleMoodTag(this)">Excited</span>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="field">
+        <label>What is one thing your partner did that you appreciated? (opt)</label>
+        <textarea id="checkin-notes" placeholder="Thanks for..."></textarea>
+      </div>
+
+      <!-- Focus -->
+      <div class="field">
+        <label>What should we focus on next week? (opt)</label>
+        <input type="text" id="checkin-focus" placeholder="e.g. Schedule a date night, more alone time...">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-s" onclick="closeM('m-love-checkin')">Cancel</button>
+      <button class="btn btn-p" style="flex:1; background:#a85f89; border:none;" onclick="submitLoveCheckin()">Save Check-in</button>
     </div>
   </div>
 </div>
@@ -1137,6 +1516,7 @@ function render(id) {
     case 'birthdays': renderBirthdays(); break;
     case 'schedules': renderSchedules(); break;
     case 'travel':    renderTravel();    break;
+    case 'us':        renderUs();        break;
   }
 }
 
@@ -2628,6 +3008,369 @@ function toast(msg) {
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastT);
   toastT = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+// ══ US (CONNECTION SANCTUARY) ══
+const DEEP_QUESTIONS = [
+  "What is a memory of us that always makes you smile?",
+  "What is a dream you have for us in the next 5 years?",
+  "What is one thing I did recently that made you feel deeply loved?",
+  "What does a perfect day of quality time look like for us now?",
+  "If we could travel anywhere together next month, money aside, where would we go?",
+  "What is a hobby or activity you've always wanted us to try together?",
+  "What are you most grateful for in our marriage right now?",
+  "In what ways do you think we've grown closest over the past year?",
+  "What is a small, everyday gesture of mine that you appreciate but rarely mention?",
+  "If you could describe our love story in three words, what would they be?",
+  "What is something you feel stressed about right now that I can help support you with?",
+  "What was your very first impression of me, and how has it changed?",
+  "If we could slow down time for a day, how would you want to spend it together?",
+  "What is a song, movie, or book that reminds you of our relationship?",
+  "What is a core strength of our relationship that you think helps us face challenges?",
+  "What is a memory from our dating years that still feels fresh to you?",
+  "How can I better show up for you when you are feeling overwhelmed?",
+  "What is something new you've learned about me recently?",
+  "What area of our family life do you think we are managing best as a team?",
+  "What is one area of our relationship you would love to nurture more this season?"
+];
+
+const DATE_IDEAS = [
+  "Cook a completely new 3-course recipe together from scratch.",
+  "Recreate our very first date as closely as possible.",
+  "Have a backyard or living room picnic with favorite cheeses and fruits.",
+  "Do a cozy board game tournament or video game night together.",
+  "Take a scenic night drive and park somewhere to stargaze or look at city lights.",
+  "Visit a local art gallery, museum, or botanical garden.",
+  "Plan a 'tourist in our own city' afternoon, visiting spots we've never been to.",
+  "Go for a morning hike or park walk followed by a brunch date.",
+  "Set up a cozy indoor blanket fort and watch a favorite movie from our childhoods.",
+  "Book a couple's spa or do DIY massage night at home with soothing music.",
+  "Go to a bookstore, pick out a book for each other, and read together at a coffee shop.",
+  "Have a themed dinner night (e.g., Italian, Japanese, Mexican) with matching music.",
+  "Take an online or local cooking, pottery, or painting class together.",
+  "Go to a local live comedy show or music performance.",
+  "Write down a bucket list of 10 things we want to do together before the year ends.",
+  "Plan a sunrise breakfast date (wake up early, get coffee, and watch the sun rise).",
+  "Visit a local arcade or bowling alley for a playful, competitive night.",
+  "Do a grocery store scavenger hunt: each partner gets $10 to buy surprise items for the other.",
+  "Have a sunset walk along the beach or a scenic waterfront.",
+  "Do a memory lane date: look through old photo albums or watch wedding/early videos."
+];
+
+let currentRouletteTab = 'q';
+let selectedCheckinBattery = 5;
+
+function renderUs() {
+  const container = document.getElementById('us-container');
+  if (!container) return;
+
+  if (user !== 'Marcus' && user !== 'Eleanor') {
+    container.innerHTML = `
+      <div class="us-card" style="text-align:center; margin-top:24px;">
+        <div class="us-placeholder">
+          <div class="us-placeholder-icon">💖</div>
+          <h2 style="color:#6b2d5c; font-weight:700;">Connection Sanctuary</h2>
+          <p class="adults-only" style="margin-top:14px; color:#a85f89;">
+            This is a private sanctuary space for Mom & Dad to share appreciations, plan date nights, and align.
+          </p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const partner = user === 'Marcus' ? 'Eleanor' : 'Marcus';
+  const apps = data.appreciations || [];
+  
+  let lockedCount = 0;
+  const unlockedApps = [];
+  
+  apps.forEach(a => {
+    const isToMe = (a.recipient === user);
+    const isLocked = a.revealDate ? (new Date() < new Date(a.revealDate)) : false;
+    
+    if (isLocked) {
+      lockedCount++;
+    } else {
+      if (isToMe) {
+        unlockedApps.push(a);
+      }
+    }
+  });
+
+  const checkins = data.loveCheckins || [];
+  const marcusCheckin = checkins.filter(c => c.user === 'Marcus').sort((a,b) => b.timestamp.localeCompare(a.timestamp))[0];
+  const eleanorCheckin = checkins.filter(c => c.user === 'Eleanor').sort((a,b) => b.timestamp.localeCompare(a.timestamp))[0];
+  
+  let alignmentHtml = '';
+  if (marcusCheckin || eleanorCheckin) {
+    let marcusInfo = '<div style="font-size:11px; color:#9898aa; margin-top:6px;">No check-in yet</div>';
+    if (marcusCheckin) {
+      marcusInfo = `
+        <div style="font-size:18px; margin:4px 0;">${'❤️'.repeat(marcusCheckin.battery)}</div>
+        <div style="font-size:10px; color:#a85f89;">Mood: ${marcusCheckin.moods.join(', ') || 'Normal'}</div>
+        <div style="font-size:10px; color:#9898aa; margin-top:2px; font-style:italic;">"${escapeHtml(marcusCheckin.notes) || 'No notes'}"</div>
+      `;
+    }
+    let eleanorInfo = '<div style="font-size:11px; color:#9898aa; margin-top:6px;">No check-in yet</div>';
+    if (eleanorCheckin) {
+      eleanorInfo = `
+        <div style="font-size:18px; margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div>
+        <div style="font-size:10px; color:#a85f89;">Mood: ${eleanorCheckin.moods.join(', ') || 'Normal'}</div>
+        <div style="font-size:10px; color:#9898aa; margin-top:2px; font-style:italic;">"${escapeHtml(eleanorCheckin.notes) || 'No notes'}"</div>
+      `;
+    }
+
+    alignmentHtml = `
+      <div style="display:flex; gap:12px; margin-top:8px;">
+        <div style="flex:1; background:#fff; border-radius:12px; padding:10px; border:1px solid rgba(253,222,228,0.7); text-align:center;">
+          <div style="font-weight:700; color:#6b2d5c; font-size:12px;">👨 Marcus</div>
+          ${marcusInfo}
+        </div>
+        <div style="flex:1; background:#fff; border-radius:12px; padding:10px; border:1px solid rgba(253,222,228,0.7); text-align:center;">
+          <div style="font-weight:700; color:#6b2d5c; font-size:12px;">👩 Eleanor</div>
+          ${eleanorInfo}
+        </div>
+      </div>
+    `;
+  } else {
+    alignmentHtml = '<div style="text-align:center; font-size:12px; color:#9898aa; padding:8px;">No check-ins logged yet. Make yours below!</div>';
+  }
+
+  let unlockedHtml = '';
+  if (unlockedApps.length === 0) {
+    unlockedHtml = `
+      <div style="text-align:center; padding:16px; border:1px dashed rgba(168,95,137,0.3); border-radius:12px; color:#9898aa; font-size:12px;">
+        No notes revealed yet. Write one to encourage partner!
+      </div>
+    `;
+  } else {
+    unlockedHtml = unlockedApps.map(a => {
+      const dateOnly = a.revealDate ? a.revealDate.split('T')[0] : '';
+      return `
+        <div class="envelope">
+          <div style="font-size:20px;">✉️</div>
+          <div style="flex:1;">
+            <div class="envelope-message">"${escapeHtml(a.message)}"</div>
+            <div class="envelope-meta">Revealed on ${fmtDate(dateOnly)}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  container.innerHTML = `
+    <div class="us-header">
+      <h2>💖 Us Connection Sanctuary</h2>
+      <p>A private space for Marcus & Eleanor</p>
+    </div>
+
+    <div class="us-card">
+      <div class="us-card-title">📊 Weekly Battery Check-in</div>
+      ${alignmentHtml}
+      <button class="btn btn-sm btn-p" onclick="openLoveCheckinModal()" style="background:#a85f89; border:none; margin-top:4px;">Log Weekly Check-in</button>
+    </div>
+
+    <div class="us-card">
+      <div class="us-card-title">🍯 Appreciation Jar</div>
+      <div class="jar-container" onclick="triggerJarFloat()">
+        <div class="jar-graphic" id="jar-gfx">
+          <div class="jar-lid"></div>
+          <div class="jar-neck"></div>
+          <div class="jar-label">Love Notes</div>
+          <div style="font-size: 20px; margin-top: 45px;">🍯</div>
+        </div>
+        <div style="text-align:center; margin-top:12px;">
+          <strong style="color:#6b2d5c; font-size:14px;">${lockedCount} note(s) currently locked</strong>
+          <div style="font-size:11px; color:#a85f89; margin-top:2px;">Unlocking Friday at 6:00 PM for Date Night!</div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+        <button class="btn btn-sm btn-p" onclick="openAppreciationModal()" style="background:#6b2d5c; border:none;">Drop a Note in the Jar ✍️</button>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div style="font-size:12px; font-weight:700; color:#6b2d5c; margin-bottom:8px;">📬 Unlocked Notes from ${partner}</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${unlockedHtml}
+        </div>
+      </div>
+    </div>
+
+    <div class="us-card">
+      <div class="us-card-title">🎡 Spark Roulette</div>
+      <div class="roulette-tabs">
+        <div class="roulette-tab active" id="r-tab-q" onclick="switchRouletteTab('q')">💬 Deep Talk Questions</div>
+        <div class="roulette-tab" id="r-tab-d" onclick="switchRouletteTab('d')">🍕 Date Night Ideas</div>
+      </div>
+      
+      <div class="roulette-wrapper">
+        <div class="roulette-card" id="r-card" onclick="spinRoulette()">
+          <div class="roulette-card-inner">
+            <div class="roulette-front">
+              <div style="font-size:32px; margin-bottom:8px;">✨</div>
+              <div style="font-weight:700; font-size:14px;">Tap to Spin the Wheel!</div>
+              <div style="font-size:10px; opacity:0.8; margin-top:4px;">Get a random card</div>
+            </div>
+            <div class="roulette-back">
+              <div class="roulette-back-content" id="r-result-text">Your result will appear here...</div>
+              <div class="roulette-back-sub" id="r-result-sub">Category</div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px; display:none; border-color:rgba(253,222,228,0.8); color:#6b2d5c;">Spin Again 🔄</button>
+      </div>
+    </div>
+  `;
+}
+
+function switchRouletteTab(tab) {
+  currentRouletteTab = tab;
+  document.getElementById('r-tab-q').classList.toggle('active', tab === 'q');
+  document.getElementById('r-tab-d').classList.toggle('active', tab === 'd');
+  
+  const card = document.getElementById('r-card');
+  if (card) card.classList.remove('spinning');
+  
+  const spinAgainBtn = document.getElementById('btn-spin-again');
+  if (spinAgainBtn) spinAgainBtn.style.display = 'none';
+}
+
+function spinRoulette() {
+  const card = document.getElementById('r-card');
+  if (!card) return;
+  
+  card.classList.add('spinning');
+  
+  let resultText = '';
+  let categoryText = '';
+  
+  if (currentRouletteTab === 'q') {
+    const idx = Math.floor(Math.random() * DEEP_QUESTIONS.length);
+    resultText = DEEP_QUESTIONS[idx];
+    categoryText = '💬 Deep Connection Question';
+  } else {
+    const idx = Math.floor(Math.random() * DATE_IDEAS.length);
+    resultText = DATE_IDEAS[idx];
+    categoryText = '🍕 Date Night Suggestion';
+  }
+  
+  document.getElementById('r-result-text').textContent = resultText;
+  document.getElementById('r-result-sub').textContent = categoryText;
+  
+  const spinAgainBtn = document.getElementById('btn-spin-again');
+  if (spinAgainBtn) {
+    setTimeout(() => {
+      spinAgainBtn.style.display = 'inline-block';
+    }, 600);
+  }
+}
+
+function triggerJarFloat() {
+  const jar = document.getElementById('jar-gfx');
+  if (!jar) return;
+  
+  jar.style.transform = 'scale(0.95)';
+  setTimeout(() => { jar.style.transform = 'scale(1.05)'; }, 100);
+  setTimeout(() => { jar.style.transform = ''; }, 250);
+  
+  const heartEmojis = ['❤️', '💖', '💝', '💕', '✨'];
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => {
+      const h = document.createElement('div');
+      h.className = 'heart-float';
+      h.textContent = heartEmojis[Math.floor(Math.random() * heartEmojis.length)];
+      h.style.left = (jar.offsetLeft + jar.offsetWidth / 2 - 10 + (Math.random() * 30 - 15)) + 'px';
+      h.style.top = (jar.offsetTop + 40) + 'px';
+      h.style.setProperty('--rx', (Math.random() * 60 - 30) + 'px');
+      jar.parentNode.appendChild(h);
+      setTimeout(() => h.remove(), 3000);
+    }, i * 150);
+  }
+}
+
+function openAppreciationModal() {
+  clr('love-note-msg');
+  openM('m-love-note');
+}
+
+function openLoveCheckinModal() {
+  selectedCheckinBattery = 5;
+  updateCheckinBatteryHearts();
+  document.querySelectorAll('#checkin-moods .checkin-tag').forEach(t => t.classList.remove('sel'));
+  clr('checkin-notes', 'checkin-focus');
+  openM('m-love-checkin');
+}
+
+function setCheckinBattery(val) {
+  selectedCheckinBattery = val;
+  updateCheckinBatteryHearts();
+}
+
+function updateCheckinBatteryHearts() {
+  const hearts = document.querySelectorAll('#checkin-battery-slider .battery-heart');
+  hearts.forEach((h, idx) => {
+    h.classList.toggle('active', idx < selectedCheckinBattery);
+  });
+}
+
+function toggleMoodTag(el) {
+  el.classList.toggle('sel');
+}
+
+async function submitAppreciation() {
+  const msg = v('love-note-msg');
+  if (!msg) {
+    toast('Please enter a note');
+    return;
+  }
+  closeM('m-love-note');
+  document.body.classList.add('loading-state');
+  const res = await gPost({ note: 'add_appreciation', message: msg });
+  document.body.classList.remove('loading-state');
+  if (res && res.status === 'ok') {
+    toast('Note dropped in the jar! 🍯');
+    await loadData();
+  } else {
+    toast('Error saving note');
+  }
+}
+
+async function submitLoveCheckin() {
+  const selectedMoods = [];
+  document.querySelectorAll('#checkin-moods .checkin-tag.sel').forEach(t => {
+    selectedMoods.push(t.textContent.trim());
+  });
+  
+  const notes = v('checkin-notes');
+  const focus = v('checkin-focus');
+  
+  closeM('m-love-checkin');
+  document.body.classList.add('loading-state');
+  const res = await gPost({
+    note: 'add_love_checkin',
+    battery: selectedCheckinBattery,
+    moods: selectedMoods.join(', '),
+    notes: notes,
+    focus: focus
+  });
+  document.body.classList.remove('loading-state');
+  if (res && res.status === 'ok') {
+    toast('Check-in saved! 😊');
+    await loadData();
+  } else {
+    toast('Error saving check-in');
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 </script>
 </body>

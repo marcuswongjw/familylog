@@ -702,6 +702,47 @@ function handleWrite(data) {
       return { status: 'ok' };
     }
 
+    // APPRECIATION: add
+    if (noteLower === 'add_appreciation') {
+      var appSheet = ss.getSheetByName('Appreciations');
+      if (!appSheet) {
+        appSheet = ss.insertSheet('Appreciations');
+        appSheet.appendRow(['Timestamp', 'Sender', 'Recipient', 'Message', 'RevealDate']);
+      }
+      var sender = user;
+      var recipient = sender === 'Marcus' ? 'Eleanor' : 'Marcus';
+      var message = toStr(data.message);
+      
+      // Calculate next Friday 6:00 PM
+      var now = new Date();
+      var revealDate = new Date();
+      var currentDay = now.getDay();
+      var daysToFriday = (5 - currentDay + 7) % 7;
+      if (daysToFriday === 0 && now.getHours() >= 18) {
+        daysToFriday = 7;
+      }
+      revealDate.setDate(now.getDate() + daysToFriday);
+      revealDate.setHours(18, 0, 0, 0); // 6:00 PM
+      
+      appSheet.appendRow([now, sender, recipient, message, revealDate]);
+      return { status: 'ok' };
+    }
+
+    // LOVE CHECKIN: add
+    if (noteLower === 'add_love_checkin') {
+      var checkinSheet = ss.getSheetByName('LoveCheckins');
+      if (!checkinSheet) {
+        checkinSheet = ss.insertSheet('LoveCheckins');
+        checkinSheet.appendRow(['Timestamp', 'User', 'Battery', 'Moods', 'Notes', 'Focus']);
+      }
+      var battery = parseInt(data.battery) || 5;
+      var moods = toStr(data.moods);
+      var notes = toStr(data.notes);
+      var focus = toStr(data.focus);
+      checkinSheet.appendRow([new Date(), user, battery, moods, notes, focus]);
+      return { status: 'ok' };
+    }
+
     logSheet.appendRow([new Date(), user, 'General', note]);
     return { status: 'ok' };
 
@@ -744,6 +785,8 @@ function getAllDashboardData() {
     fertility: getFertilityData(ss),
     recurring: getRecurring(ss),
     travel:    getTravelData(ss),
+    appreciations: getAppreciationsData(ss),
+    loveCheckins:  getLoveCheckinsData(ss),
     expenseGroups: EXPENSE_GROUPS
   };
 }
@@ -1080,6 +1123,58 @@ function getTravelData(ss) {
   result.sort(function(a, b) {
     return b.dateRaw.localeCompare(a.dateRaw);
   });
+  return result;
+}
+
+function getAppreciationsData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Appreciations');
+  if (!sheet) {
+    sheet = ss.insertSheet('Appreciations');
+    sheet.appendRow(['Timestamp', 'Sender', 'Recipient', 'Message', 'RevealDate']);
+  }
+  var vals = sheet.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var result = [];
+  for (var i = 1; i < vals.length; i++) {
+    var row = vals[i];
+    if (!row[0]) continue;
+    var tDate = new Date(row[0]);
+    var revDate = new Date(row[4]);
+    result.push({
+      timestamp: isNaN(tDate.getTime()) ? '' : Utilities.formatDate(tDate, tz, 'yyyy-MM-dd HH:mm:ss'),
+      sender: toStr(row[1]),
+      recipient: toStr(row[2]),
+      message: toStr(row[3]),
+      revealDate: isNaN(revDate.getTime()) ? '' : Utilities.formatDate(revDate, tz, "yyyy-MM-dd'T'HH:mm:ss")
+    });
+  }
+  return result;
+}
+
+function getLoveCheckinsData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('LoveCheckins');
+  if (!sheet) {
+    sheet = ss.insertSheet('LoveCheckins');
+    sheet.appendRow(['Timestamp', 'User', 'Battery', 'Moods', 'Notes', 'Focus']);
+  }
+  var vals = sheet.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var result = [];
+  for (var i = 1; i < vals.length; i++) {
+    var row = vals[i];
+    if (!row[0]) continue;
+    var tDate = new Date(row[0]);
+    result.push({
+      timestamp: isNaN(tDate.getTime()) ? '' : Utilities.formatDate(tDate, tz, 'yyyy-MM-dd HH:mm:ss'),
+      user: toStr(row[1]),
+      battery: parseInt(row[2]) || 5,
+      moods: toStr(row[3]) ? toStr(row[3]).split(',').map(function(m) { return m.trim(); }) : [],
+      notes: toStr(row[4]),
+      focus: toStr(row[5])
+    });
+  }
   return result;
 }
 
