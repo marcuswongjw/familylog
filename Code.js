@@ -1284,6 +1284,32 @@ function parseShopee(body) {
   return null;
 }
 
+function parseDbsPayNow(body, msg) {
+  var amtMatch = body.match(/(?:for|of|amount)?\s*(?:SGD|S?\$)\s*([\d\.,]+)/i);
+  var toMatch = body.match(/to\s+([^.]+?)(?:\.|\r|\n|We are pleased|$)/i);
+  var dateMatch = body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i) || body.match(/dated\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  
+  if (!amtMatch && msg) {
+    var subject = msg.getSubject();
+    amtMatch = subject.match(/(?:SGD|S?\$)\s*([\d\.,]+)/i);
+    if (!toMatch) toMatch = subject.match(/to\s+([^.]+?)$/i);
+  }
+  
+  if (amtMatch) {
+    var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    var merchant = toMatch ? toMatch[1].trim() : 'DBS PayNow';
+    merchant = merchant.replace(/\s+on\s+\d{1,2}\s+[a-z]{3}.*$/i, '').trim();
+    
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) {
+      var currentYear = new Date().getFullYear();
+      dateStr = dateMatch[1].trim() + ' ' + currentYear;
+    }
+    return { amount: amount, merchant: merchant, dateStr: dateStr };
+  }
+  return null;
+}
+
 function parseGenericExpense(body, msg) {
   var amount = 0.0;
   var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
@@ -1358,6 +1384,12 @@ function scanInboxForTransactions() {
       parse: parsePayLah
     },
     {
+      name: 'dbs_paynow',
+      query: 'from:ibanking.alert@dbs.com label:inbox',
+      priority: 1,
+      parse: parseDbsPayNow
+    },
+    {
       name: 'trust',
       query: 'from:from_us@trustbank.sg label:inbox',
       priority: 1,
@@ -1376,6 +1408,7 @@ function scanInboxForTransactions() {
       parse: function(body, msg) {
         var from = msg.getFrom().toLowerCase();
         if (from.indexOf('paylah.alert@dbs.com') !== -1) return parsePayLah(body);
+        if (from.indexOf('ibanking.alert@dbs.com') !== -1) return parseDbsPayNow(body, msg);
         if (from.indexOf('from_us@trustbank.sg') !== -1) return parseTrust(body);
         if (from.indexOf('info@mail.shopee.sg') !== -1) return parseShopee(body);
         return parseGenericExpense(body, msg);
@@ -1555,6 +1588,8 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
   var sourceTitle = 'Expense';
   if (id.indexOf('p_paylah_') === 0) {
     sourceTitle = 'DBS PayLah!';
+  } else if (id.indexOf('p_dbs_paynow_') === 0) {
+    sourceTitle = 'DBS PayNow';
   } else if (id.indexOf('p_trust_') === 0) {
     sourceTitle = 'Trust Bank';
   } else if (id.indexOf('p_shopee_') === 0) {
@@ -1830,5 +1865,40 @@ function testAllScanners() {
     Logger.log('Shopee - Parsed successfully! Amt: ' + amt + ', Merchant: ' + merchant + ', Date: ' + dateStr + ', Cat: ' + proposeCategory('Shopee'));
   } else {
     Logger.log('Shopee - Parsing failed');
+  }
+}
+
+function addApprovedTrips() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Travel');
+  if (!sheet) {
+    sheet = ss.insertSheet('Travel');
+    sheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
+  }
+  var trips = [
+    { city: 'Melbourne', country: 'Australia', date: '2018-06-01', lat: -37.8136, lng: 144.9631, members: 'Marcus,Eleanor,Mikaela' },
+    { city: 'Tokyo', country: 'Japan', date: '2018-12-01', lat: 35.6762, lng: 139.6503, members: 'Marcus,Eleanor,Mikaela' },
+    { city: 'Fukuoka', country: 'Japan', date: '2025-07-01', lat: 33.5902, lng: 130.4017, members: 'Marcus,Eleanor' },
+    { city: 'Hanoi', country: 'Vietnam', date: '2024-06-01', lat: 21.0285, lng: 105.8542, members: 'Marcus,Eleanor,Mikaela,Meaghan' },
+    { city: 'Langkawi', country: 'Malaysia', date: '2024-12-01', lat: 6.35, lng: 99.8, members: 'Marcus,Eleanor,Mikaela,Meaghan' },
+    { city: 'Shanghai', country: 'China', date: '2023-12-01', lat: 31.2304, lng: 121.4737, members: 'Marcus,Eleanor,Mikaela,Meaghan' },
+    { city: 'Qingdao', country: 'China', date: '2025-09-01', lat: 36.0671, lng: 120.3826, members: 'Marcus,Eleanor,Mikaela,Meaghan' }
+  ];
+  
+  var existing = sheet.getDataRange().getValues();
+  var existingKeys = {};
+  for (var i = 1; i < existing.length; i++) {
+    var key = existing[i][2] + '|' + existing[i][3] + '|' + Utilities.formatDate(new Date(existing[i][1]), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    existingKeys[key] = true;
+  }
+  
+  for (var j = 0; j < trips.length; j++) {
+    var t = trips[j];
+    var key = t.city + '|' + t.country + '|' + t.date;
+    if (!existingKeys[key]) {
+      var id = 'tr_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      sheet.appendRow([id, new Date(t.date), t.city, t.country, t.lat, t.lng, t.members, 'Logged via batch script', new Date()]);
+      Utilities.sleep(50);
+    }
   }
 }
