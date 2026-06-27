@@ -412,11 +412,13 @@ input,textarea,select{font-family:inherit;}
 .battery-heart {
   font-size: 26px;
   cursor: pointer;
-  transition: transform 0.2s;
-  color: #e4e6ef;
+  transition: all 0.2s;
+  filter: grayscale(100%);
+  opacity: 0.3;
 }
 .battery-heart.active {
-  color: #ef4444;
+  filter: none;
+  opacity: 1;
   transform: scale(1.15);
 }
 .us-placeholder {
@@ -3137,6 +3139,28 @@ function renderUs() {
     alignmentHtml = '<div style="text-align:center; font-size:12px; color:#9898aa; padding:8px;">No check-ins logged yet. Make yours below!</div>';
   }
 
+  const historyCheckins = [...checkins].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  let historyHtml = '';
+  if (historyCheckins.length === 0) {
+    historyHtml = '<div style="text-align:center; font-size:11px; color:#9898aa; padding:8px;">No past check-ins logged yet.</div>';
+  } else {
+    historyHtml = historyCheckins.slice(0, 10).map(c => {
+      const dateStr = fmtDate(c.timestamp.split(' ')[0]);
+      const userEmoji = c.user === 'Marcus' ? '👨' : '👩';
+      return `
+        <div style="padding:6px 0; border-bottom:1px solid rgba(253,222,228,0.3);">
+          <div style="font-size:11px; display:flex; justify-content:space-between; align-items:center;">
+            <span><strong>${dateStr}</strong> · ${userEmoji} ${c.user}</span>
+            <span style="color:#ef4444; font-weight:700;">${'❤️'.repeat(c.battery)}</span>
+          </div>
+          ${c.moods && c.moods.length ? `<div style="font-size:10px; color:#a85f89; margin-left:14px; margin-top:2px;">Moods: ${c.moods.join(', ')}</div>` : ''}
+          ${c.notes ? `<div style="font-size:10px; color:#9898aa; margin-left:14px; margin-top:2px; font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}
+          ${c.focus ? `<div style="font-size:10px; color:#6b2d5c; margin-left:14px; margin-top:2px; font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
   let unlockedHtml = '';
   if (unlockedApps.length === 0) {
     unlockedHtml = `
@@ -3169,6 +3193,17 @@ function renderUs() {
       <div class="us-card-title">📊 Weekly Battery Check-in</div>
       ${alignmentHtml}
       <button class="btn btn-sm btn-p" onclick="openLoveCheckinModal()" style="background:#a85f89; border:none; margin-top:4px;">Log Weekly Check-in</button>
+      
+      <!-- Collapsible History -->
+      <div style="margin-top:12px; border-top:1px dashed rgba(253,222,228,0.8); padding-top:10px;">
+        <div style="font-size:12px; font-weight:700; color:#6b2d5c; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleCheckinHistory()">
+          <span>Timeline of Past Check-ins</span>
+          <span style="font-size:10px; color:#a85f89;" id="history-toggle-icon">Show ▾</span>
+        </div>
+        <div id="checkin-history-list" style="display:none; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto; padding-right:4px;">
+          ${historyHtml}
+        </div>
+      </div>
     </div>
 
     <div class="us-card">
@@ -3360,6 +3395,20 @@ async function submitLoveCheckin() {
     await loadData();
   } else {
     toast('Error saving check-in');
+  }
+}
+
+function toggleCheckinHistory() {
+  const list = document.getElementById('checkin-history-list');
+  const icon = document.getElementById('history-toggle-icon');
+  if (list) {
+    if (list.style.display === 'none' || !list.style.display) {
+      list.style.display = 'flex';
+      if (icon) icon.textContent = 'Hide ▴';
+    } else {
+      list.style.display = 'none';
+      if (icon) icon.textContent = 'Show ▾';
+    }
   }
 }
 
