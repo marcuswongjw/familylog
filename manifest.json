@@ -1,0 +1,16 @@
+{
+  "name": "Wong Family Log",
+  "short_name": "Wong Family",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fff5f6",
+  "theme_color": "#6b2d5c",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
