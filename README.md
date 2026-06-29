@@ -1,6 +1,6 @@
 # 🏡 Wong Family Log
 
-A premium, private, and automated Family Hub and Intimacy Sanctuary built as a serverless Progressive Web App (PWA). It integrates financial budgeting, bank alert expense auto-tracking, historical family travel mapping, and a private relationship connection space for Marcus & Eleanor.
+A premium, private, and automated Family Hub and Intimacy Sanctuary built as a serverless Progressive Web App (PWA). It integrates financial budgeting, bank alert expense auto-tracking, historical family travel mapping, and a private relationship connection space for the couple.
 
 ---
 
@@ -27,12 +27,12 @@ A premium, private, and automated Family Hub and Intimacy Sanctuary built as a s
 *   **Dynamic Filtering:** Filter trip markers by city, visiting member, or calendar year.
 
 ### 4. 💖 "Us" Connection Sanctuary
-*   **Intimacy Portal:** A private, rose gold and glassmorphic dashboard designed specifically for Marcus & Eleanor.
+*   **Intimacy Portal:** A private, rose gold and glassmorphic dashboard designed specifically for the couple.
 *   **Appreciation Jar:** Write sweet notes for your partner. Notes stay locked inside the jar, showing a locked note count, and automatically reveal themselves every Friday at 6:00 PM to build anticipation for date night.
 *   **Weekly Battery Check-in:** A weekly check-in form featuring a 1-5 heart selector, mood tags, and next week's focus areas. 
 *   **Historical Timeline:** A collapsible historical check-in tracker showing past battery logs and relationship goals.
 *   **Spark Roulette:** A card-flip connection starter widget packed with 30+ deep conversation prompts and 20+ date ideas.
-*   **Privacy Controls:** Children accounts (e.g., Mikaela, Meaghan) are automatically restricted from opening the sanctuary, displaying a friendly "Adults Only Space" placeholder.
+*   **Privacy Controls:** Children accounts are automatically restricted from opening the sanctuary, displaying a friendly "Adults Only Space" placeholder.
 
 ---
 
