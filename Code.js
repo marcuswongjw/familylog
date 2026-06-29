@@ -1291,25 +1291,8 @@ function parseDbsPayNow(body, msg) {
                    (msg && msg.getSubject().toLowerCase().indexOf("received a transfer") !== -1);
 
   if (isReceived) {
-    // Received transfer parsing
-    var amtMatch = body.match(/(?:received|of)?\s*(?:SGD|S?\$)\s*([\d\.,]+)/i);
-    var fromMatch = body.match(/From:\s*(.+?)(?:\r|\n|$)/i);
-    var dateMatch = body.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i) || body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i);
-
-    if (amtMatch) {
-      var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
-      amount = -amount; // negative means received funds / income
-      
-      var merchant = fromMatch ? fromMatch[1].trim() : 'Received Transfer';
-      merchant = merchant.replace(/\s+PTE\s+LTD$/i, '').trim();
-      merchant = merchant.replace(/\s+LTD$/i, '').trim();
-      
-      var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-      if (dateMatch) {
-        dateStr = dateMatch[1].trim();
-      }
-      return { amount: amount, merchant: merchant, dateStr: dateStr };
-    }
+    Logger.log('[DBS PayNow] Ignoring received transfer alert.');
+    return null;
   } else {
     // Paid transfer/card transaction parsing
     var amtMatch = body.match(/Amount:\s*(?:SGD|S?\$)?\s*([\d\.,]+)/i);
@@ -1369,6 +1352,15 @@ function parseDbsPayNow(body, msg) {
 }
 
 function parseGenericExpense(body, msg) {
+  // If it's a received bank transfer, ignore it completely
+  var isReceived = body.indexOf("received a transfer") !== -1 || 
+                   body.indexOf("You have received") !== -1 ||
+                   (msg && msg.getSubject().toLowerCase().indexOf("received a transfer") !== -1);
+  if (isReceived) {
+    Logger.log('[Generic] Ignoring received transfer alert.');
+    return null;
+  }
+
   var amount = 0.0;
   var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
                  body.match(/Total(?:\s+Amount)?\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i) ||
