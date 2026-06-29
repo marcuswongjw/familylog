@@ -1285,66 +1285,86 @@ function parseShopee(body) {
 }
 
 function parseDbsPayNow(body, msg) {
-  // 1. Try to find structured block format (like DBS Card Transaction Alert or full PayNow alert)
-  var amtMatch = body.match(/Amount:\s*(?:SGD|S?\$)?\s*([\d\.,]+)/i);
-  var toMatch = body.match(/To:\s*(.+?)(?:\r|\n|$)/i);
-  var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n|$)/i);
+  // Check if it is a received transfer
+  var isReceived = body.indexOf("received a transfer") !== -1 || 
+                   body.indexOf("You have received") !== -1 ||
+                   (msg && msg.getSubject().toLowerCase().indexOf("received a transfer") !== -1);
 
-  // 2. If structured block format is not found, fall back to inline sentence formats
-  if (!amtMatch || !toMatch) {
-    var sentenceAmt = body.match(/(?:for|of|amount)\s+(?:SGD|S?\$)\s*([\d\.,]+)/i);
-    var sentenceTo = body.match(/(?:for|of)\s+(?:SGD|S?\$)\s*[\d\.,]+\s+to\s+([^.]+?)(?:\.|\r|\n|We are pleased|$)/i);
-    
-    if (sentenceAmt) amtMatch = sentenceAmt;
-    if (sentenceTo) toMatch = sentenceTo;
-  }
+  if (isReceived) {
+    // Received transfer parsing
+    var amtMatch = body.match(/(?:received|of)?\s*(?:SGD|S?\$)\s*([\d\.,]+)/i);
+    var fromMatch = body.match(/From:\s*(.+?)(?:\r|\n|$)/i);
+    var dateMatch = body.match(/on\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i) || body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i);
 
-  // 3. Fallback to Subject Line if still not found
-  if (!amtMatch && msg) {
-    var subject = msg.getSubject();
-    amtMatch = subject.match(/(?:SGD|S?\$)\s*([\d\.,]+)/i);
-    if (!toMatch) toMatch = subject.match(/to\s+([^.]+?)$/i);
-  }
-
-  if (amtMatch) {
-    var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
-    var merchant = toMatch ? toMatch[1].trim() : 'DBS iBanking Alert';
-    
-    // Clean up merchant name (remove trailing dates or noise)
-    merchant = merchant.replace(/\s+on\s+\d{1,2}\s+[a-z]{3}.*$/i, '').trim();
-    merchant = merchant.replace(/\s+dated\s+\d{1,2}\/\d{1,2}.*$/i, '').trim();
-    
-    // Determine Date
-    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-    if (dateMatch) {
-      var dParts = dateMatch[1].trim().split(/\s+/);
-      if (dParts.length >= 2) {
-        var day = dParts[0];
-        var month = dParts[1];
-        var year = new Date().getFullYear();
-        dateStr = day + ' ' + month + ' ' + year;
+    if (amtMatch) {
+      var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+      amount = -amount; // negative means received funds / income
+      
+      var merchant = fromMatch ? fromMatch[1].trim() : 'Received Transfer';
+      merchant = merchant.replace(/\s+PTE\s+LTD$/i, '').trim();
+      merchant = merchant.replace(/\s+LTD$/i, '').trim();
+      
+      var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+      if (dateMatch) {
+        dateStr = dateMatch[1].trim();
       }
-    } else {
-      // Try inline date: "dated 26/06/26" or "dated 27 Jun"
-      var inlineDate = body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i);
-      if (inlineDate) {
-        dateStr = inlineDate[1].trim() + ' ' + new Date().getFullYear();
+      return { amount: amount, merchant: merchant, dateStr: dateStr };
+    }
+  } else {
+    // Paid transfer/card transaction parsing
+    var amtMatch = body.match(/Amount:\s*(?:SGD|S?\$)?\s*([\d\.,]+)/i);
+    var toMatch = body.match(/To:\s*(.+?)(?:\r|\n|$)/i);
+    var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n|$)/i);
+
+    if (!amtMatch || !toMatch) {
+      var sentenceAmt = body.match(/(?:for|of|amount)\s+(?:SGD|S?\$)\s*([\d\.,]+)/i);
+      var sentenceTo = body.match(/(?:for|of)\s+(?:SGD|S?\$)\s*[\d\.,]+\s+to\s+([^.]+?)(?:\.|\r|\n|We are pleased|$)/i);
+      
+      if (sentenceAmt) amtMatch = sentenceAmt;
+      if (sentenceTo) toMatch = sentenceTo;
+    }
+
+    if (!amtMatch && msg) {
+      var subject = msg.getSubject();
+      amtMatch = subject.match(/(?:SGD|S?\$)\s*([\d\.,]+)/i);
+      if (!toMatch) toMatch = subject.match(/to\s+([^.]+?)$/i);
+    }
+
+    if (amtMatch) {
+      var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+      var merchant = toMatch ? toMatch[1].trim() : 'DBS iBanking Alert';
+      
+      merchant = merchant.replace(/\s+on\s+\d{1,2}\s+[a-z]{3}.*$/i, '').trim();
+      merchant = merchant.replace(/\s+dated\s+\d{1,2}\/\d{1,2}.*$/i, '').trim();
+      
+      var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+      if (dateMatch) {
+        var dParts = dateMatch[1].trim().split(/\s+/);
+        if (dParts.length >= 2) {
+          var day = dParts[0];
+          var month = dParts[1];
+          var year = new Date().getFullYear();
+          dateStr = day + ' ' + month + ' ' + year;
+        }
       } else {
-        var inlineSlashDate = body.match(/dated\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-        if (inlineSlashDate) {
-          var day = inlineSlashDate[1];
-          var monthNum = parseInt(inlineSlashDate[2]) - 1;
-          var year = inlineSlashDate[3];
-          if (year.length === 2) year = '20' + year;
-          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          dateStr = day + ' ' + months[monthNum] + ' ' + year;
+        var inlineDate = body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i);
+        if (inlineDate) {
+          dateStr = inlineDate[1].trim() + ' ' + new Date().getFullYear();
+        } else {
+          var inlineSlashDate = body.match(/dated\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+          if (inlineSlashDate) {
+            var day = inlineSlashDate[1];
+            var monthNum = parseInt(inlineSlashDate[2]) - 1;
+            var year = inlineSlashDate[3];
+            if (year.length === 2) year = '20' + year;
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            dateStr = day + ' ' + months[monthNum] + ' ' + year;
+          }
         }
       }
+      return { amount: amount, merchant: merchant, dateStr: dateStr };
     }
-    
-    return { amount: amount, merchant: merchant, dateStr: dateStr };
   }
-  
   return null;
 }
 
