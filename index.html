@@ -722,13 +722,13 @@ input,textarea,select{font-family:inherit;}
     </div>
     <div class="member-grid" id="mgrid"></div>
     <div class="pin-box" id="pinbox">
-      <p class="pin-lbl" id="pinlbl">Enter your PIN</p>
-      <div class="pin-dots" id="pindots"></div>
-      <div class="pin-pad" id="pinpad"></div>
-      <input type="password" id="pin-text-input" maxlength="4" inputmode="numeric" pattern="[0-9]*"
-        placeholder="or type PIN here"
-        style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-size:16px;text-align:center;letter-spacing:8px;outline:none;"
-        oninput="handlePinText(this.value)">
+      <p class="pin-lbl" id="pinlbl">Enter your password</p>
+      <input type="password" id="pin-text-input" 
+        placeholder="or type password here"
+        style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-size:16px;text-align:center;letter-spacing:4px;outline:none;"
+        oninput="handlePasswordText(this.value)"
+        onkeydown="if(event.key==='Enter')checkPasswordWithFirebase()">
+      <button onclick="checkPasswordWithFirebase()" style="margin-top:14px;width:100%;padding:12px;border-radius:10px;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Sign In</button>
       <p class="pin-err" id="pinerr"></p>
     </div>
   </div>
@@ -1317,67 +1317,71 @@ function buildLogin() {
   document.getElementById('mgrid').innerHTML = MEMBERS.map(m =>
     `<button class="member-btn" onclick="selMem('${m.name}')"><span class="av">${m.emoji}</span>${m.name}</button>`
   ).join('');
-  // PIN dots
-  document.getElementById('pindots').innerHTML = [0,1,2,3].map(() => '<div class="pin-dot"></div>').join('');
-  // Keyboard PIN support
+  // Keyboard password support
   document.addEventListener('keydown', e => {
     if (!selMember) return;
-    if (e.key >= '0' && e.key <= '9') pk(e.key);
-    if (e.key === 'Backspace') pk('⌫');
+    const input = document.getElementById('pin-text-input');
+    if (input && document.activeElement !== input) {
+      // Allow typing when input is not focused
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        input.focus();
+      }
+    }
   });
-  // Keypad
-  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
-  document.getElementById('pinpad').innerHTML = keys.map(k =>
-    k === '' ? '<div></div>' : `<button class="pin-key" onclick="pk('${k}')">${k}</button>`
-  ).join('');
 }
 
 function selMem(name) {
-  selMember = name; pinBuf = '';
-  const pti = document.getElementById('pin-text-input'); if (pti) pti.value = '';
+  selMember = name;
+  const pti = document.getElementById('pin-text-input'); 
+  if (pti) {
+    pti.value = '';
+    pti.type = 'password';
+    pti.maxLength = '';
+  }
   document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
   document.querySelectorAll('.member-btn').forEach(b => { if (b.textContent.trim() === name) b.classList.add('sel'); });
   document.getElementById('pinbox').classList.add('show');
-  document.getElementById('pinlbl').textContent = name + "'s PIN";
+  document.getElementById('pinlbl').textContent = name + "'s password";
   document.getElementById('pinerr').textContent = '';
-  updDots();
+  // Focus the input field
+  setTimeout(() => {
+    const input = document.getElementById('pin-text-input');
+    if (input) input.focus();
+  }, 100);
 }
 
-function pk(k) {
-  if (k === '⌫') { pinBuf = pinBuf.slice(0,-1); updDots(); return; }
-  if (pinBuf.length >= 4) return;
-  pinBuf += k; updDots();
-  if (pinBuf.length === 4) checkPinWithFirebase();
+function handlePasswordText(value) {
+  // Password entered via text input
+  pinBuf = value;
 }
 
-function updDots() {
-  document.querySelectorAll('.pin-dot').forEach((d,i) => d.classList.toggle('on', i < pinBuf.length));
-}
-
-// Firebase-based PIN verification
-async function checkPinWithFirebase() {
+// Firebase-based password verification
+async function checkPasswordWithFirebase() {
   const m = MEMBERS.find(m => m.name === selMember);
   if (!m || !m.email) {
     document.getElementById('pinerr').textContent = 'User not configured properly.';
     return;
   }
   
-  const pin = pinBuf;
+  const password = pinBuf;
+  if (!password || password.length === 0) {
+    return; // Don't attempt login with empty password
+  }
+  
   const auth = firebase.auth();
   
   try {
-    // Sign in with email and PIN as password
-    await auth.signInWithEmailAndPassword(m.email, pin);
+    // Sign in with email and password
+    await auth.signInWithEmailAndPassword(m.email, password);
     // Success - store user and login
     sessionStorage.setItem('wf_user', selMember);
     loginAs(selMember);
   } catch (error) {
     // Failed - show error
     console.error('Firebase auth error:', error);
-    document.getElementById('pinerr').textContent = 'Incorrect PIN. Try again.';
+    document.getElementById('pinerr').textContent = 'Incorrect password. Try again.';
     setTimeout(() => {
       pinBuf = '';
-      updDots();
       const pti = document.getElementById('pin-text-input');
       if (pti) pti.value = '';
     }, 600);
