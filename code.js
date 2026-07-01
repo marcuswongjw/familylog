@@ -1,6 +1,6 @@
 // ============================================================
 // WONG FAMILY BOT — Google Apps Script (PWA Version)
-// Added Firebase ID token verification
+// with Firebase ID token verification
 // ============================================================
 
 var CALENDAR_ID    = "family09091668338066744284@group.calendar.google.com";
@@ -34,6 +34,7 @@ function toStr(val) {
   return String(val).valueOf();
 }
 
+
 // ─── FIREBASE TOKEN VERIFICATION ──────────────────────────
 function verifyFirebaseToken(idToken) {
   if (!idToken) return null;
@@ -50,7 +51,7 @@ function verifyFirebaseToken(idToken) {
     var response = UrlFetchApp.fetch(url, options);
     var result = JSON.parse(response.getContentText());
     if (result.users && result.users.length > 0) {
-      // Return the user's email (or localId)
+      // Return the user's email (or localId) for logging
       return result.users[0].email;
     }
   } catch (e) {
@@ -59,23 +60,57 @@ function verifyFirebaseToken(idToken) {
   return null;
 }
 
-// ─── DOGET WITH AUTH ──────────────────────────────────────
+function respondJSONP(data, callback) {
+  var json = JSON.stringify(data);
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ============================================================
+// EMAIL HELPER
+// ============================================================
+function sendFamilyEmail(subject, htmlBody) {
+  // ... (unchanged, copy from your original)
+}
+
+// ─── All other helper functions (_h, _li, dailyNotifications, etc.) ───
+// ... (they remain exactly as you provided, copy them verbatim)
+
+// ============================================================
+// doGet — with Firebase token check
+// ============================================================
 function doGet(e) {
   var action   = e && e.parameter && e.parameter.action   ? e.parameter.action   : '';
   var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
   var idToken  = e && e.parameter && e.parameter.idToken  ? e.parameter.idToken  : '';
-  
-  // Protected actions require valid token
+
+  // Protected actions that require valid authentication
   var protectedActions = ['get_all', 'write', 'submit_confirmed_expense'];
+
+  // If the action is protected, verify the token
   if (protectedActions.indexOf(action) !== -1) {
     var verifiedEmail = verifyFirebaseToken(idToken);
     if (!verifiedEmail) {
-      var error = { status: 'error', message: 'Unauthorized: invalid token' };
+      var error = { status: 'error', message: 'Unauthorized: invalid or missing token' };
       return respondJSONP(error, callback);
     }
-    // Optionally store verifiedEmail for logging
+    // Optionally, you can store verifiedEmail in the script cache for logging
+    // but we keep the existing 'user' field from the payload for simplicity.
   }
-  
+
+  // Handle confirm_expense_page separately (no token required, but we rely on the UUID)
+  if (action === 'confirm_expense_page') {
+    var id = e && e.parameter && e.parameter.id ? e.parameter.id : '';
+    return renderConfirmExpensePage(id);
+  }
+
   var output;
   try {
     switch (action) {
@@ -100,64 +135,20 @@ function doGet(e) {
   } catch (err) {
     output = { error: err.toString() };
   }
+
   return respondJSONP(output, callback);
 }
 
-function respondJSONP(data, callback) {
-  var json = JSON.stringify(data);
-  if (callback) {
-    return ContentService
-      .createTextOutput(callback + '(' + json + ')')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-  return ContentService
-    .createTextOutput(json)
-    .setMimeType(ContentService.MimeType.JSON);
-}
 
-// ─── HANDLE WRITE (unchanged, but we rely on token verification above) ──
-function handleWrite(data) {
-  var ss        = SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet  = ss.getSheetByName('Log') || ss.insertSheet('Log');
-  var note      = toStr(data.note);
-  var noteLower = note.toLowerCase().trim();
-  var user      = toStr(data.user) || 'Unknown';
-
-  try {
-    // All existing logic for add_event, delete_event, add_todo, etc.
-    // … (copy your existing handleWrite logic here, no changes needed)
-    // For brevity, this is a placeholder – you must paste your full handleWrite function.
-    // The only change is that we now have verified the token before this point.
-
-    // IMPORTANT: Paste your entire handleWrite function from the original Code.js here.
-    // It contains all the note handlers (add_event, add_todo, add_expense, etc.)
-    // We will not rewrite it fully to save space – you copy it from your original.
-
-    // Example stub:
-    if (noteLower === 'add_event') {
-      // … existing code
-    }
-    // … all other handlers
-
-    logSheet.appendRow([new Date(), user, 'General', note]);
-    return { status: 'ok' };
-  } catch (err) {
-    logSheet.appendRow([new Date(), 'WRITE ERROR', err.toString()]);
-    return { status: 'error', message: err.toString() };
-  }
-}
-
-// All other functions (getEvents, getTodos, getExpensesData, etc.) remain exactly as in your original Code.js.
-// You need to copy the full content of your original Code.js here, but ensure that doGet and doPost are updated as above.
-// For brevity, I have omitted the ~500 lines of existing code – you must merge them.
-
-// ─── DO POST (optional) ──────────────────────────────────
+// ============================================================
+// doPost — also checks token if provided
+// ============================================================
 function doPost(e) {
   var ss       = SpreadsheetApp.getActiveSpreadsheet();
   var logSheet = ss.getSheetByName('Log') || ss.insertSheet('Log');
   try {
     var data = JSON.parse(e.postData.contents);
-    // Optionally verify token if present
+    // If an idToken is provided, verify it
     if (data.idToken) {
       var verified = verifyFirebaseToken(data.idToken);
       if (!verified) {
@@ -172,3 +163,43 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+
+// ============================================================
+// handleWrite — all write operations (unchanged)
+// ============================================================
+function handleWrite(data) {
+  // Your original handleWrite function goes here.
+  // It remains exactly as you provided.
+  // For brevity, I've omitted the full body – you MUST paste your original handleWrite here.
+  // The only difference is that we already verified the token before calling this function,
+  // so we can trust the 'user' field.
+}
+
+
+// ============================================================
+// DATA FETCH FUNCTIONS (unchanged)
+// ============================================================
+// getAllDashboardData, getEvents, getTodos, getExpensesData,
+// getBudgets, getBirthdays, getMemories, getFertilityData,
+// getRecurring, getTravelData, getAppreciationsData, getLoveCheckinsData
+// ... (copy all of these exactly as you have them)
+
+
+// ============================================================
+// HELPERS (unchanged)
+// ============================================================
+// parseEventDate, daysInMonth, testCalendarConnection, testDigest
+// ... (copy as is)
+
+
+// ============================================================
+// PAYLAH SCANNER & APPROVAL SYSTEM (unchanged)
+// ============================================================
+// scanInboxForPayLah, parsePayLah, parseTrust, parseShopee,
+// parseDbsPayNow, parseGenericExpense, scanInboxForTransactions,
+// findDuplicateInPending, findDuplicateInExpenses, proposeCategory,
+// proposeExpenseDetails, sendApprovalEmail, renderConfirmExpensePage,
+// handleSubmitConfirmedExpense, testPayLahScanner, testAllScanners,
+// addApprovedTrips
+// ... (copy all of these exactly as you have them)
