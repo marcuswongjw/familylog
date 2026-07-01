@@ -1025,7 +1025,6 @@ function gPost(payload) {
       return;
     }
     currentUser.getIdToken().then(idToken => {
-      payload.idToken = idToken;
       payload.user = user || 'Unknown';
       const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
       const s = document.createElement('script');
@@ -1041,6 +1040,7 @@ function gPost(payload) {
         finishProgressBar();
         resolve(null);
       };
+      // ✅ Add idToken to URL (like in loadData)
       s.src = GAS_URL + '?action=write&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
       document.body.appendChild(s);
     }).catch(err => {
