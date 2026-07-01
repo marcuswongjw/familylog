@@ -1,7 +1,6 @@
 // ============================================================
 // WONG FAMILY BOT — Google Apps Script (PWA Version)
-// No Railway / Telegram dependency — all notifications via email
-// PWA calls doGet directly for data fetching
+// with Firebase ID token verification
 // Google Calendar ID: family09091668338066744284@group.calendar.google.com
 // ============================================================
 
@@ -34,6 +33,44 @@ var EXPENSE_GROUPS = {
 function toStr(val) {
   if (val === null || val === undefined) return '';
   return String(val).valueOf();
+}
+
+
+// ─── FIREBASE TOKEN VERIFICATION ──────────────────────────
+function verifyFirebaseToken(idToken) {
+  if (!idToken) return null;
+  try {
+    var apiKey = 'AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0'; // your web API key
+    var url = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + apiKey;
+    var payload = { idToken: idToken };
+    var options = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+    var response = UrlFetchApp.fetch(url, options);
+    var result = JSON.parse(response.getContentText());
+    if (result.users && result.users.length > 0) {
+      // Return the user's email (or localId) for logging
+      return result.users[0].email;
+    }
+  } catch (e) {
+    Logger.log('Token verification error: ' + e);
+  }
+  return null;
+}
+
+function respondJSONP(data, callback) {
+  var json = JSON.stringify(data);
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 
@@ -434,17 +471,34 @@ function keepAlive() {
 
 
 // ============================================================
-// doGet — PWA fetches data + writes via GET+JSONP
+// doGet — PWA fetches data + writes via GET+JSONP with token check
 // ============================================================
 function doGet(e) {
   var action   = e && e.parameter && e.parameter.action   ? e.parameter.action   : '';
   var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
-  
+  var idToken  = e && e.parameter && e.parameter.idToken  ? e.parameter.idToken  : '';
+
+  // Protected actions that require valid authentication
+  // Note: submit_confirmed_expense is EXEMPT because it uses a UUID for security
+  var protectedActions = ['get_all', 'write'];   // <-- removed 'submit_confirmed_expense'
+
+  // If the action is protected, verify the token
+  if (protectedActions.indexOf(action) !== -1) {
+    var verifiedEmail = verifyFirebaseToken(idToken);
+    if (!verifiedEmail) {
+      var error = { status: 'error', message: 'Unauthorized: invalid or missing token' };
+      return respondJSONP(error, callback);
+    }
+    // Optionally, you can store verifiedEmail in the script cache for logging
+    // but we keep the existing 'user' field from the payload for simplicity.
+  }
+
+  // Handle confirm_expense_page separately (no token required, uses UUID)
   if (action === 'confirm_expense_page') {
     var id = e && e.parameter && e.parameter.id ? e.parameter.id : '';
     return renderConfirmExpensePage(id);
   }
-  
+
   var output;
   try {
     switch (action) {
@@ -470,17 +524,32 @@ function doGet(e) {
     output = { error: err.toString() };
   }
 
-  var json = JSON.stringify(output);
+  return respondJSONP(output, callback);
+}
 
-  if (callback) {
-    return ContentService
-      .createTextOutput(callback + '(' + json + ')')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+
+// ============================================================
+// doPost — also checks token if provided
+// ============================================================
+function doPost(e) {
+  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+  var logSheet = ss.getSheetByName('Log') || ss.insertSheet('Log');
+  try {
+    var data = JSON.parse(e.postData.contents);
+    // If an idToken is provided, verify it
+    if (data.idToken) {
+      var verified = verifyFirebaseToken(data.idToken);
+      if (!verified) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    var result = handleWrite(data);
+    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    logSheet.appendRow([new Date(), 'POST ERROR', err.toString()]);
+    return ContentService.createTextOutput(JSON.stringify({ error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
-
-  return ContentService
-    .createTextOutput(json)
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 
@@ -749,23 +818,6 @@ function handleWrite(data) {
   } catch (err) {
     logSheet.appendRow([new Date(), 'WRITE ERROR', err.toString()]);
     return { status: 'error', message: err.toString() };
-  }
-}
-
-
-// ============================================================
-// doPost — kept for backward compatibility
-// ============================================================
-function doPost(e) {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet = ss.getSheetByName('Log') || ss.insertSheet('Log');
-  try {
-    var data = JSON.parse(e.postData.contents);
-    var result = handleWrite(data);
-    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    logSheet.appendRow([new Date(), 'POST ERROR', err.toString()]);
-    return ContentService.createTextOutput(JSON.stringify({ error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -1285,82 +1337,32 @@ function parseShopee(body) {
 }
 
 function parseDbsPayNow(body, msg) {
-  // Check if it is a received transfer
-  var isReceived = body.indexOf("received a transfer") !== -1 || 
-                   body.indexOf("You have received") !== -1 ||
-                   (msg && msg.getSubject().toLowerCase().indexOf("received a transfer") !== -1);
-
-  if (isReceived) {
-    Logger.log('[DBS PayNow] Ignoring received transfer alert.');
-    return null;
-  } else {
-    // Paid transfer/card transaction parsing
-    var amtMatch = body.match(/Amount:\s*(?:SGD|S?\$)?\s*([\d\.,]+)/i);
-    var toMatch = body.match(/To:\s*(.+?)(?:\r|\n|$)/i);
-    var dateMatch = body.match(/Date\s*&\s*Time:\s*(.+?)(?:\r|\n|$)/i);
-
-    if (!amtMatch || !toMatch) {
-      var sentenceAmt = body.match(/(?:for|of|amount)\s+(?:SGD|S?\$)\s*([\d\.,]+)/i);
-      var sentenceTo = body.match(/(?:for|of)\s+(?:SGD|S?\$)\s*[\d\.,]+\s+to\s+([^.]+?)(?:\.|\r|\n|We are pleased|$)/i);
-      
-      if (sentenceAmt) amtMatch = sentenceAmt;
-      if (sentenceTo) toMatch = sentenceTo;
+  var amtMatch = body.match(/(?:for|of|amount)?\s*(?:SGD|S?\$)\s*([\d\.,]+)/i);
+  var toMatch = body.match(/to\s+([^.]+?)(?:\.|\r|\n|We are pleased|$)/i);
+  var dateMatch = body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i) || body.match(/dated\s+(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
+  
+  if (!amtMatch && msg) {
+    var subject = msg.getSubject();
+    amtMatch = subject.match(/(?:SGD|S?\$)\s*([\d\.,]+)/i);
+    if (!toMatch) toMatch = subject.match(/to\s+([^.]+?)$/i);
+  }
+  
+  if (amtMatch) {
+    var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    var merchant = toMatch ? toMatch[1].trim() : 'DBS PayNow';
+    merchant = merchant.replace(/\s+on\s+\d{1,2}\s+[a-z]{3}.*$/i, '').trim();
+    
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) {
+      var currentYear = new Date().getFullYear();
+      dateStr = dateMatch[1].trim() + ' ' + currentYear;
     }
-
-    if (!amtMatch && msg) {
-      var subject = msg.getSubject();
-      amtMatch = subject.match(/(?:SGD|S?\$)\s*([\d\.,]+)/i);
-      if (!toMatch) toMatch = subject.match(/to\s+([^.]+?)$/i);
-    }
-
-    if (amtMatch) {
-      var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
-      var merchant = toMatch ? toMatch[1].trim() : 'DBS iBanking Alert';
-      
-      merchant = merchant.replace(/\s+on\s+\d{1,2}\s+[a-z]{3}.*$/i, '').trim();
-      merchant = merchant.replace(/\s+dated\s+\d{1,2}\/\d{1,2}.*$/i, '').trim();
-      
-      var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-      if (dateMatch) {
-        var dParts = dateMatch[1].trim().split(/\s+/);
-        if (dParts.length >= 2) {
-          var day = dParts[0];
-          var month = dParts[1];
-          var year = new Date().getFullYear();
-          dateStr = day + ' ' + month + ' ' + year;
-        }
-      } else {
-        var inlineDate = body.match(/dated\s+(\d{1,2}\s+[a-z]{3})/i);
-        if (inlineDate) {
-          dateStr = inlineDate[1].trim() + ' ' + new Date().getFullYear();
-        } else {
-          var inlineSlashDate = body.match(/dated\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-          if (inlineSlashDate) {
-            var day = inlineSlashDate[1];
-            var monthNum = parseInt(inlineSlashDate[2]) - 1;
-            var year = inlineSlashDate[3];
-            if (year.length === 2) year = '20' + year;
-            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            dateStr = day + ' ' + months[monthNum] + ' ' + year;
-          }
-        }
-      }
-      return { amount: amount, merchant: merchant, dateStr: dateStr };
-    }
+    return { amount: amount, merchant: merchant, dateStr: dateStr };
   }
   return null;
 }
 
 function parseGenericExpense(body, msg) {
-  // If it's a received bank transfer, ignore it completely
-  var isReceived = body.indexOf("received a transfer") !== -1 || 
-                   body.indexOf("You have received") !== -1 ||
-                   (msg && msg.getSubject().toLowerCase().indexOf("received a transfer") !== -1);
-  if (isReceived) {
-    Logger.log('[Generic] Ignoring received transfer alert.');
-    return null;
-  }
-
   var amount = 0.0;
   var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
                  body.match(/Total(?:\s+Amount)?\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i) ||
