@@ -976,7 +976,14 @@ function finishProgressBar() {
 function loadData() {
   startProgressBar();
   return new Promise((resolve) => {
-    firebase.auth().currentUser.getIdToken().then(idToken => {
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser) {
+      toast('Please log in');
+      finishProgressBar();
+      resolve();
+      return;
+    }
+    currentUser.getIdToken().then(idToken => {
       const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
       const s = document.createElement('script');
       window[cb] = r => {
@@ -1010,7 +1017,14 @@ function loadData() {
 function gPost(payload) {
   startProgressBar();
   return new Promise((resolve) => {
-    firebase.auth().currentUser.getIdToken().then(idToken => {
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser) {
+      toast('Please log in');
+      finishProgressBar();
+      resolve(null);
+      return;
+    }
+    currentUser.getIdToken().then(idToken => {
       payload.idToken = idToken;
       payload.user = user || 'Unknown';
       const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
@@ -1181,10 +1195,8 @@ function buildModals() {
 function openM(id) {
   document.getElementById(id).classList.add('open');
   if (id === 'm-event') {
-    if (typeof selectedCalDayStr !== 'undefined' && selectedCalDayStr) {
-      const el = document.getElementById('ev-date');
-      if (el) el.value = selectedCalDayStr;
-    }
+    const el = document.getElementById('ev-date');
+    if (el) el.value = selectedCalDayStr || todayStr(); // FIXED: fallback to today
     chips('ev-chips', FAM, 'Everyone', 'ev-tag');
   }
 }
@@ -2071,6 +2083,7 @@ function focusTrip(id, lat, lng) {
 }
 
 function playTravelTimeline() {
+  if (!travelMap) { toast('Map not loaded yet'); return; } // FIXED: guard
   const trips = data.travel || [];
   const validTrips = trips.filter(t => t.lat !== 0 || t.lng !== 0);
   if (!validTrips.length) { toast('No trip locations to play!'); return; }
@@ -2152,13 +2165,18 @@ async function fetchLocSuggestions(q) {
       const addr = item.address || {};
       const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
       const country = addr.country || '';
-      return `<div class="autocomplete-suggestion" onclick="selectLocSuggestion('${escapeHtml(city)}', '${escapeHtml(country)}', ${item.lat}, ${item.lon}, '${escapeHtml(display)}')">${escapeHtml(display)}</div>`;
+      // FIXED: use JSON.stringify to safely embed in onclick
+      const safeCity = JSON.stringify(city);
+      const safeCountry = JSON.stringify(country);
+      const safeDisplay = JSON.stringify(display);
+      return `<div class="autocomplete-suggestion" onclick="selectLocSuggestion(${safeCity}, ${safeCountry}, ${item.lat}, ${item.lon}, ${safeDisplay})">${escapeHtml(display)}</div>`;
     }).join('');
     sug.style.display = 'block';
   } catch(e) { console.error('Autocomplete Error:', e); }
 }
 
 function selectLocSuggestion(city, country, lat, lng, displayName) {
+  // parameters are already decoded from JSON
   let parsedCity = city;
   if (!parsedCity && displayName) parsedCity = displayName.split(',')[0].trim();
   document.getElementById('tr-loc-search').value = displayName;
