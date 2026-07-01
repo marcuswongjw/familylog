@@ -1041,7 +1041,7 @@ function gPost(payload) {
         finishProgressBar();
         resolve(null);
       };
-      s.src = GAS_URL + '?action=write&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
+      s.src = GAS_URL + '?action=write&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
       document.body.appendChild(s);
     }).catch(err => {
       toast('Auth error: ' + err.message);
