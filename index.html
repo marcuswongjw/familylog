@@ -942,13 +942,13 @@ function buildDynamicSelectors() {
   const rgs = document.getElementById('rc-grp');
   if (rgs) {
     rgs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
-    updateRcCats();  // only call if rc-grp exists
+    updateRcCats(); // safe because rgs exists
   }
 
   const egs = document.getElementById('ex-grp');
   if (egs) {
     egs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
-    updateExCats(); // only call if ex-grp exists
+    updateExCats();
   }
 }
 
