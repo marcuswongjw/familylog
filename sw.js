@@ -1,5 +1,3 @@
-// sw.js — Wong Family PWA Service Worker
-
 const CACHE_NAME = 'wong-family-v1';
 const ASSETS = [
   '/',
@@ -8,7 +6,6 @@ const ASSETS = [
   '/icon.png',
   '/favicon.png'
 ];
-
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -16,7 +13,6 @@ self.addEventListener('install', event => {
       .then(() => self.skipWaiting())
   );
 });
-
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => {
@@ -27,7 +23,6 @@ self.addEventListener('activate', event => {
     }).then(() => self.clients.claim())
   );
 });
-
 self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
