@@ -7,10 +7,8 @@ const ASSETS = [
   '/manifest.json',
   '/icon.png',
   '/favicon.png'
-  // Add any other static assets (CSS, JS) if you split them later
 ];
 
-// Install: cache core assets
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -19,7 +17,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Activate: clean up old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => {
@@ -31,7 +28,6 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch: serve from cache, fallback to network
 self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
