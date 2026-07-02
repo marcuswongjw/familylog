@@ -14,12 +14,10 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
-    
     /* ── CSS Variables (Light & Dark) ── */
     :root {
       --bg-body: #f5f6fa;
@@ -789,7 +787,7 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- JAVASCRIPT (Complete, with all features)                      -->
+  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIXED DUPLICATES)          -->
   <!-- ============================================================ -->
   <script>
     // ─── FIREBASE CONFIG ────────────────────────────────────────
@@ -803,10 +801,8 @@
       measurementId: "G-HCHV787ZPJ"
     };
 
-    // ─── GAS ENDPOINT ──────────────────────────────────────────
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
 
-    // ─── MEMBERS ──────────────────────────────────────────────
     const MEMBERS = [
       { name:'Marcus',  emoji:'👨', email:'marcuswongjw@gmail.com' },
       { name:'Eleanor', emoji:'👩', email:'eleanor.jiamin@gmail.com' },
@@ -817,10 +813,7 @@
     const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#888'];
     let GROUPS = {};
 
-    // ─── GLOBAL CALLBACK COUNTER ────────────────────────────────
     let _callbackId = 0;
-
-    // ─── UNDO STACK ──────────────────────────────────────────────
     const _undoStack = [];
 
     // ─── PERSISTENT PREFERENCES ──────────────────────────────────
@@ -831,28 +824,44 @@
       try { localStorage.setItem('wf_'+key, String(value)); } catch(e){}
     }
 
-    // ─── STATE ────────────────────────────────────────────────
-    let user = null, section = 'home', data = {}, currentUserEmail = '', selectedMember = null, timelineInterval = null;
+    // ─── STATE ─── (all declarations are HERE, once only)
+    let user = null;
+    let section = 'home';
+    let data = {};
+    let currentUserEmail = '';
+    let selectedMember = null;
+    let timelineInterval = null;
+
+    // Calendar state
     let calView = loadPreference('calView', 'list');
-    let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
+    let calYear = new Date().getFullYear();
+    let calMonth = new Date().getMonth();
     let selectedCalDayStr = loadPreference('selectedCalDay', new Date().toISOString().slice(0,10));
     let calWeekStart = getStartOfWeek(new Date());
 
-    // ⚠️ Only declare these ONCE at the top level
+    // Expense & Budget filters
     let activeExpenseAccount = loadPreference('expenseAccount', 'All');
     let activeBudgetAccount = loadPreference('budgetAccount', 'All');
 
+    // Schedules state
     let schedView = loadPreference('schedView', 'list');
     let activeSchedChild = loadPreference('schedChild', 'Mikaela');
+    let schedYear = new Date().getFullYear();
+    let schedMonth = new Date().getMonth();
     let selectedGridDayStr = new Date().toISOString().slice(0,10);
-    let searchTaskQuery = '', searchExpenseQuery = '', searchCalQuery = '';
+
+    // Search queries
+    let searchTaskQuery = '';
+    let searchExpenseQuery = '';
+    let searchCalQuery = '';
+
+    // Bucket List
     let bucketList = [];
 
     // ─── DARK MODE ─────────────────────────────────────────────
     function toggleDarkMode() {
-      const body = document.body;
-      body.classList.toggle('dark-mode');
-      const isDark = body.classList.contains('dark-mode');
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
       savePreference('darkMode', isDark ? 'dark' : 'light');
       document.getElementById('darkToggle').textContent = isDark ? '☀️' : '🌙';
     }
@@ -871,7 +880,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
       applyDarkMode();
-      buildLogin();           // ✅ This creates the member grid
+      buildLogin();
       buildModals();
       buildMore();
       document.querySelectorAll('.overlay').forEach(o => {
@@ -1642,7 +1651,6 @@
     }
 
     // ─── BUDGETS ──────────────────────────────────────────────
-    // ✅ activeBudgetAccount is already declared globally, so we only assign here
     function toggleBudgetAccount(acc) {
       activeBudgetAccount = acc;
       savePreference('budgetAccount', acc);
@@ -1762,8 +1770,6 @@
     }
 
     // ─── KID SCHEDULES ─────────────────────────────────────────
-    let schedYear = new Date().getFullYear(), schedMonth = new Date().getMonth();
-    let selectedGridDayStr = new Date().toISOString().slice(0,10);
     function filterSchedules(child) { activeSchedChild=child; savePreference('schedChild', child); document.querySelectorAll('.tab-pill').forEach(p=>p.classList.remove('active')); const pill=document.getElementById('pill-'+child); if(pill) pill.classList.add('active'); renderSchedules(); }
     function toggleSchedView(view) { schedView=view; savePreference('schedView', view); document.getElementById('sched-view-list').classList.toggle('active', view==='list'); document.getElementById('sched-view-grid').classList.toggle('active', view==='grid'); renderSchedules(); }
     function prevSchedMonth(){ schedMonth--; if(schedMonth<0){schedMonth=11;schedYear--;} renderSchedules(); }
@@ -1884,7 +1890,6 @@
     }
 
     // ─── SUBMIT FUNCTIONS ──────────────────────────────────────
-    // All submit functions are identical to your original file – I'm including them fully here.
     async function submitEvent(btn) {
       if(!btn) btn = document.getElementById('ev-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
@@ -2058,7 +2063,6 @@
         const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
         return `<div class="row" style="padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="focusTrip('${t.id}', ${t.lat}, ${t.lng})"><div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(t.city)}, ${escapeHtml(t.country)}</div><div class="row-sub">${escapeHtml(t.date)} · Travelers: ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(t.notes)}"</div>` : ''}</div><button onclick="event.stopPropagation(); delTrip('${t.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
       }).join('');
-      // Map init
       setTimeout(() => {
         const mapContainer = document.getElementById('travel-map');
         if(!mapContainer) return;
@@ -2284,7 +2288,6 @@
         </div>
       `;
 
-      // Roulette
       const rouletteHtml = `
         <div class="us-card">
           <div class="us-card-title">🎡 Spark Roulette</div>
