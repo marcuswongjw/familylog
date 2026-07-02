@@ -19,6 +19,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
+    
     /* ── CSS Variables (Light & Dark) ── */
     :root {
       --bg-body: #f5f6fa;
@@ -836,8 +837,11 @@
     let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
     let selectedCalDayStr = loadPreference('selectedCalDay', new Date().toISOString().slice(0,10));
     let calWeekStart = getStartOfWeek(new Date());
+
+    // ⚠️ Only declare these ONCE at the top level
     let activeExpenseAccount = loadPreference('expenseAccount', 'All');
     let activeBudgetAccount = loadPreference('budgetAccount', 'All');
+
     let schedView = loadPreference('schedView', 'list');
     let activeSchedChild = loadPreference('schedChild', 'Mikaela');
     let selectedGridDayStr = new Date().toISOString().slice(0,10);
@@ -867,7 +871,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
       applyDarkMode();
-      buildLogin();
+      buildLogin();           // ✅ This creates the member grid
       buildModals();
       buildMore();
       document.querySelectorAll('.overlay').forEach(o => {
@@ -1214,7 +1218,6 @@
       const h = new Date().getHours();
       const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
       document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}! 👋</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
-      // Stats
       const exp = data.expenses || {};
       const totalSpent = exp.total || 0;
       const tasksOpen = (data.todos||[]).length;
@@ -1224,7 +1227,6 @@
         <div class="dash-stat"><span class="num">${tasksOpen}</span><span class="lbl">Open Tasks</span></div>
         <div class="dash-stat"><span class="num">${eventsToday}</span><span class="lbl">Today's Events</span></div>
       `;
-      // Member summaries
       let membersHtml = '';
       FAM.forEach(m => {
         if(m === 'Everyone') return;
@@ -1239,7 +1241,6 @@
         `;
       });
       document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Member Overview</div>${membersHtml}`;
-      // Today's agenda
       const tod = todayStr();
       const evs = (data.events||[]).filter(e => e.dateRaw === tod);
       const tks = (data.todos||[]).filter(t => t.dueRaw && t.dueRaw <= tod);
@@ -1253,7 +1254,6 @@
           </div>
         </div>
       `;
-      // Recent activity
       const recent = [];
       if(data.expenses && data.expenses.rows) {
         data.expenses.rows.slice(0,3).forEach(r => recent.push({type:'💰', desc:r.desc||r.category, date:r.date}));
@@ -1421,7 +1421,6 @@
       const nextDaysCount = 42 - totalCellsUsed;
       for(let d=1; d<=nextDaysCount; d++) { html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${d}</span></div>`; }
       html += `</div>`;
-      // Selected day events
       let selectedDayEvents = evs.filter(e => e.dateRaw === selectedCalDayStr);
       if(searchCalQuery) selectedDayEvents = selectedDayEvents.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
       let selectedDayHtml = '';
@@ -1450,7 +1449,6 @@
         </div>
       `;
       container.innerHTML = html;
-      // Drag & Drop setup on grid cells
       document.querySelectorAll('.cal-day-cell').forEach(cell => {
         cell.addEventListener('dragover', onDragOver);
         cell.addEventListener('drop', onDrop);
@@ -1644,8 +1642,12 @@
     }
 
     // ─── BUDGETS ──────────────────────────────────────────────
-    let activeBudgetAccount = loadPreference('budgetAccount', 'All');
-    function toggleBudgetAccount(acc) { activeBudgetAccount = acc; savePreference('budgetAccount', acc); renderBudgets(); }
+    // ✅ activeBudgetAccount is already declared globally, so we only assign here
+    function toggleBudgetAccount(acc) {
+      activeBudgetAccount = acc;
+      savePreference('budgetAccount', acc);
+      renderBudgets();
+    }
     function renderBudgets() {
       const buds = data.budgets || [];
       const el = document.getElementById('bud-list');
