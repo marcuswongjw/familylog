@@ -937,21 +937,35 @@ function gc(key) {
 }
 function buildDynamicSelectors() {
   const bgs = document.getElementById('bud-grp');
-  if (bgs) bgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
+  if (bgs) bgs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+
   const rgs = document.getElementById('rc-grp');
-  if (rgs) rgs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
-  updateRcCats();
+  if (rgs) {
+    rgs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+    updateRcCats();  // only call if rc-grp exists
+  }
+
   const egs = document.getElementById('ex-grp');
-  if (egs) egs.innerHTML = Object.keys(GROUPS).map(g=>`<option value="${g}">${g}</option>`).join('');
-  updateExCats();
+  if (egs) {
+    egs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+    updateExCats(); // only call if ex-grp exists
+  }
 }
+
 function updateRcCats() {
-  const g = document.getElementById('rc-grp').value;
-  document.getElementById('rc-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+  const grp = document.getElementById('rc-grp');
+  const cat = document.getElementById('rc-cat');
+  if (!grp || !cat) return;
+  const g = grp.value;
+  cat.innerHTML = (GROUPS[g] || []).map(c => `<option value="${c}">${c}</option>`).join('');
 }
+
 function updateExCats() {
-  const g = document.getElementById('ex-grp').value;
-  document.getElementById('ex-cat').innerHTML = (GROUPS[g]||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+  const grp = document.getElementById('ex-grp');
+  const cat = document.getElementById('ex-cat');
+  if (!grp || !cat) return;
+  const g = grp.value;
+  cat.innerHTML = (GROUPS[g] || []).map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
 // ─── MODALS ─────────────────────────────────────────────────
