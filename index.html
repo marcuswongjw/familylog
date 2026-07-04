@@ -1376,7 +1376,6 @@
     let GROUPS = {};
 
     let _callbackId = 0;
-    const _undoStack = [];
 
     // ─── PERSISTENT PREFERENCES ──────────────────────────────────
     function loadPreference(key, fallback) {
@@ -1396,12 +1395,13 @@
     let chatImageBase64 = null;
     let memImageBase64 = null;
     let chatPollTimer = null;
+    let lastIdToken = '';   // cached Firebase token for beacon-style requests
 
     // Calendar state
     let calView = loadPreference('calView', 'list');
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
-    let selectedCalDayStr = loadPreference('selectedCalDay', new Date().toISOString().slice(0,10));
+    let selectedCalDayStr = loadPreference('selectedCalDay', localDateStr());
     let calWeekStart = getStartOfWeek(new Date());
 
     // Expense & Budget filters
@@ -1413,7 +1413,7 @@
     let activeSchedChild = loadPreference('schedChild', 'Mikaela');
     let schedYear = new Date().getFullYear();
     let schedMonth = new Date().getMonth();
-    let selectedGridDayStr = new Date().toISOString().slice(0,10);
+    let selectedGridDayStr = localDateStr();
 
     // Search queries
     let searchTaskQuery = '';
@@ -1498,22 +1498,62 @@
       toastT = setTimeout(() => el.classList.remove('show'), 2800);
     }
     function showError(msg) { toast(msg, true); }
-    function pushUndo(restoreFn, message) {
-      _undoStack.push({ restore: restoreFn, message: message || 'Item deleted' });
+
+    // ─── UNDO (deferred commit) ────────────────────────────────
+    // The server delete is NOT sent immediately. It is queued as a
+    // "commit" and only fires when the undo window expires, when a new
+    // delete replaces it, or when the tab is hidden/closed. Pressing
+    // Undo cancels the commit entirely, so the row genuinely survives
+    // (previously Undo only restored the UI while the server row was
+    // already gone).
+    let _pendingUndo = null;   // { restore, payload, timer, message }
+
+    function _flushPendingUndo(useBeacon) {
+      if(!_pendingUndo) return;
+      clearTimeout(_pendingUndo.timer);
+      const payload = _pendingUndo.payload;
+      _pendingUndo = null;
+      if(!payload) return;
+      if(useBeacon && navigator.sendBeacon) {
+        // Page is going away — fire-and-forget POST (doPost on the GAS
+        // side parses e.postData.contents, same as chat messages).
+        payload.user = user || 'Unknown';
+        if(lastIdToken) payload.idToken = lastIdToken;
+        try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
+      } else {
+        gPost(payload);
+      }
+    }
+
+    function pushUndo(restoreFn, message, commitPayload) {
+      // Any earlier pending delete is committed first (one undo slot).
+      _flushPendingUndo();
       const el = document.getElementById('toast');
-      const item = _undoStack[_undoStack.length-1];
-      el.innerHTML = `${item.message} <button onclick="undoLast()" style="background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;">Undo</button>`;
+      _pendingUndo = {
+        restore: restoreFn,
+        payload: commitPayload || null,
+        message: message || 'Item deleted',
+        timer: setTimeout(() => {
+          el.classList.remove('show');
+          _flushPendingUndo();
+        }, 5000)
+      };
+      el.innerHTML = `${escapeHtml(_pendingUndo.message)} <button onclick="undoLast()" style="background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;">Undo</button>`;
       el.classList.add('show');
       clearTimeout(toastT);
-      toastT = setTimeout(() => {
-        el.classList.remove('show');
-        setTimeout(() => { if(_undoStack.length) _undoStack.pop(); }, 500);
-      }, 5000);
     }
     function undoLast() {
-      const item = _undoStack.pop();
-      if(item){ item.restore(); toast('↩️ Undo successful'); document.getElementById('toast').classList.remove('show'); }
+      if(!_pendingUndo) return;
+      clearTimeout(_pendingUndo.timer);
+      const item = _pendingUndo;
+      _pendingUndo = null;          // discard payload — nothing sent to server
+      item.restore();
+      toast('↩️ Undo successful');
     }
+    // Best effort: if the user leaves the page with a delete still in
+    // its undo window, commit it so local and server state stay in sync.
+    window.addEventListener('pagehide', () => _flushPendingUndo(true));
+    document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true); });
 
     // ─── LOGIN ──────────────────────────────────────────────────
     function buildLogin() {
@@ -1583,11 +1623,14 @@
     }
 
     // ─── XSS ESCAPE ───────────────────────────────────────────
+    // Escapes &, <, >, " and ' so output is safe in element content AND
+    // inside double/single-quoted HTML attributes (the old DOM-based
+    // version did not escape quotes, which allowed attribute breakout).
     function escapeHtml(text) {
-      if(!text) return '';
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      if(text === null || text === undefined) return '';
+      return String(text).replace(/[&<>"']/g, c => (
+        {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+      ));
     }
 
     // ─── PROGRESS BAR ─────────────────────────────────────────
@@ -1625,6 +1668,7 @@
         const currentUser = firebase.auth().currentUser;
         if(!currentUser){ showError('Please log in'); finishProgressBar(); resolve(); return; }
         currentUser.getIdToken().then(idToken => {
+          lastIdToken = idToken;
           const cb = 'cb_' + (++_callbackId);
           const s = document.createElement('script');
           window[cb] = r => {
@@ -1652,7 +1696,16 @@
         const currentUser = firebase.auth().currentUser;
         if(!currentUser){ showError('Please log in'); finishProgressBar(); resolve(null); return; }
         currentUser.getIdToken().then(idToken => {
+          lastIdToken = idToken;
           payload.user = user || 'Unknown';
+          const json = JSON.stringify(payload);
+          // JSONP rides in the URL; anything bulky (e.g. a base64 image)
+          // would blow past URL length limits, so route it via POST.
+          if (json.length > 6000 || payload.image) {
+            finishProgressBar();
+            resolve(postWrite(payload));
+            return;
+          }
           const cb = 'cb_' + (++_callbackId);
           const s = document.createElement('script');
           window[cb] = r => {
@@ -1663,10 +1716,39 @@
             resolve(r);
           };
           s.onerror = () => { delete window[cb]; s.remove(); showError('Network error'); finishProgressBar(); resolve(null); };
-          s.src = GAS_URL + '?action=write&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb + '&data=' + encodeURIComponent(JSON.stringify(payload));
+          s.src = GAS_URL + '?action=write&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb + '&data=' + encodeURIComponent(json);
           document.body.appendChild(s);
         }).catch(err => { showError('Auth error: '+err.message); finishProgressBar(); resolve(null); });
       });
+    }
+
+    // POST-based write for large payloads (images) — same shape the chat
+    // sender uses. text/plain avoids a CORS preflight, which Apps Script
+    // web apps can't answer. Always includes the idToken so the backend
+    // can (and should) verify every POST.
+    async function postWrite(payload) {
+      startProgressBar();
+      try {
+        const currentUser = firebase.auth().currentUser;
+        if(!currentUser){ showError('Please log in'); return null; }
+        const idToken = await currentUser.getIdToken();
+        lastIdToken = idToken;
+        payload.user = user || 'Unknown';
+        payload.idToken = idToken;
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        const r = await response.json();
+        if(r && r.status === 'error'){ showError('Server error: ' + (r.message||'unknown')); return null; }
+        return r;
+      } catch (err) {
+        showError('Network error: ' + err.message);
+        return null;
+      } finally {
+        finishProgressBar();
+      }
     }
 
     // ─── BUILD DYNAMIC SELECTORS ──────────────────────────────
@@ -1714,7 +1796,10 @@
       // Start Chat Polling if we navigate to chat
       if(id === 'chat') {
         pollChatOnly();
-        chatPollTimer = setInterval(pollChatOnly, 4000);
+        // 10s instead of 4s: every poll costs the backend a UrlFetchApp
+        // call for token verification, and 4s polling alone could burn
+        // through the daily Apps Script quota if the tab stays open.
+        chatPollTimer = setInterval(pollChatOnly, 10000);
       }
       
       render(id);
@@ -1754,7 +1839,12 @@
     // ─── UTILITY ──────────────────────────────────────────────
     function v(id){ return document.getElementById(id)?.value?.trim()||''; }
     function clr(...ids){ ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
-    function todayStr(){ return new Date().toISOString().slice(0,10); }
+    // Local date string (yyyy-mm-dd). toISOString() is UTC, which in
+    // Singapore (UTC+8) reports *yesterday's* date between midnight and
+    // 8am — throwing off "today's events", overdue tasks, and default
+    // form dates during early-morning use.
+    function localDateStr(d){ d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+    function todayStr(){ return localDateStr(); }
     function fmtDate(s){ if(!s) return ''; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
     function fmtTime(s){ if(!s) return ''; const [h,m]=s.split(':').map(Number); return `${h===0?12:h>12?h-12:h}:${String(m).padStart(2,'0')}${h>=12?'pm':'am'}`; }
     function setDefaultDates(){ const tod=todayStr(); ['ev-date','tk-due','mem-date','fert-date','ex-date','act-date','tr-date'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=tod; }); }
@@ -1861,7 +1951,7 @@
     function prevCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()-7); renderCal(); }
     function nextCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()+7); renderCal(); }
     function snapCalWeekToday(){ calWeekStart=getStartOfWeek(new Date()); renderCal(); }
-    function snapCalMonthToday(){ const d=new Date(); calMonth=d.getMonth(); calYear=d.getFullYear(); selectedCalDayStr=d.toISOString().slice(0,10); savePreference('selectedCalDay', selectedCalDayStr); renderCal(); }
+    function snapCalMonthToday(){ const d=new Date(); calMonth=d.getMonth(); calYear=d.getFullYear(); selectedCalDayStr=localDateStr(d); savePreference('selectedCalDay', selectedCalDayStr); renderCal(); }
     function selectCalDay(dayStr){ selectedCalDayStr=dayStr; savePreference('selectedCalDay', dayStr); renderCal(); }
 
     function renderCal() {
@@ -2175,10 +2265,8 @@
       if(!task) return;
       if(!confirm('Delete task?')) return;
       data.todos = data.todos.filter(t => t.rowNum !== n);
-      pushUndo(() => { data.todos.push(task); renderTasks(); renderHome(); }, 'Task deleted');
+      pushUndo(() => { data.todos.push(task); renderTasks(); renderHome(); }, 'Task deleted', { note: 'delete_todo', todo_id: n });
       renderTasks(); renderHome();
-      gPost({ note: 'delete_todo', todo_id: n });
-      toast('Task deleted (undo available)');
     }
 
     // ─── EXPENSES ──────────────────────────────────────────────
@@ -2266,10 +2354,8 @@
       if(!confirm('Delete expense?')) return;
       data.expenses.rows = data.expenses.rows.filter(r => r.rowNum !== n);
       data.expenses.total -= exp.amount;
-      pushUndo(() => { data.expenses.rows.push(exp); data.expenses.total += exp.amount; renderExpenses(); }, 'Expense deleted');
+      pushUndo(() => { data.expenses.rows.push(exp); data.expenses.total += exp.amount; renderExpenses(); }, 'Expense deleted', { note: 'delete_expense', row_id: n });
       renderExpenses();
-      gPost({ note: 'delete_expense', row_id: n });
-      toast('Expense deleted (undo available)');
     }
 
     // ─── BUDGETS ──────────────────────────────────────────────
@@ -2523,10 +2609,8 @@
       if(!rec) return;
       if(!confirm('Remove recurring expense?')) return;
       data.recurring = data.recurring.filter(r => r.rowNum !== n);
-      pushUndo(() => { data.recurring.push(rec); renderRecurring(); }, 'Recurring removed');
+      pushUndo(() => { data.recurring.push(rec); renderRecurring(); }, 'Recurring removed', { note:'delete_recurring', row_num:n });
       renderRecurring();
-      gPost({ note:'delete_recurring', row_num:n });
-      toast('Recurring removed (undo available)');
     }
 
     // ─── BIRTHDAYS ──────────────────────────────────────────────
@@ -2984,10 +3068,8 @@
       if(!trip) return;
       if(!confirm('Remove this trip?')) return;
       data.travel = data.travel.filter(t => t.id !== id);
-      pushUndo(() => { data.travel.push(trip); renderTravel(); }, 'Trip removed');
+      pushUndo(() => { data.travel.push(trip); renderTravel(); }, 'Trip removed', { note:'delete_trip', trip_id: id });
       renderTravel();
-      gPost({ note:'delete_trip', trip_id: id });
-      toast('Trip removed (undo available)');
     }
 
     // ─── LOCATION AUTOCOMPLETE ────────────────────────────────
@@ -2997,20 +3079,30 @@
       if(val.trim().length < 3){ document.getElementById('tr-loc-suggestions').style.display='none'; return; }
       locTimeout = setTimeout(() => fetchLocSuggestions(val.trim()), 400);
     }
+    let _locResults = [];   // last fetched suggestions, referenced by index
     async function fetchLocSuggestions(q) {
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
         const res = await fetch(url);
-        const data = await res.json();
+        const results = await res.json();
         const sug = document.getElementById('tr-loc-suggestions');
-        if(!data || data.length===0){ sug.style.display='none'; return; }
-        sug.innerHTML = data.map(item => {
-          const display = item.display_name, addr = item.address || {};
-          const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
-          const country = addr.country || '';
-          const safeCity = JSON.stringify(city), safeCountry = JSON.stringify(country), safeDisplay = JSON.stringify(display);
-          return `<div class="autocomplete-suggestion" onclick="selectLocSuggestion(${safeCity}, ${safeCountry}, ${item.lat}, ${item.lon}, ${safeDisplay})">${escapeHtml(display)}</div>`;
-        }).join('');
+        if(!results || results.length===0){ sug.style.display='none'; return; }
+        // Keep the raw data in JS and reference it by index — embedding
+        // JSON.stringify output inside a double-quoted onclick attribute
+        // broke the HTML at the first quote and was an injection vector.
+        _locResults = results;
+        sug.innerHTML = results.map((item, i) =>
+          `<div class="autocomplete-suggestion" data-loc-idx="${i}">${escapeHtml(item.display_name)}</div>`
+        ).join('');
+        sug.querySelectorAll('.autocomplete-suggestion').forEach(el => {
+          el.addEventListener('click', () => {
+            const item = _locResults[parseInt(el.dataset.locIdx, 10)];
+            if(!item) return;
+            const addr = item.address || {};
+            const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
+            selectLocSuggestion(city, addr.country || '', item.lat, item.lon, item.display_name);
+          });
+        });
         sug.style.display = 'block';
       } catch(e){ console.error('Autocomplete Error:', e); }
     }
@@ -3374,6 +3466,13 @@
       };
       
       try {
+        // Attach the auth token so the backend can verify this write
+        // (previously chat POSTs were sent unauthenticated).
+        const currentUser = firebase.auth().currentUser;
+        if (currentUser) {
+          payload.idToken = await currentUser.getIdToken();
+          lastIdToken = payload.idToken;
+        }
         const response = await fetch(GAS_URL, {
           method: 'POST',
           headers: {
@@ -3383,8 +3482,9 @@
         });
         const res = await response.json();
         if (res && res.status === 'ok') {
-          await loadData();
-          renderChat();
+          // Refresh just the chat — no need to reload the whole dashboard
+          // after every message.
+          pollChatOnly();
         } else {
           // Remove optimistic message on failure
           data.chat = data.chat.filter(m => m !== tempMsg);
@@ -3515,10 +3615,23 @@
       if (previewArea) previewArea.style.display = 'none';
     }
 
+    // Pause polling while the tab is hidden; resume when it's visible
+    // again and the user is still on the chat section.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+      } else if (section === 'chat' && !chatPollTimer) {
+        pollChatOnly();
+        chatPollTimer = setInterval(pollChatOnly, 10000);
+      }
+    });
+
     function pollChatOnly() {
+      if (document.hidden) return;
       const currentUser = firebase.auth().currentUser;
       if(!currentUser) return;
       currentUser.getIdToken().then(idToken => {
+        lastIdToken = idToken;
         const cb = 'cb_' + (++_callbackId);
         const s = document.createElement('script');
         window[cb] = r => {
