@@ -338,6 +338,369 @@
       .member-grid{grid-template-columns:1fr 1fr;}
       .login-box{padding:24px 16px;}
     }
+
+    /* ── DRAWER ── */
+    .drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      transition: opacity 0.3s ease;
+    }
+    .drawer-overlay.open {
+      display: block;
+    }
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: -280px;
+      width: 280px;
+      height: 100%;
+      background: #fff;
+      z-index: 1001;
+      box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer.open {
+      right: 0;
+    }
+    .drawer-hdr {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e4e6ef;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    .drawer-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #f5f6fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #5a5a72;
+      font-size: 14px;
+      border: none;
+    }
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .drawer-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s;
+      color: #2d2d3a;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .drawer-item:active, .drawer-item:hover {
+      background: #f5f6fa;
+    }
+    .drawer-item .di-icon {
+      font-size: 18px;
+      width: 24px;
+      text-align: center;
+    }
+
+    /* ── CHAT ── */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 56px - 60px - env(safe-area-inset-bottom, 0px));
+      background: #f5f6fa;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .chat-bubble-row {
+      display: flex;
+      width: 100%;
+    }
+    .chat-bubble-row.me {
+      justify-content: flex-end;
+    }
+    .chat-bubble-row.other {
+      justify-content: flex-start;
+    }
+    .chat-bubble {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .chat-bubble-row.me .chat-bubble {
+      background: #6b2d5c;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-bubble-row.other .chat-bubble {
+      background: #fff;
+      color: #1a1a2e;
+      border-bottom-left-radius: 4px;
+      border: 1px solid #e4e6ef;
+    }
+    .chat-sender-name {
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+    .chat-bubble-text {
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .chat-bubble-img {
+      max-width: 100%;
+      max-height: 240px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+      display: block;
+      cursor: pointer;
+      object-fit: cover;
+    }
+    .chat-bubble-time {
+      font-size: 9px;
+      color: #9898aa;
+      text-align: right;
+      margin-top: 4px;
+    }
+    .chat-bubble-row.me .chat-bubble-time {
+      color: rgba(255,255,255,0.7);
+    }
+    .chat-preview-area {
+      background: #fff;
+      border-top: 1px solid #e4e6ef;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+    }
+    .chat-input-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: #fff;
+      border-top: 1px solid #e4e6ef;
+    }
+    .chat-input-area input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #e4e6ef;
+      border-radius: 20px;
+      font-size: 14px;
+      outline: none;
+      background: #f8f9fa;
+      color: #1a1a2e;
+    }
+    .chat-input-area input:focus {
+      border-color: #6b2d5c;
+      background: #fff;
+    }
+    .chat-attach-btn {
+      font-size: 20px;
+      padding: 8px;
+      cursor: pointer;
+      color: #5a5a72;
+    }
+    .chat-send-btn {
+      background: #6b2d5c;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-send-btn:active {
+      opacity: 0.85;
+    }
+
+    /* ── TASK ── */
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1.5px solid #e4e6ef;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+      transition: all 0.2s;
+    }
+    .chk {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid #cbd5e1;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chk.done {
+      background: #10b981;
+      border-color: #10b981;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .task-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .task-ttl {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .task-meta {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .task-meta-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .task-meta-badge.overdue {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .task-meta-badge.today {
+      background: #fef3c7;
+      color: #b45309;
+    }
+    .task-meta-badge.future {
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    /* Roulette Widget */
+    .roulette-wrapper {
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid rgba(253, 222, 228, 0.8);
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 4px 15px rgba(107, 45, 92, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+    }
+    .roulette-tabs {
+      display: flex;
+      background: #fbf0f2;
+      padding: 4px;
+      border-radius: 10px;
+      width: 100%;
+    }
+    .roulette-tab {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #6b2d5c;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .roulette-tab.active {
+      background: #fff;
+      color: #6b2d5c;
+      box-shadow: 0 2px 8px rgba(107, 45, 92, 0.08);
+    }
+    .roulette-card {
+      width: 100%;
+      max-width: 320px;
+      background: linear-gradient(135deg, #a85f89 0%, #6b2d5c 100%);
+      border: 1px solid #6b2d5c;
+      border-radius: 16px;
+      padding: 24px;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(107, 45, 92, 0.15);
+      position: relative;
+      overflow: hidden;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: all 0.2s;
+    }
+    .roulette-card:active {
+      transform: scale(0.98);
+    }
+    .roulette-card::before {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; left: 0;
+      background: radial-gradient(circle at top right, rgba(255,255,255,0.15) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .roulette-card.spinning {
+      animation: rouletteSpin 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    @keyframes rouletteSpin {
+      0% { transform: scale(1) rotate(0deg); opacity: 1; }
+      30% { transform: scale(0.93) rotate(3deg); opacity: 0.7; }
+      60% { transform: scale(1.05) rotate(-2deg); opacity: 0.8; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+    .roulette-prompt {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.5;
+      margin: 10px 0;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .roulette-card-sub {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.8;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -385,6 +748,7 @@
         <button class="hdr-btn" onclick="toggleDarkMode()" id="darkToggle" aria-label="Toggle Dark Mode">🌙</button>
         <button class="hdr-btn" id="rbtn" onclick="loadData()" aria-label="Refresh">🔄</button>
         <button class="hdr-btn" onclick="logout()" aria-label="Sign out">🚪</button>
+        <button class="hdr-btn" id="menu-btn" onclick="toggleMenuDrawer(true)" aria-label="Menu" style="font-size:20px;padding:4px 8px;cursor:pointer;">☰</button>
       </div>
     </div>
 
@@ -398,6 +762,27 @@
           <div id="dash-members"></div>
           <div id="today-wrap"></div>
           <div id="dash-recent"></div>
+        </div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="section" id="s-chat">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-msg-container">
+            <div class="loading"><div class="spin"></div>Loading messages…</div>
+          </div>
+          <div class="chat-preview-area" id="chat-img-preview" style="display:none;">
+            <div style="position:relative;">
+              <img src="" id="chat-preview-thumbnail" style="height:60px;width:60px;object-fit:cover;border-radius:8px;border:1px solid rgba(107, 45, 92, 0.2);">
+              <button class="chat-preview-close" onclick="clearChatFilePreview()" style="position:absolute;top:-8px;right:-8px;background:#ff4d4d;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;">✕</button>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <input type="text" id="chat-input-text" placeholder="Message..." onkeydown="if(event.key==='Enter')sendChatMessage()">
+            <label for="chat-file-input" class="chat-attach-btn">📎</label>
+            <input type="file" id="chat-file-input" accept="image/*" style="display:none;" onchange="handleChatFileSelect(this)">
+            <button class="chat-send-btn" onclick="sendChatMessage()">Send</button>
+          </div>
         </div>
       </div>
 
@@ -565,11 +950,10 @@
     <!-- Bottom Nav -->
     <div class="bot-nav">
       <div class="nav-it act" id="nav-home" onclick="goTo('home')"><div class="ni">🏠</div><div>Home</div></div>
+      <div class="nav-it" id="nav-chat" onclick="goTo('chat')"><div class="ni">💬</div><div>Chat</div></div>
       <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
-      <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
       <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
       <div class="nav-it" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
-      <div class="nav-it" id="nav-more" onclick="goTo('more')"><div class="ni">⋯</div><div>More</div></div>
     </div>
   </div>
 
@@ -578,6 +962,57 @@
 
   <!-- Toast -->
   <div id="toast"></div>
+
+  <!-- Hamburger Menu Drawer -->
+  <div class="drawer-overlay" id="drawer-overlay" onclick="toggleMenuDrawer(false)"></div>
+  <div class="drawer" id="menu-drawer">
+    <div class="drawer-hdr">
+      <span class="drawer-title">Family Tools 🛠️</span>
+      <button class="drawer-close" onclick="toggleMenuDrawer(false)">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-item" onclick="navigateDrawer('tasks')">
+        <span class="di-icon">✅</span>
+        <span class="di-lbl">Tasks</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('budgets')">
+        <span class="di-icon">📊</span>
+        <span class="di-lbl">Budgets</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('memories')">
+        <span class="di-icon">💛</span>
+        <span class="di-lbl">Memories</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('birthdays')">
+        <span class="di-icon">🎂</span>
+        <span class="di-lbl">Birthdays & Anniversaries</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('fertility')">
+        <span class="di-icon">🌸</span>
+        <span class="di-lbl">Fertility Tracker</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('recurring')">
+        <span class="di-icon">🔄</span>
+        <span class="di-lbl">Recurring Expenses</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('schedules')">
+        <span class="di-icon">⛵</span>
+        <span class="di-lbl">Kid Schedules</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('travel')">
+        <span class="di-icon">✈️</span>
+        <span class="di-lbl">Travel Map</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal for Chat Images -->
+  <div class="overlay" id="chat-lightbox" onclick="closeChatLightbox()">
+    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;">
+      <img src="" id="lightbox-img" style="max-width:100%;max-height:90vh;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.3);object-fit:contain;">
+      <button onclick="closeChatLightbox()" style="position:absolute;top:20px;right:20px;background:rgba(255,255,255,0.25);backdrop-filter:blur(5px);color:#fff;font-size:24px;border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;">✕</button>
+    </div>
+  </div>
 
   <!-- ─── MODALS ────────────────────────────────────────── -->
 
@@ -924,6 +1359,7 @@
     let currentUserEmail = '';
     let selectedMember = null;
     let timelineInterval = null;
+    let chatImageBase64 = null;
 
     // Calendar state
     let calView = loadPreference('calView', 'list');
@@ -1218,17 +1654,19 @@
     }
 
     // ─── NAVIGATION ───────────────────────────────────────────
-    const NAV_SECONDARY = ['budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+    const NAV_SECONDARY = ['tasks','budgets','memories','fertility','recurring','birthdays','schedules','travel'];
     function goTo(id) {
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       const t = document.getElementById('s-'+id);
       if(t) t.classList.add('active');
-      const navId = NAV_SECONDARY.includes(id) ? 'more' : id;
+      const navId = NAV_SECONDARY.includes(id) ? '' : id;
       document.querySelectorAll('.nav-it').forEach(n => n.classList.remove('act'));
-      const nb = document.getElementById('nav-'+navId);
-      if(nb) nb.classList.add('act');
+      if (navId) {
+        const nb = document.getElementById('nav-'+navId);
+        if(nb) nb.classList.add('act');
+      }
       const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
       const fab = document.getElementById('fab');
       if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
@@ -1236,19 +1674,22 @@
     }
     function onFab() { if(document.getElementById('fab')._m) openM(document.getElementById('fab')._m); }
     function buildMore() {
+      const el = document.getElementById('more-grid');
+      if (!el) return;
       const tiles = [
         {id:'budgets',icon:'📊',label:'Budgets'},{id:'memories',icon:'💛',label:'Memories'},
         {id:'birthdays',icon:'🎂',label:'Birthdays'},{id:'fertility',icon:'🌸',label:'Fertility'},
         {id:'recurring',icon:'🔄',label:'Recurring'},{id:'schedules',icon:'⛵',label:'Schedules'},
         {id:'travel',icon:'✈️',label:'Travel'}
       ];
-      document.getElementById('more-grid').innerHTML = tiles.map(t =>
+      el.innerHTML = tiles.map(t =>
         `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
       ).join('');
     }
     function render(id) {
       switch(id) {
         case 'home': renderHome(); break;
+        case 'chat': renderChat(); break;
         case 'calendar': renderCal(); break;
         case 'tasks': renderTasks(); break;
         case 'expenses': renderExpenses(); break;
@@ -1641,28 +2082,49 @@
       if(!todos.length){ el.innerHTML = '<div class="empty"><div class="ei">✅</div>All done — no open tasks!</div>'; return; }
       const g = {};
       FAM.forEach(m => g[m] = []);
-      todos.forEach(t => { if(!g[t.assignee]) g[t.assignee]=[]; g[t.assignee].push(t); });
-      el.innerHTML = FAM.filter(m => g[m] && g[m].length).map(m =>
-        `<div style="padding:8px 16px 2px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">${escapeHtml(m)}</div>`+
-        g[m].map(t => {
-          const today = todayStr();
-          let dueHtml = 'No due date';
-          if(t.due) {
-            if(t.dueRaw < today) dueHtml = `<span style="color:#b83232;font-weight:600;">⚠️ Overdue · ${escapeHtml(t.due)}</span>`;
-            else if(t.dueRaw === today) dueHtml = `<span style="color:#a3600a;font-weight:600;">⏳ Due today</span>`;
-            else dueHtml = `Due ${escapeHtml(t.due)}`;
-          }
-          return `
-          <div class="task-row">
-            <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
-            <div class="task-main">
-              <div class="task-ttl">${escapeHtml(t.task)}</div>
-              <div class="task-meta">${dueHtml}</div>
+      todos.forEach(t => {
+        const assignee = t.assignee || 'Everyone';
+        if(!g[assignee]) g[assignee] = [];
+        g[assignee].push(t);
+      });
+      el.innerHTML = `
+        <div style="padding: 16px;">
+          ${FAM.filter(m => g[m] && g[m].length).map(m => `
+            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid #a85f89;">${escapeHtml(m)}</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              ${g[m].map(t => {
+                const today = todayStr();
+                let dueClass = 'future';
+                let dueText = 'No due date';
+                if(t.due) {
+                  if(t.dueRaw < today) {
+                    dueClass = 'overdue';
+                    dueText = `⚠️ Overdue · ${escapeHtml(t.due)}`;
+                  } else if(t.dueRaw === today) {
+                    dueClass = 'today';
+                    dueText = `⏳ Due today`;
+                  } else {
+                    dueClass = 'future';
+                    dueText = `📅 Due ${escapeHtml(t.due)}`;
+                  }
+                }
+                return `
+                  <div class="task-row">
+                    <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
+                    <div class="task-main">
+                      <div class="task-ttl">${escapeHtml(t.task)}</div>
+                      <div class="task-meta">
+                        <span class="task-meta-badge ${dueClass}">${dueText}</span>
+                      </div>
+                    </div>
+                    <button onclick="delTask(${t.rowNum})" style="color:#cbd5e1;font-size:16px;padding:8px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
+                  </div>
+                `;
+              }).join('')}
             </div>
-            <button onclick="delTask(${t.rowNum})" style="color:var(--text-muted);font-size:18px;padding:4px 6px;">✕</button>
-          </div>`;
-        }).join('')
-      ).join('');
+          `).join('')}
+        </div>
+      `;
     }
     function doneTask(n, el) {
       el.classList.add('done'); el.textContent='✓';
@@ -1728,7 +2190,37 @@
           <div class="donut-container"><div class="donut-wrap"><svg viewBox="0 0 42 42" class="donut">${donutSvgCircles}<g class="chart-text"><text x="50%" y="50%" class="chart-number" style="font-size:5px;font-weight:800;">$${total.toFixed(0)}</text><text x="50%" y="64%" class="chart-label" style="font-size:2px;fill:var(--text-muted);">Total</text></g></svg></div><div class="pie-wrap" style="flex:1;padding:0;gap:6px;">${cats.slice(0,5).map((e,i)=>`<div class="pie-row"><div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-lbl" style="font-size:12px;">${escapeHtml(e[0].split(' - ').pop())}</span><span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span></div>`).join('')||'<div class="empty">No expenses</div>'}</div></div>
         </div>
         <div class="card"><div class="card-hdr"><span class="card-title">📈 6-Month Trend (${activeExpenseAccount})</span></div><div class="bar-chart-wrap">${barChartHtml||'<div class="empty">No trend data</div>'}</div></div>
-        <div class="card"><div class="card-hdr"><span class="card-title">Recent Entries</span></div><div class="card-body">${(filteredRows||[]).slice(0,15).map(r => `<div class="row"><div class="row-main"><div class="row-title">${escapeHtml(r.desc||r.category)}</div><div class="row-sub">${escapeHtml(r.date)} · ${escapeHtml(r.category)} · ${escapeHtml(r.account)}</div></div><div style="text-align:right;flex-shrink:0;"><div style="font-size:13px;font-weight:700;">$${r.amount.toFixed(2)}</div><button onclick="delExp(${r.rowNum})" style="font-size:12px;color:var(--text-muted);">Delete</button></div></div>`).join('')||'<div class="empty">No entries yet</div>'}</div></div>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
+          <div class="card-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;">
+            ${(filteredRows||[]).slice(0, 15).map(r => {
+              const emoji = getCategoryEmoji(r.desc || r.category);
+              const acctClass = r.account.includes('Personal') ? 'b-amber' : 'b-blue';
+              
+              return `
+                <div style="display:flex;align-items:center;background:#fff;border:1px solid #e4e6ef;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;">
+                  <div style="width:36px;height:36px;border-radius:50%;background:#f8fafc;border:1px solid #e4e6ef;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${emoji}</div>
+                  
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:14px;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.desc || r.category)}</div>
+                    <div style="font-size:12px;color:#64748b;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;">
+                      <span>${escapeHtml(r.date)}</span>
+                      <span style="color:#cbd5e1;">•</span>
+                      <span>${escapeHtml(r.category)}</span>
+                      <span style="color:#cbd5e1;">•</span>
+                      <span class="badge ${acctClass}" style="font-size:9px;padding:1px 6px;">${escapeHtml(r.account)}</span>
+                    </div>
+                  </div>
+                  
+                  <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                    <div style="font-size:15px;font-weight:700;color:#1e293b;">$${r.amount.toFixed(2)}</div>
+                    <button onclick="delExp(${r.rowNum})" style="color:#9898aa;font-size:12px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9898aa'">Delete</button>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="empty">No entries yet</div>'}
+          </div>
+        </div>
       `;
     }
     function delExp(n) {
@@ -1801,31 +2293,133 @@
     // ─── MEMORIES ──────────────────────────────────────────────
     function renderMemories() {
       const mems = data.memories || [];
-      const el = document.getElementById('mem-list');
-      if(!mems.length){ el.innerHTML = '<div class="empty"><div class="ei">💛</div>No memories yet</div>'; return; }
-      const te = t => t.includes('Milestone')?'🏆':t.includes('Quote')?'💬':'💛';
-      el.innerHTML = mems.map(m => `
-        <div class="mem-row">
-          <div class="mem-type">${te(m.type)} ${escapeHtml(m.type.split(' ').slice(1).join(' '))} · ${escapeHtml(m.person)}</div>
-          <div class="mem-text">${escapeHtml(m.memory)}</div>
-          <div class="mem-meta">📅 ${escapeHtml(m.date)} · logged by ${escapeHtml(m.loggedBy)}</div>
-        </div>`).join('');
+      const el   = document.getElementById('mem-list');
+      if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>No memories yet</div>'; return; }
+      
+      const getIcon = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
+      
+      el.innerHTML = `
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          ${mems.map(m => {
+            const icon = getIcon(m.type);
+            const isQuote = m.type.includes('Quote');
+            
+            let contentHtml = '';
+            if (isQuote) {
+              contentHtml = `
+                <blockquote style="font-size:15px;font-style:italic;font-family:Georgia,serif;color:#6b2d5c;line-height:1.5;margin:8px 0;padding-left:14px;border-left:3px solid #a85f89;">
+                  “${escapeHtml(m.memory)}”
+                </blockquote>
+              `;
+            } else {
+              contentHtml = `<div class="mem-text" style="font-size:14px;color:#1a1a2e;line-height:1.5;margin:8px 0;">${escapeHtml(m.memory)}</div>`;
+            }
+            
+            return `
+              <div class="card" style="padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03);border:1.5px solid #e4e6ef;background:var(--bg-card);border-radius:12px;margin-bottom:0;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <span class="badge ${getMemberBadgeClass(m.person)}" style="font-size:11px;">${m.person}</span>
+                  <span style="font-size:11px;font-weight:700;color:#a85f89;text-transform:uppercase;letter-spacing:0.5px;">${icon} ${m.type}</span>
+                </div>
+                ${contentHtml}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;display:flex;justify-content:space-between;">
+                  <span>📅 ${escapeHtml(m.date)}</span>
+                  <span>Logged by <strong>${escapeHtml(m.loggedBy)}</strong></span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
     }
 
     // ─── FERTILITY ──────────────────────────────────────────────
     function renderFertility() {
-      const f = data.fertility || {};
+      const f  = data.fertility || {};
       const el = document.getElementById('fert-body');
-      if(!f.lastPeriodStart){ el.innerHTML = '<div class="empty"><div class="ei">🌸</div>No data yet. Log your first entry below.</div>'; return; }
-      const rows = [
-        ['Last Period Start', f.lastPeriodStart],
-        ['Next Period (est.)', f.nextPeriod],
-        ['Fertile Window', f.fertileStart&&f.fertileEnd ? f.fertileStart+' – '+f.fertileEnd : '—'],
-        ['Period Duration', f.duration ? f.duration+' days' : '—'],
-        ['Last Ovulation', f.lastOvulation||'—']
+      if (!f.lastPeriodStart) {
+        el.innerHTML = '<div class="empty"><div class="ei">🌸</div>No data yet. Log your first entry below.</div>';
+        return;
+      }
+      
+      let cycleDayHtml = '';
+      if (f.lastPeriodStart) {
+        try {
+          const pStart = new Date(f.lastPeriodStart + 'T00:00:00');
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const diffTime = Math.abs(today - pStart);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          const progressPct = Math.min(Math.max((diffDays / 28) * 100, 0), 100);
+          
+          let phase = 'Follicular Phase';
+          let phaseIcon = '🌱';
+          if (diffDays >= 1 && diffDays <= 5) { phase = 'Menstruation'; phaseIcon = '🩸'; }
+          else if (diffDays >= 11 && diffDays <= 16) { phase = 'Fertile Window / Ovulation'; phaseIcon = '🌸'; }
+          else if (diffDays > 16) { phase = 'Luteal Phase'; phaseIcon = '🍂'; }
+          
+          cycleDayHtml = `
+            <div class="card" style="padding:16px;background:linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);border:1.5px solid #fecdd3;border-radius:12px;margin-bottom:14px;box-shadow:0 2px 6px rgba(225, 29, 72, 0.05);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:0.5px;">Current Cycle</div>
+                  <div style="font-size:18px;font-weight:800;color:#9f1239;margin-top:2px;">Day ${diffDays} <span style="font-size:13px;font-weight:600;color:#e11d48;margin-left:4px;">${phaseIcon} ${phase}</span></div>
+                </div>
+                <div style="font-size:24px;">🌸</div>
+              </div>
+              <div style="height:6px;background:rgba(225, 29, 72, 0.1);border-radius:3px;overflow:hidden;margin-top:12px;">
+                <div style="height:100%;width:${progressPct}%;background:#e11d48;border-radius:3px;"></div>
+              </div>
+            </div>
+          `;
+        } catch(err) {
+          console.error(err);
+        }
+      }
+
+      const stats = [
+        { label: 'Last Period Start', val: f.lastPeriodStart, icon: '🩸', color: '#fda4af' },
+        { label: 'Next Period (est.)', val: f.nextPeriod, icon: '📅', color: '#fbcfe8' },
+        { label: 'Fertile Window', val: f.fertileStart && f.fertileEnd ? `${f.fertileStart} – ${f.fertileEnd}` : '—', icon: '🌸', color: '#fecdd3', span: true },
+        { label: 'Period Duration', val: f.duration ? `${f.duration} days` : '—', icon: '⏱️', color: '#fed7aa' },
+        { label: 'Last Ovulation', val: f.lastOvulation || '—', icon: '✨', color: '#fef08a' }
       ];
-      el.innerHTML = rows.map(r => `<div class="fert-stat"><span class="fert-lbl">${r[0]}</span><span class="fert-val">${escapeHtml(r[1]||'—')}</span></div>`).join('') +
-        ((f.symptoms||[]).length ? `<div style="padding:12px 16px;"><div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent Symptoms</div>${f.symptoms.map(s=>`<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--border-color);">${escapeHtml(s.date)} · ${escapeHtml(s.note)}</div>`).join('')}</div>` : '');
+
+      let statsGrid = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+          ${stats.map(s => {
+            const gridSpan = s.span ? 'grid-column: span 2;' : '';
+            return `
+              <div style="background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px;box-shadow:0 2px 4px rgba(0,0,0,0.02);display:flex;align-items:center;gap:10px;${gridSpan}">
+                <div style="width:34px;height:34px;border-radius:50%;background:${s.color};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">${s.icon}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">${s.label}</div>
+                  <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.val}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      let symptomsHtml = '';
+      if (f.symptoms && f.symptoms.length > 0) {
+        symptomsHtml = `
+          <div style="margin-top:16px;border-top:1px solid var(--border-color);padding-top:14px;">
+            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📝 Recent Symptoms Log</div>
+            <div style="position:relative;padding-left:14px;border-left:2px solid #fecdd3;display:flex;flex-direction:column;gap:12px;margin-left:6px;">
+              ${f.symptoms.map(s => `
+                <div style="position:relative;font-size:13px;">
+                  <div style="position:absolute;left:-19px;top:4px;width:8px;height:8px;border-radius:50%;background:#e11d48;border:2px solid #fff;box-shadow:0 0 0 2px #fecdd3;"></div>
+                  <strong style="color:var(--text-muted);">${escapeHtml(s.date)}:</strong> <span style="color:var(--text-primary);font-weight:500;">${escapeHtml(s.note)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      el.innerHTML = cycleDayHtml + statsGrid + symptomsHtml;
     }
 
     // ─── RECURRING ──────────────────────────────────────────────
@@ -1833,11 +2427,56 @@
       const items = data.recurring || [];
       const el = document.getElementById('rec-list');
       if(!items.length){ el.innerHTML = '<div class="empty"><div class="ei">🔄</div>No recurring expenses</div>'; return; }
+      
+      const totalCommitted = items.reduce((acc, curr) => acc + curr.amount, 0);
       const sfx = d => d===1?'st':d===2?'nd':d===3?'rd':'th';
-      el.innerHTML = items.map(r => {
-        const w = r.daysLeft===0?'<span class="badge b-red">Today</span>':r.daysLeft===1?'<span class="badge b-amber">Tomorrow</span>':`<span class="badge b-gray">In ${r.daysLeft}d</span>`;
-        return `<div class="rec-row"><div class="rec-main"><div class="rec-name">${escapeHtml(r.name)}</div><div class="rec-meta">${escapeHtml(r.category)} · ${r.day}${sfx(r.day)} of month</div></div><div class="rec-right"><div class="rec-amt">$${r.amount.toFixed(2)}</div><div style="margin-top:4px;">${w}</div><button onclick="delRec(${r.rowNum})" style="font-size:12px;color:var(--text-muted);">Remove</button></div></div>`;
-      }).join('');
+      
+      const committedBannerHtml = `
+        <div style="background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);border:1.5px solid #bfdbfe;border-radius:12px;padding:16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(59, 130, 246, 0.05);">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px;">Committed Spending</div>
+            <div style="font-size:22px;font-weight:800;color:#1e40af;margin-top:2px;">$${totalCommitted.toFixed(2)}<span style="font-size:12px;font-weight:500;color:#3b82f6;margin-left:4px;">/ month</span></div>
+          </div>
+          <div style="font-size:28px;">🔄</div>
+        </div>
+      `;
+      
+      const itemsHtml = `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${items.map(r => {
+            const w = r.daysLeft===0
+              ? '<span class="badge b-red">Today</span>'
+              : r.daysLeft===1
+                ? '<span class="badge b-amber">Tomorrow</span>'
+                : `<span class="badge b-gray">In ${r.daysLeft}d</span>`;
+                
+            const initial = r.name.trim().charAt(0).toUpperCase() || 'R';
+            
+            return `
+              <div class="card" style="display:flex;align-items:center;background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;margin-bottom:0;">
+                <div style="width:36px;height:36px;border-radius:50%;background:#e8f0fb;color:#3a6fa8;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;">${initial}</div>
+                
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:14px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    ${escapeHtml(r.category)} · Due on ${r.day}${sfx(r.day)}
+                  </div>
+                </div>
+                
+                <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                  <div style="font-size:15px;font-weight:700;color:var(--text-primary);">$${r.amount.toFixed(2)}</div>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    ${w}
+                    <button onclick="delRec(${r.rowNum})" style="color:var(--text-muted);font-size:16px;padding:4px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='var(--text-muted)'">🗑️</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      
+      el.innerHTML = committedBannerHtml + itemsHtml;
     }
     function delRec(n) {
       const rec = data.recurring.find(r => r.rowNum === n);
@@ -1855,11 +2494,75 @@
       const items = data.birthdays || [];
       const el = document.getElementById('bd-list');
       if(!items.length){ el.innerHTML = '<div class="empty"><div class="ei">🎂</div>No birthdays saved yet</div>'; return; }
-      el.innerHTML = items.map(b => {
-        const ic = b.type==='Birthday'?'🎂':'💍';
-        const w = b.daysAway===0?'<span class="badge b-red">Today! 🥳</span>':b.daysAway===1?'<span class="badge b-amber">Tomorrow!</span>':b.daysAway<=7?`<span class="badge b-amber">In ${b.daysAway} days</span>`:`<span class="badge b-gray">In ${b.daysAway} days</span>`;
-        return `<div class="bd-row"><div class="bd-ic">${ic}</div><div class="bd-main"><div class="bd-name">${escapeHtml(b.name)}</div><div class="bd-meta">${escapeHtml(b.dateLabel)}${b.agePart?' · '+escapeHtml(b.agePart):''}${b.notes?' · '+escapeHtml(b.notes):''}</div></div><div>${w}</div></div>`;
-      }).join('');
+      
+      const today = items.filter(b => b.daysAway === 0);
+      const upcoming = items.filter(b => b.daysAway > 0 && b.daysAway <= 30);
+      const future = items.filter(b => b.daysAway > 30);
+      
+      function getEventCard(b) {
+        const ic = b.type === 'Birthday' ? '🎂' : '💍';
+        const badgeCls = b.daysAway === 0 ? 'b-red' : b.daysAway <= 7 ? 'b-amber' : 'b-gray';
+        const badgeText = b.daysAway === 0 ? 'Today! 🥳' : b.daysAway === 1 ? 'Tomorrow!' : `In ${b.daysAway} days`;
+        
+        const [mNum, dNum] = b.date.split('-');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const monthStr = months[parseInt(mNum) - 1] || 'Jan';
+        
+        return `
+          <div style="display:flex;align-items:center;background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;margin-bottom:8px;">
+            <div style="width:46px;height:50px;border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;text-align:center;box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+              <div style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:2px 0;text-transform:uppercase;letter-spacing:0.5px;">${monthStr}</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--text-primary);background:#f8fafc;">${dNum}</div>
+            </div>
+            
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:4px;">
+                <span>${escapeHtml(b.name)}</span>
+                <span>${ic}</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                ${escapeHtml(b.dateLabel)}${b.agePart ? ' · ' + escapeHtml(b.agePart) : ''}${b.notes ? ' · <span style="font-style:italic;">"' + escapeHtml(b.notes) + '"</span>' : ''}
+              </div>
+            </div>
+            
+            <div style="flex-shrink:0;">
+              <span class="badge ${badgeCls}" style="font-size:10px;padding:4px 10px;">${badgeText}</span>
+            </div>
+          </div>
+        `;
+      }
+      
+      let html = '<div style="padding:16px;">';
+      
+      if(today.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">🥳 Today's Celebration</div>
+          <div style="margin-bottom:16px;background:linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);border:1.5px dashed #f472b6;padding:4px;border-radius:14px;">
+            ${today.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      if(upcoming.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px;">⏰ Upcoming (Next 30 days)</div>
+          <div style="margin-bottom:16px;">
+            ${upcoming.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      if(future.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px;">📅 Future Events</div>
+          <div>
+            ${future.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      html += '</div>';
+      el.innerHTML = html;
     }
 
     // ─── KID SCHEDULES ─────────────────────────────────────────
@@ -2390,10 +3093,9 @@
           </div>
           <div class="roulette-wrapper">
             <div class="roulette-card" id="r-card" onclick="spinRoulette()">
-              <div class="roulette-card-inner">
-                <div class="roulette-front"><div style="font-size:32px;margin-bottom:8px;">✨</div><div style="font-weight:700;font-size:14px;">Tap to Spin!</div><div style="font-size:10px;opacity:0.8;margin-top:4px;">Get a random card</div></div>
-                <div class="roulette-back"><div class="roulette-back-content" id="r-result-text">Your result will appear here...</div><div class="roulette-back-sub" id="r-result-sub">Category</div></div>
-              </div>
+              <div id="r-card-icon" style="font-size:32px;margin-bottom:8px;">✨</div>
+              <div class="roulette-prompt" id="r-result-text">Tap to Spin!</div>
+              <div class="roulette-card-sub" id="r-result-sub">Get a random card</div>
             </div>
             <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Spin Again 🔄</button>
           </div>
@@ -2456,23 +3158,46 @@
       const card = document.getElementById('r-card');
       if(card) card.classList.remove('spinning');
       document.getElementById('btn-spin-again').style.display = 'none';
+      
+      const cardIcon = document.getElementById('r-card-icon');
+      const cardText = document.getElementById('r-result-text');
+      const cardSub = document.getElementById('r-result-sub');
+      if(cardIcon && cardText && cardSub) {
+        cardIcon.textContent = '✨';
+        cardText.textContent = 'Tap to Spin!';
+        cardSub.textContent = 'Get a random card';
+      }
     }
     function spinRoulette() {
       const card = document.getElementById('r-card');
       if(!card) return;
+      card.classList.remove('spinning');
+      void card.offsetWidth;
       card.classList.add('spinning');
-      let resultText='', categoryText='';
+      let resultText='', categoryText='', icon='✨';
       if(currentRouletteTab === 'q') {
         const idx = Math.floor(Math.random() * DEEP_QUESTIONS.length);
         resultText = DEEP_QUESTIONS[idx];
         categoryText = '💬 Deep Connection Question';
+        icon = '💬';
       } else {
         const idx = Math.floor(Math.random() * DATE_IDEAS.length);
         resultText = DATE_IDEAS[idx];
         categoryText = '🍕 Date Night Suggestion';
+        icon = '🍕';
       }
-      document.getElementById('r-result-text').textContent = resultText;
-      document.getElementById('r-result-sub').textContent = categoryText;
+      
+      setTimeout(() => {
+        const cardIcon = document.getElementById('r-card-icon');
+        const cardText = document.getElementById('r-result-text');
+        const cardSub = document.getElementById('r-result-sub');
+        if(cardIcon && cardText && cardSub) {
+          cardIcon.textContent = icon;
+          cardText.textContent = resultText;
+          cardSub.textContent = categoryText;
+        }
+      }, 150);
+      
       setTimeout(() => { document.getElementById('btn-spin-again').style.display = 'inline-block'; }, 600);
     }
     function triggerJarFloat() {
@@ -2516,6 +3241,188 @@
         if(list.style.display === 'none' || !list.style.display) { list.style.display='flex'; if(icon) icon.textContent='Hide ▴'; }
         else { list.style.display='none'; if(icon) icon.textContent='Show ▾'; }
       }
+    }
+
+    // ══ CHAT & DRAWER ACTIONS ══
+    function renderChat() {
+      const container = document.getElementById('chat-msg-container');
+      if (!container) return;
+      
+      const messages = data.chat || [];
+      if (messages.length === 0) {
+        container.innerHTML = '<div class="empty"><div class="ei">💬</div>Start the conversation! Send a message below.</div>';
+        return;
+      }
+      
+      container.innerHTML = messages.map(m => {
+        const isMe = m.user === user;
+        const timeStr = m.timestamp ? m.timestamp.split(' ')[1]?.substring(0, 5) || '' : '';
+        const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${m.user}</div>`;
+        const imageHtml = m.imageUrl ? `<img src="${m.imageUrl}" class="chat-bubble-img" onclick="openChatLightbox('${m.imageUrl}')">` : '';
+        const bubbleClass = isMe ? 'me' : 'other';
+        
+        return `
+          <div class="chat-bubble-row ${bubbleClass}">
+            <div class="chat-bubble">
+              ${nameLabel}
+              ${imageHtml}
+              ${m.message ? `<div class="chat-bubble-text">${escapeHtml(m.message)}</div>` : ''}
+              <div class="chat-bubble-time">${timeStr}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      container.scrollTop = container.scrollHeight;
+    }
+
+    async function sendChatMessage() {
+      const txtInput = document.getElementById('chat-input-text');
+      const fileInput = document.getElementById('chat-file-input');
+      const text = txtInput?.value?.trim() || '';
+      let imageBase64 = chatImageBase64 || '';
+      
+      if (!text && !imageBase64) return;
+      
+      if (txtInput) txtInput.value = '';
+      clearChatFilePreview();
+      
+      document.body.classList.add('loading-state');
+      const payload = {
+        note: 'add_chat_message',
+        message: text,
+        image: imageBase64,
+        user: user || 'Unknown'
+      };
+      
+      try {
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8'
+          },
+          body: JSON.stringify(payload)
+        });
+        const res = await response.json();
+        if (res && res.status === 'ok') {
+          await loadData();
+          renderChat();
+        } else {
+          toast('Failed to send message');
+        }
+      } catch (err) {
+        console.error(err);
+        toast('Error sending message');
+      } finally {
+        document.body.classList.remove('loading-state');
+      }
+    }
+
+    function handleChatFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          chatImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('chat-img-preview');
+          const thumbnail = document.getElementById('chat-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = chatImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearChatFilePreview() {
+      chatImageBase64 = null;
+      const fileInput = document.getElementById('chat-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('chat-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    function openChatLightbox(url) {
+      const lightbox = document.getElementById('chat-lightbox');
+      const img = document.getElementById('lightbox-img');
+      if (lightbox && img) {
+        img.src = url;
+        lightbox.classList.add('open');
+      }
+    }
+
+    function closeChatLightbox() {
+      const lightbox = document.getElementById('chat-lightbox');
+      if (lightbox) {
+        lightbox.classList.remove('open');
+      }
+    }
+
+    function toggleMenuDrawer(open) {
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('menu-drawer');
+      if (overlay && drawer) {
+        if (open) {
+          overlay.classList.add('open');
+          drawer.classList.add('open');
+        } else {
+          overlay.classList.remove('open');
+          drawer.classList.remove('open');
+        }
+      }
+    }
+
+    function navigateDrawer(id) {
+      toggleMenuDrawer(false);
+      goTo(id);
+    }
+
+    function getCategoryEmoji(cat) {
+      const c = String(cat).toLowerCase();
+      if (c.includes('eat') || c.includes('food') || c.includes('dinner') || c.includes('lunch') || c.includes('snack') || c.includes('cafe')) return '🍔';
+      if (c.includes('transport') || c.includes('taxi') || c.includes('grab') || c.includes('mrt') || c.includes('bus')) return '🚗';
+      if (c.includes('gas') || c.includes('petrol') || c.includes('sinopec') || c.includes('spc') || c.includes('caltex') || c.includes('shell')) return '⛽';
+      if (c.includes('child') || c.includes('kid') || c.includes('school') || c.includes('nafa') || c.includes('violin') || c.includes('tution')) return '👧';
+      if (c.includes('self') || c.includes('care') || c.includes('spa') || c.includes('hair') || c.includes('facial') || c.includes('massage')) return '💆‍♀️';
+      if (c.includes('shop') || c.includes('clothing') || c.includes('clothes') || c.includes('shein') || c.includes('shopee') || c.includes('lazada')) return '🛍️';
+      if (c.includes('grocery') || c.includes('supermarket') || c.includes('ntuc') || c.includes('fairprice') || c.includes('cold storage') || c.includes('sheng siong')) return '🛒';
+      if (c.includes('finance') || c.includes('bill') || c.includes('insurance') || c.includes('mobile') || c.includes('teleco') || c.includes('singtel') || c.includes('starhub') || c.includes('m1')) return '📱';
+      if (c.includes('travel') || c.includes('flight') || c.includes('hotel') || c.includes('holiday')) return '✈️';
+      return '💰';
     }
 
     // ─── APP INIT (already called above) ───────────────────────
