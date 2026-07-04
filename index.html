@@ -94,11 +94,7 @@
     .login-box .btn-login{width:100%;padding:14px;border-radius:14px;border:none;background:#4f86c6;color:#fff;font-size:16px;font-weight:600;transition:background .2s;}
     .login-box .btn-login:hover{background:#3a6fa8;}
     .login-box .btn-login:disabled{opacity:0.6;cursor:not-allowed;}
-    .login-box .alt-login{border-top:1px solid rgba(255,255,255,0.1);padding-top:16px;margin-top:20px;}
-    .login-box .alt-login p{color:rgba(255,255,255,.4);font-size:12px;}
-    .login-box .alt-login form{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
-    .login-box .alt-login input{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.15);}
-    .login-box .alt-login input::placeholder{color:rgba(255,255,255,.4);}
+    /* removed alt-login */
 
     /* ══ APP ════════════════════════════════════════════ */
     #app-screen{display:none;flex-direction:column;height:100%;}
@@ -206,7 +202,8 @@
     .dash-stat{background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border-color);padding:14px;text-align:center;box-shadow:var(--shadow);}
     .dash-stat .num{font-size:22px;font-weight:800;display:block;}
     .dash-stat .lbl{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
-    .dash-member{background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border-color);padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);}
+    .dash-member{background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border-color);padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);cursor:pointer;transition:all .2s;}
+    .dash-member:hover{box-shadow:var(--shadow-hover);}
     .dash-member .emoji{font-size:24px;}
     .dash-member .info{flex:1;}
     .dash-member .info .name{font-weight:600;font-size:15px;}
@@ -319,30 +316,23 @@
     @keyframes sp{to{transform:rotate(360deg);}}
 
     /* ── RESPONSIVE TWEAKS ── */
-    /* More tab: mobile first = 2 columns */
     .more-grid{grid-template-columns:repeat(2,1fr);}
     @media (min-width: 400px){ .more-grid{grid-template-columns:repeat(2,1fr);} }
     @media (min-width: 600px){ .more-grid{grid-template-columns:repeat(3,1fr);} .sec-body{padding:24px 32px;} }
     @media (min-width: 900px){ .more-grid{grid-template-columns:repeat(4,1fr);} .sec-body{padding:32px 48px;} .cal-year-grid{grid-template-columns:repeat(4,1fr);} }
     @media (min-width: 1200px){ .more-grid{grid-template-columns:repeat(5,1fr);} .cal-year-grid{grid-template-columns:repeat(6,1fr);} .sec-body{padding:40px 60px;} }
 
-    /* Expenses charts on laptop */
     @media (min-width: 700px){
       .expense-charts{flex-direction:row;align-items:center;gap:24px;}
       .donut-wrap{width:160px;height:160px;}
       .pie-wrap{padding:0;}
     }
-
-    /* Calendar month grid: limit cell size on large screens */
     .cal-grid{max-width:600px;margin:0 auto;}
     .cal-grid-hdr{max-width:600px;margin:0 auto;}
-
-    /* travel map responsive */
     #travel-map{height:280px;}
     @media (min-width: 600px){ #travel-map{height:350px;} }
     @media (min-width: 900px){ #travel-map{height:420px;} }
 
-    /* small phones */
     @media (max-width: 420px){
       .hdr{height:56px;padding:0 12px;}
       .hdr-name{font-size:15px;}
@@ -723,6 +713,63 @@
       opacity: 0.8;
       font-weight: 600;
     }
+
+    /* ─── NOTIFICATION BELL ─── */
+    .notif-bell {
+      position: relative;
+      cursor: pointer;
+      font-size: 20px;
+      padding: 4px;
+    }
+    .notif-bell .badge-dot {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 10px;
+      height: 10px;
+      background: #ef4444;
+      border-radius: 50%;
+      border: 2px solid var(--bg-header);
+      display: none;
+    }
+    .notif-bell.on .badge-dot {
+      display: block;
+    }
+
+    /* ─── CHECK-IN BATTERY HEARTS ─── */
+    .battery-slider {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      font-size: 28px;
+    }
+    .battery-heart {
+      cursor: pointer;
+      opacity: 0.3;
+      transition: all 0.2s;
+    }
+    .battery-heart.active {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    .battery-heart:hover {
+      transform: scale(1.2);
+    }
+    .checkin-tag {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border-color);
+      background: var(--bg-card);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .checkin-tag.sel {
+      border-color: #6b2d5c;
+      background: #f3e8fa;
+      color: #6b2d5c;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -744,14 +791,6 @@
         <button id="login-btn" onclick="loginWithSelectedMember()" class="btn-login">Sign In</button>
         <div id="login-error" class="login-error"></div>
       </div>
-      <div class="alt-login">
-        <p>Or sign in with email</p>
-        <form id="login-form" onsubmit="return handleLogin(event)">
-          <input type="email" id="login-email" placeholder="your@email.com">
-          <input type="password" id="login-password-manual" placeholder="Password">
-          <button type="submit" class="btn-login" style="background:rgba(255,255,255,.15);">Sign In</button>
-        </form>
-      </div>
     </div>
   </div>
 
@@ -770,6 +809,10 @@
         <button class="hdr-btn" onclick="toggleDarkMode()" id="darkToggle" aria-label="Toggle Dark Mode">🌙</button>
         <button class="hdr-btn" id="rbtn" onclick="loadData()" aria-label="Refresh">🔄</button>
         <button class="hdr-btn" onclick="logout()" aria-label="Sign out">🚪</button>
+        <span class="notif-bell" id="notifBell" onclick="toggleNotifications()" title="Notifications">
+          🔔
+          <span class="badge-dot" id="notifDot"></span>
+        </span>
         <button class="hdr-btn" id="menu-btn" onclick="toggleMenuDrawer(true)" aria-label="Menu" style="font-size:20px;padding:4px 8px;cursor:pointer;">☰</button>
       </div>
     </div>
@@ -1306,11 +1349,11 @@
     </div>
   </div>
 
-  <!-- Log Weekly Check-in -->
+  <!-- Log Daily Check-in (renamed) -->
   <div class="overlay" id="m-love-checkin">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Weekly Relationship Check-in</span><button class="modal-close" onclick="closeM('m-love-checkin')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Daily Relationship Check-in</span><button class="modal-close" onclick="closeM('m-love-checkin')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field">
           <label>Relationship Battery Level</label>
@@ -1323,7 +1366,7 @@
           </div>
         </div>
         <div class="field">
-          <label>How are you feeling about Us this week?</label>
+          <label>How are you feeling about Us today?</label>
           <div class="chips" id="checkin-moods">
             <span class="checkin-tag" onclick="toggleMoodTag(this)">Loved</span>
             <span class="checkin-tag" onclick="toggleMoodTag(this)">Stressed</span>
@@ -1339,7 +1382,7 @@
           <textarea id="checkin-notes" placeholder="Thanks for..."></textarea>
         </div>
         <div class="field">
-          <label>What should we focus on next week? (opt)</label>
+          <label>What should we focus on today? (opt)</label>
           <input type="text" id="checkin-focus" placeholder="e.g. Schedule a date night, more alone time...">
         </div>
       </div>
@@ -1401,6 +1444,9 @@
 
     // Firestore chat listener
     let chatUnsubscribe = null;
+
+    // Notifications
+    let notificationsEnabled = false;
 
     // Calendar state
     let calView = loadPreference('calView', 'list');
@@ -1570,7 +1616,7 @@
       document.getElementById('pinbox').style.display = 'block';
       document.getElementById('pinlbl').textContent = name + "'s password";
       document.getElementById('login-error').textContent = '';
-      document.getElementById('login-email').value = selectedMember.email;
+      // removed email auto-fill since we removed email login
       setTimeout(() => document.getElementById('login-password').focus(), 100);
     }
     function loginWithSelectedMember() {
@@ -1582,17 +1628,6 @@
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(() => { btn.disabled = false; })
         .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
-    }
-    function handleLogin(event) {
-      event.preventDefault();
-      const email = document.getElementById('login-email').value.trim();
-      const password = document.getElementById('login-password-manual').value;
-      const errorEl = document.getElementById('login-error'), btn = document.querySelector('#login-form .btn-login');
-      btn.disabled = true; errorEl.textContent = '';
-      firebase.auth().signInWithEmailAndPassword(email, password)
-        .then(() => { btn.disabled = false; })
-        .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
-      return false;
     }
     function loginAs(name) {
       user = name;
@@ -1607,15 +1642,12 @@
       loadData();
     }
     function logout() {
-      // Stop chat listener
       stopChatListener();
       firebase.auth().signOut().then(() => {
         user = null;
         document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');
-        document.getElementById('login-email').value = '';
         document.getElementById('login-password').value = '';
-        document.getElementById('login-password-manual').value = '';
         document.getElementById('login-error').textContent = '';
         selectedMember = null;
         document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
@@ -1772,6 +1804,8 @@
       // Handle chat listener
       if(id === 'chat') {
         startChatListener();
+        // Request notification permission
+        requestNotificationPermission();
       } else {
         stopChatListener();
       }
@@ -1896,14 +1930,14 @@
         const tasks = (data.todos||[]).filter(t => t.assignee === m && t.dueRaw && t.dueRaw >= todayStr());
         const events = (data.events||[]).filter(e => e.tags.includes(m) && e.dateRaw >= todayStr()).slice(0,3);
         membersHtml += `
-          <div class="dash-member">
+          <div class="dash-member" onclick="goToMember('${m}')" title="Click to view tasks and calendar for ${m}">
             <span class="emoji">${m==='Marcus'?'👨':m==='Eleanor'?'👩':'👧'}</span>
             <div class="info"><div class="name">${m}</div><div class="detail">${tasks.length} tasks · ${events.length} upcoming events</div></div>
             <span class="count">${tasks.length}</span>
           </div>
         `;
       });
-      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Member Overview</div>${membersHtml}`;
+      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Member Overview (click for details)</div>${membersHtml}`;
       const tod = todayStr();
       const evs = (data.events||[]).filter(e => e.dateRaw === tod);
       const tks = (data.todos||[]).filter(t => t.dueRaw && t.dueRaw <= tod);
@@ -1912,11 +1946,22 @@
           <div class="card-hdr"><span class="card-title">Today at a Glance</span></div>
           <div class="card-body">
             ${!evs.length && !tks.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
-            ${evs.map(e => `<div class="row"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}</div></div></div>`).join('')}
-            ${tks.map(t => `<div class="row"><div style="font-size:16px">⚠️</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">Due today · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
+            ${evs.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}</div></div></div>`).join('')}
+            ${tks.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">⚠️</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">Due today · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
         </div>
       `;
+    }
+
+    // Navigate to member-specific tasks (filter by assignee)
+    function goToMember(member) {
+      // Navigate to tasks and set search filter
+      goTo('tasks');
+      const searchInput = document.getElementById('task-search');
+      if (searchInput) {
+        searchInput.value = member;
+        filterTasks();
+      }
     }
 
     // ─── CALENDAR ──────────────────────────────────────────────
@@ -3241,7 +3286,7 @@
 
       container.innerHTML = `
         <div class="us-header"><h2>💖 Us Connection Sanctuary</h2><p>A private space for Marcus & Eleanor</p></div>
-        <div class="us-card"><div class="us-card-title">📊 Weekly Battery Check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Log Weekly Check-in</button>
+        <div class="us-card"><div class="us-card-title">📊 Daily Battery Check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Log Daily Check-in</button>
           <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Timeline of Past Check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
         </div>
         <div class="us-card"><div class="us-card-title">🍯 Appreciation Jar</div>
@@ -3380,6 +3425,68 @@
       }
     }
 
+    // ══ NOTIFICATIONS ══
+    let notificationPermissionGranted = false;
+
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'granted') {
+        notificationPermissionGranted = true;
+        document.getElementById('notifBell').classList.add('on');
+        return;
+      }
+      if (Notification.permission === 'denied') return;
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        if (notificationPermissionGranted) {
+          document.getElementById('notifBell').classList.add('on');
+          toast('Notifications enabled 🔔');
+        } else {
+          document.getElementById('notifBell').classList.remove('on');
+        }
+      });
+    }
+
+    function toggleNotifications() {
+      if (!('Notification' in window)) {
+        toast('Notifications not supported in this browser');
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        toast('Notifications blocked by browser. Please allow them in settings.');
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        // Toggle on/off for this session
+        notificationPermissionGranted = !notificationPermissionGranted;
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications ON 🔔' : 'Notifications OFF 🔕');
+        return;
+      }
+      // Request permission
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications enabled 🔔' : 'Notifications blocked');
+      });
+    }
+
+    // Show notification for new messages
+    function showChatNotification(message) {
+      if (!notificationPermissionGranted) return;
+      if (document.hidden) {
+        try {
+          const notif = new Notification('💬 New message from ' + message.user, {
+            body: message.message || '📷 Image',
+            icon: '/icon.png'
+          });
+          setTimeout(() => notif.close(), 4000);
+        } catch (e) {
+          console.warn('Notification error:', e);
+        }
+      }
+    }
+
     // ══ CHAT (Firestore) ══
     function renderChat() {
       const container = document.getElementById('chat-msg-container');
@@ -3435,8 +3542,17 @@
               timestamp: data.timestamp?.toDate?.() || new Date(),
             });
           });
+          // Check for new messages (last one)
+          const oldLen = (data.chat || []).length;
           data.chat = messages;
           if (section === 'chat') renderChat();
+          // Notification for new message
+          if (messages.length > oldLen && messages.length > 0) {
+            const newMsg = messages[messages.length - 1];
+            if (newMsg.user !== user) {
+              showChatNotification(newMsg);
+            }
+          }
         }, (error) => {
           console.error('Chat listener error:', error);
           toast('Chat connection error', true);
@@ -3667,7 +3783,7 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('✅ Wong Family app with Firestore chat loaded successfully.');
+    console.log('✅ Wong Family app with Firestore chat and notifications loaded successfully.');
   </script>
 </body>
 </html>
