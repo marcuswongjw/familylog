@@ -14,9 +14,11 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- Firebase SDK -->
+  <!-- Firebase SDK + Firestore + Storage -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     /* ─── CSS Variables ─── */
@@ -1349,7 +1351,7 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIXED DUPLICATES)          -->
+  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIRESTORE CHAT)          -->
   <!-- ============================================================ -->
   <script>
     // ─── FIREBASE CONFIG ────────────────────────────────────────
@@ -1376,6 +1378,7 @@
     let GROUPS = {};
 
     let _callbackId = 0;
+    let db, storage; // will be set after Firebase init
 
     // ─── PERSISTENT PREFERENCES ──────────────────────────────────
     function loadPreference(key, fallback) {
@@ -1385,7 +1388,7 @@
       try { localStorage.setItem('wf_'+key, String(value)); } catch(e){}
     }
 
-    // ─── STATE ─── (all declarations are HERE, once only)
+    // ─── STATE ───
     let user = null;
     let section = 'home';
     let data = {};
@@ -1394,8 +1397,10 @@
     let timelineInterval = null;
     let chatImageBase64 = null;
     let memImageBase64 = null;
-    let chatPollTimer = null;
     let lastIdToken = '';   // cached Firebase token for beacon-style requests
+
+    // Firestore chat listener
+    let chatUnsubscribe = null;
 
     // Calendar state
     let calView = loadPreference('calView', 'list');
@@ -1444,6 +1449,11 @@
     // ─── INIT ──────────────────────────────────────────────────
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      storage = firebase.storage();
+      // Enable offline persistence (optional)
+      db.enablePersistence().catch(() => {});
+
       applyDarkMode();
       buildLogin();
       buildModals();
@@ -1500,13 +1510,7 @@
     function showError(msg) { toast(msg, true); }
 
     // ─── UNDO (deferred commit) ────────────────────────────────
-    // The server delete is NOT sent immediately. It is queued as a
-    // "commit" and only fires when the undo window expires, when a new
-    // delete replaces it, or when the tab is hidden/closed. Pressing
-    // Undo cancels the commit entirely, so the row genuinely survives
-    // (previously Undo only restored the UI while the server row was
-    // already gone).
-    let _pendingUndo = null;   // { restore, payload, timer, message }
+    let _pendingUndo = null;
 
     function _flushPendingUndo(useBeacon) {
       if(!_pendingUndo) return;
@@ -1515,8 +1519,6 @@
       _pendingUndo = null;
       if(!payload) return;
       if(useBeacon && navigator.sendBeacon) {
-        // Page is going away — fire-and-forget POST (doPost on the GAS
-        // side parses e.postData.contents, same as chat messages).
         payload.user = user || 'Unknown';
         if(lastIdToken) payload.idToken = lastIdToken;
         try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
@@ -1526,7 +1528,6 @@
     }
 
     function pushUndo(restoreFn, message, commitPayload) {
-      // Any earlier pending delete is committed first (one undo slot).
       _flushPendingUndo();
       const el = document.getElementById('toast');
       _pendingUndo = {
@@ -1546,12 +1547,10 @@
       if(!_pendingUndo) return;
       clearTimeout(_pendingUndo.timer);
       const item = _pendingUndo;
-      _pendingUndo = null;          // discard payload — nothing sent to server
+      _pendingUndo = null;
       item.restore();
       toast('↩️ Undo successful');
     }
-    // Best effort: if the user leaves the page with a delete still in
-    // its undo window, commit it so local and server state stay in sync.
     window.addEventListener('pagehide', () => _flushPendingUndo(true));
     document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true); });
 
@@ -1608,6 +1607,8 @@
       loadData();
     }
     function logout() {
+      // Stop chat listener
+      stopChatListener();
       firebase.auth().signOut().then(() => {
         user = null;
         document.getElementById('app-screen').classList.remove('active');
@@ -1623,9 +1624,6 @@
     }
 
     // ─── XSS ESCAPE ───────────────────────────────────────────
-    // Escapes &, <, >, " and ' so output is safe in element content AND
-    // inside double/single-quoted HTML attributes (the old DOM-based
-    // version did not escape quotes, which allowed attribute breakout).
     function escapeHtml(text) {
       if(text === null || text === undefined) return '';
       return String(text).replace(/[&<>"']/g, c => (
@@ -1661,7 +1659,7 @@
       }, 200);
     }
 
-    // ─── DATA FETCH ─────────────────────────────────────────────
+    // ─── DATA FETCH (non-chat parts) ──────────────────────────
     function loadData() {
       startProgressBar();
       return new Promise((resolve) => {
@@ -1699,8 +1697,6 @@
           lastIdToken = idToken;
           payload.user = user || 'Unknown';
           const json = JSON.stringify(payload);
-          // JSONP rides in the URL; anything bulky (e.g. a base64 image)
-          // would blow past URL length limits, so route it via POST.
           if (json.length > 6000 || payload.image) {
             finishProgressBar();
             resolve(postWrite(payload));
@@ -1722,10 +1718,6 @@
       });
     }
 
-    // POST-based write for large payloads (images) — same shape the chat
-    // sender uses. text/plain avoids a CORS preflight, which Apps Script
-    // web apps can't answer. Always includes the idToken so the backend
-    // can (and should) verify every POST.
     async function postWrite(payload) {
       startProgressBar();
       try {
@@ -1777,8 +1769,12 @@
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
       
-      // Stop Chat Polling if we navigate away
-      if(id !== 'chat' && chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+      // Handle chat listener
+      if(id === 'chat') {
+        startChatListener();
+      } else {
+        stopChatListener();
+      }
       
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       const t = document.getElementById('s-'+id);
@@ -1792,15 +1788,6 @@
       const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
       const fab = document.getElementById('fab');
       if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
-      
-      // Start Chat Polling if we navigate to chat
-      if(id === 'chat') {
-        pollChatOnly();
-        // 10s instead of 4s: every poll costs the backend a UrlFetchApp
-        // call for token verification, and 4s polling alone could burn
-        // through the daily Apps Script quota if the tab stays open.
-        chatPollTimer = setInterval(pollChatOnly, 10000);
-      }
       
       render(id);
     }
@@ -1839,10 +1826,6 @@
     // ─── UTILITY ──────────────────────────────────────────────
     function v(id){ return document.getElementById(id)?.value?.trim()||''; }
     function clr(...ids){ ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
-    // Local date string (yyyy-mm-dd). toISOString() is UTC, which in
-    // Singapore (UTC+8) reports *yesterday's* date between midnight and
-    // 8am — throwing off "today's events", overdue tasks, and default
-    // form dates during early-morning use.
     function localDateStr(d){ d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
     function todayStr(){ return localDateStr(); }
     function fmtDate(s){ if(!s) return ''; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
@@ -3079,7 +3062,7 @@
       if(val.trim().length < 3){ document.getElementById('tr-loc-suggestions').style.display='none'; return; }
       locTimeout = setTimeout(() => fetchLocSuggestions(val.trim()), 400);
     }
-    let _locResults = [];   // last fetched suggestions, referenced by index
+    let _locResults = [];
     async function fetchLocSuggestions(q) {
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
@@ -3087,9 +3070,6 @@
         const results = await res.json();
         const sug = document.getElementById('tr-loc-suggestions');
         if(!results || results.length===0){ sug.style.display='none'; return; }
-        // Keep the raw data in JS and reference it by index — embedding
-        // JSON.stringify output inside a double-quoted onclick attribute
-        // broke the HTML at the first quote and was an injection vector.
         _locResults = results;
         sug.innerHTML = results.map((item, i) =>
           `<div class="autocomplete-suggestion" data-loc-idx="${i}">${escapeHtml(item.display_name)}</div>`
@@ -3207,7 +3187,6 @@
           return `<div style="padding:6px 0;border-bottom:1px solid var(--border-color);"><div style="font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span><strong>${escapeHtml(dateStr)}</strong> · ${userEmoji} ${escapeHtml(c.user)}</span><span style="color:#ef4444;font-weight:700;">${'❤️'.repeat(c.battery)}</span></div>${c.moods&&c.moods.length?`<div style="font-size:10px;color:#a85f89;margin-left:14px;margin-top:2px;">Moods: ${escapeHtml(c.moods.join(', '))}</div>`:''}${c.notes?`<div style="font-size:10px;color:var(--text-muted);margin-left:14px;margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>`:''}${c.focus?`<div style="font-size:10px;color:#6b2d5c;margin-left:14px;margin-top:2px;font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>`:''}</div>`;
         }).join('');
       }
-      // Unlocked notes
       let unlockedHtml = '';
       if(unlockedApps.length===0) {
         unlockedHtml = '<div style="text-align:center;padding:16px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No notes revealed yet. Write one to encourage partner!</div>';
@@ -3401,7 +3380,7 @@
       }
     }
 
-    // ══ CHAT & DRAWER ACTIONS ══
+    // ══ CHAT (Firestore) ══
     function renderChat() {
       const container = document.getElementById('chat-msg-container');
       if (!container) return;
@@ -3414,7 +3393,7 @@
       
       container.innerHTML = messages.map(m => {
         const isMe = m.user === user;
-        const timeStr = m.timestamp ? (m.timestamp.includes('sending') ? m.timestamp : m.timestamp.split(' ')[1]?.substring(0, 5) || '') : '';
+        const timeStr = m.timestamp ? (m.timestamp instanceof Date ? m.timestamp.toLocaleTimeString('en-SG', {hour:'2-digit', minute:'2-digit'}) : '') : '';
         const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${m.user}</div>`;
         const imageHtml = m.imageUrl ? `<img src="${m.imageUrl}" class="chat-bubble-img" onclick="openChatLightbox('${m.imageUrl}')">` : '';
         const bubbleClass = isMe ? 'me' : 'other';
@@ -3435,70 +3414,91 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    async function sendChatMessage() {
-      const txtInput = document.getElementById('chat-input-text');
-      const fileInput = document.getElementById('chat-file-input');
-      const text = txtInput?.value?.trim() || '';
-      let imageBase64 = chatImageBase64 || '';
-      
-      if (!text && !imageBase64) return;
-      
-      if (txtInput) txtInput.value = '';
-      clearChatFilePreview();
-      
-      // Optimistic rendering
-      const tempMsg = {
-        user: user || 'Unknown',
-        message: text,
-        imageUrl: imageBase64,
-        timestamp: 'sending...',
-        isOptimistic: true
-      };
-      if(!data.chat) data.chat = [];
-      data.chat.push(tempMsg);
-      renderChat();
-      
-      const payload = {
-        note: 'add_chat_message',
-        message: text,
-        image: imageBase64,
-        user: user || 'Unknown'
-      };
-      
-      try {
-        // Attach the auth token so the backend can verify this write
-        // (previously chat POSTs were sent unauthenticated).
-        const currentUser = firebase.auth().currentUser;
-        if (currentUser) {
-          payload.idToken = await currentUser.getIdToken();
-          lastIdToken = payload.idToken;
-        }
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
-          },
-          body: JSON.stringify(payload)
+    // ─── FIRESTORE CHAT LISTENER ──────────────────────────────
+    function startChatListener() {
+      if (chatUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      chatUnsubscribe = db.collection('chat')
+        .orderBy('timestamp', 'asc')
+        .onSnapshot((snapshot) => {
+          const messages = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            messages.push({
+              id: doc.id,
+              user: data.user || 'Unknown',
+              message: data.message || '',
+              imageUrl: data.imageUrl || '',
+              timestamp: data.timestamp?.toDate?.() || new Date(),
+            });
+          });
+          data.chat = messages;
+          if (section === 'chat') renderChat();
+        }, (error) => {
+          console.error('Chat listener error:', error);
+          toast('Chat connection error', true);
         });
-        const res = await response.json();
-        if (res && res.status === 'ok') {
-          // Refresh just the chat — no need to reload the whole dashboard
-          // after every message.
-          pollChatOnly();
-        } else {
-          // Remove optimistic message on failure
-          data.chat = data.chat.filter(m => m !== tempMsg);
-          renderChat();
-          toast('Failed to send message: ' + (res.message || 'unknown error'));
-        }
-      } catch (err) {
-        console.error(err);
-        data.chat = data.chat.filter(m => m !== tempMsg);
-        renderChat();
-        toast('Error sending message: ' + err.message);
+    }
+
+    function stopChatListener() {
+      if (chatUnsubscribe) {
+        chatUnsubscribe();
+        chatUnsubscribe = null;
       }
     }
 
+    // ─── SEND CHAT MESSAGE (Firestore + Storage) ──────────────
+    async function sendChatMessage() {
+      const txtInput = document.getElementById('chat-input-text');
+      const text = txtInput?.value?.trim() || '';
+      if (!text && !chatImageBase64) return;
+      if (txtInput) txtInput.value = '';
+
+      let imageUrl = '';
+
+      // Upload image if present
+      if (chatImageBase64) {
+        try {
+          const blob = dataURItoBlob(chatImageBase64);
+          const ref = storage.ref(`chat/${Date.now()}_${user}.jpg`);
+          const snapshot = await ref.put(blob);
+          imageUrl = await snapshot.ref.getDownloadURL();
+        } catch (err) {
+          toast('Image upload failed: ' + err.message, true);
+          return;
+        } finally {
+          clearChatFilePreview();
+        }
+      }
+
+      // Write to Firestore
+      try {
+        await db.collection('chat').add({
+          user: user || 'Unknown',
+          message: text,
+          imageUrl: imageUrl,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        // Listener updates UI automatically
+      } catch (err) {
+        toast('Failed to send message: ' + err.message, true);
+      }
+    }
+
+    // Helper: convert dataURI to Blob
+    function dataURItoBlob(dataURI) {
+      const byteString = atob(dataURI.split(',')[1]);
+      const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mimeString });
+    }
+
+    // ─── CHAT FILE HANDLING ────────────────────────────────────
     function handleChatFileSelect(input) {
       const file = input.files[0];
       if (!file) return;
@@ -3615,43 +3615,7 @@
       if (previewArea) previewArea.style.display = 'none';
     }
 
-    // Pause polling while the tab is hidden; resume when it's visible
-    // again and the user is still on the chat section.
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
-      } else if (section === 'chat' && !chatPollTimer) {
-        pollChatOnly();
-        chatPollTimer = setInterval(pollChatOnly, 10000);
-      }
-    });
-
-    function pollChatOnly() {
-      if (document.hidden) return;
-      const currentUser = firebase.auth().currentUser;
-      if(!currentUser) return;
-      currentUser.getIdToken().then(idToken => {
-        lastIdToken = idToken;
-        const cb = 'cb_' + (++_callbackId);
-        const s = document.createElement('script');
-        window[cb] = r => {
-          delete window[cb];
-          s.remove();
-          if(r && r.status === 'error') return;
-          
-          const oldChatJson = JSON.stringify(data.chat || []);
-          const newChatJson = JSON.stringify(r || []);
-          if(oldChatJson !== newChatJson) {
-            data.chat = r || [];
-            renderChat();
-          }
-        };
-        s.onerror = () => { delete window[cb]; s.remove(); };
-        s.src = GAS_URL + '?action=get_chat&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb;
-        document.body.appendChild(s);
-      }).catch(err => console.warn('Chat poll auth error:', err));
-    }
-
+    // ─── OTHER HELPERS ─────────────────────────────────────────
     function openChatLightbox(url) {
       const lightbox = document.getElementById('chat-lightbox');
       const img = document.getElementById('lightbox-img');
@@ -3703,7 +3667,7 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('✅ Wong Family app loaded successfully.');
+    console.log('✅ Wong Family app with Firestore chat loaded successfully.');
   </script>
 </body>
 </html>
