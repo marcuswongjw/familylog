@@ -470,7 +470,7 @@ function doGet(e) {
     var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
     var idToken  = e && e.parameter && e.parameter.idToken  ? e.parameter.idToken  : '';
 
-    var protectedActions = ['get_all', 'write'];
+    var protectedActions = ['get_all', 'write', 'get_chat'];
     if (protectedActions.indexOf(action) !== -1) {
       var verifiedEmail = verifyFirebaseToken(idToken);
       if (!verifiedEmail) {
@@ -487,6 +487,7 @@ function doGet(e) {
     var output;
     switch (action) {
       case 'get_all':       output = getAllDashboardData(); break;
+      case 'get_chat':      output = getChatMessages();     break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos();            break;
       case 'get_expenses':  output = getExpensesData();     break;
@@ -861,14 +862,50 @@ function handleWrite(data) {
       var memType = toStr(data.memory_type) || 'Moment';
       var memPerson = toStr(data.memory_person) || 'Everyone';
       var memDate = toStr(data.memory_date);
-      if (!memory) return { status: 'error', message: 'Memory text required' };
+      if (!memory && !data.image) return { status: 'error', message: 'Memory text or photo required' };
       if (!validateString(memory, 2000)) return { status: 'error', message: 'Memory too long' };
       if (memDate && !validateDate(memDate)) return { status: 'error', message: 'Invalid date' };
 
+      var imgUrl = '';
+      var imgId = '';
+      
+      if (data.image && data.image.indexOf('data:image/') === 0) {
+        try {
+          var folderName = 'FamilyLogChatImages';
+          var folders = DriveApp.getFoldersByName(folderName);
+          var folder;
+          if (folders.hasNext()) {
+            folder = folders.next();
+          } else {
+            folder = DriveApp.createFolder(folderName);
+          }
+          
+          var parts = data.image.split(',');
+          var mimeType = parts[0].match(/:(.*?);/)[1];
+          var base64Data = parts[1];
+          var decoded = Utilities.base64Decode(base64Data);
+          
+          var ext = mimeType.split('/')[1] || 'jpg';
+          var filename = 'mem_' + Date.now() + '.' + ext;
+          var blob = Utilities.newBlob(decoded, mimeType, filename);
+          var file = folder.createFile(blob);
+          
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          
+          imgId = file.getId();
+          imgUrl = 'https://drive.google.com/uc?export=view&id=' + imgId;
+        } catch (uploadErr) {
+          logSheet.appendRow([new Date(), 'MEMORY IMAGE UPLOAD ERROR', uploadErr.toString()]);
+        }
+      }
+
       var memSheet = ss.getSheetByName('Memories');
-      if (!memSheet) { memSheet = ss.insertSheet('Memories'); memSheet.appendRow(['Logged By', 'Date', 'Type', 'Person', 'Memory', 'Logged At']); }
+      if (!memSheet) {
+        memSheet = ss.insertSheet('Memories');
+        memSheet.appendRow(['Logged By', 'Date', 'Type', 'Person', 'Memory', 'Logged At', 'ImageUrl', 'ImageId']);
+      }
       var parsed = memDate ? parseEventDate(memDate, '') : new Date();
-      memSheet.appendRow([user, parsed, memType, memPerson, memory, new Date()]);
+      memSheet.appendRow([user, parsed, memType, memPerson, memory, new Date(), imgUrl, imgId]);
       console.log('✅ Memory added: ' + memory.substring(0, 50) + '...');
       return { status: 'ok' };
     }
@@ -1326,8 +1363,18 @@ function getMemories(ss) {
   var tz      = Session.getScriptTimeZone();
   var result  = [];
   for (var i = 1; i < memVals.length; i++) {
-    var row = memVals[i]; if (!row[4]) continue;
-    result.push({ rowNum: i + 1, loggedBy: toStr(row[0]), date: row[1] ? Utilities.formatDate(new Date(row[1]), tz, 'dd MMM yyyy') : '', type: toStr(row[2]) || 'Moment', person: toStr(row[3]) || 'Everyone', memory: toStr(row[4]) });
+    var row = memVals[i];
+    if (!row[4] && !row[5]) continue;
+    result.push({
+      rowNum: i + 1,
+      loggedBy: toStr(row[0]),
+      date: row[1] ? Utilities.formatDate(new Date(row[1]), tz, 'dd MMM yyyy') : '',
+      type: toStr(row[2]) || 'Moment',
+      person: toStr(row[3]) || 'Everyone',
+      memory: toStr(row[4]),
+      imageUrl: toStr(row[5]),
+      imageId: toStr(row[6])
+    });
   }
   result.reverse();
   return result.slice(0, 20);

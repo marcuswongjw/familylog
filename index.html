@@ -227,6 +227,26 @@
       .expense-charts .donut-wrap{flex-shrink:0;}
       .expense-charts .pie-wrap{flex:1;}
     }
+    .donut-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 20px;
+    }
+    @media (min-width: 600px) {
+      .donut-container {
+        flex-direction: row;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 32px;
+        padding: 20px 32px;
+      }
+      .donut-wrap {
+        margin: 0;
+        flex-shrink: 0;
+      }
+    }
     .donut-wrap{position:relative;width:140px;height:140px;margin:0 auto;}
     .donut{width:100%;height:100%;transform:rotate(-90deg);}
     .chart-text{fill:var(--text-primary);text-anchor:middle;transform:rotate(90deg);transform-origin:50% 50%;}
@@ -761,7 +781,6 @@
           <div id="dash-summary" class="dash-summary"></div>
           <div id="dash-members"></div>
           <div id="today-wrap"></div>
-          <div id="dash-recent"></div>
         </div>
       </div>
 
@@ -1003,6 +1022,10 @@
         <span class="di-icon">✈️</span>
         <span class="di-lbl">Travel Map</span>
       </div>
+      <div class="drawer-item" onclick="toggleMenuDrawer(false); logout();" style="border-top:1px solid var(--border-color);margin-top:12px;color:#ef4444;font-weight:700;">
+        <span class="di-icon">🚪</span>
+        <span class="di-lbl">Log Out</span>
+      </div>
     </div>
   </div>
 
@@ -1065,6 +1088,17 @@
         <div class="field"><label>About</label><div class="chips" id="mem-pers-chips"></div></div>
         <div class="field"><label>Memory</label><textarea id="mem-text" placeholder="Write the memory…"></textarea></div>
         <div class="field"><label>Date</label><input type="date" id="mem-date"></div>
+        <div class="field">
+          <label>Attach Photo (Optional)</label>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label for="mem-file-input" class="btn btn-s btn-sm" style="cursor:pointer;min-height:38px;padding:8px 16px;">📎 Choose Photo</label>
+            <input type="file" id="mem-file-input" accept="image/*" style="display:none;" onchange="handleMemoryFileSelect(this)">
+            <div id="mem-img-preview" style="display:none;position:relative;">
+              <img src="" id="mem-preview-thumbnail" style="height:50px;width:50px;object-fit:cover;border-radius:6px;border:1px solid var(--border-color);">
+              <button class="chat-preview-close" onclick="clearMemoryFilePreview()" style="position:absolute;top:-6px;right:-6px;background:#ff4d4d;color:#fff;border-radius:50%;width:16px;height:16px;font-size:8px;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;">✕</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-memory')">Cancel</button>
@@ -1360,6 +1394,8 @@
     let selectedMember = null;
     let timelineInterval = null;
     let chatImageBase64 = null;
+    let memImageBase64 = null;
+    let chatPollTimer = null;
 
     // Calendar state
     let calView = loadPreference('calView', 'list');
@@ -1658,6 +1694,10 @@
     function goTo(id) {
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
+      
+      // Stop Chat Polling if we navigate away
+      if(id !== 'chat' && chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+      
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       const t = document.getElementById('s-'+id);
       if(t) t.classList.add('active');
@@ -1670,6 +1710,13 @@
       const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
       const fab = document.getElementById('fab');
       if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
+      
+      // Start Chat Polling if we navigate to chat
+      if(id === 'chat') {
+        pollChatOnly();
+        chatPollTimer = setInterval(pollChatOnly, 4000);
+      }
+      
       render(id);
     }
     function onFab() { if(document.getElementById('fab')._m) openM(document.getElementById('fab')._m); }
@@ -1797,16 +1844,6 @@
           </div>
         </div>
       `;
-      const recent = [];
-      if(data.expenses && data.expenses.rows) {
-        data.expenses.rows.slice(0,3).forEach(r => recent.push({type:'💰', desc:r.desc||r.category, date:r.date}));
-      }
-      if(data.memories && data.memories.length) {
-        data.memories.slice(0,2).forEach(m => recent.push({type:'💛', desc:m.memory.substring(0,30)+'...', date:m.date}));
-      }
-      recent.sort((a,b) => b.date.localeCompare(a.date));
-      const recentHtml = recent.length ? recent.map(r => `<div class="recent-item"><span>${r.type} ${escapeHtml(r.desc)}</span><span style="color:var(--text-muted);font-size:11px;">${r.date}</span></div>`).join('') : '<div class="empty">No recent activity</div>';
-      document.getElementById('dash-recent').innerHTML = `<div class="card"><div class="card-hdr"><span class="card-title">Recent Activity</span></div><div class="card-body" style="padding:8px 16px;">${recentHtml}</div></div>`;
     }
 
     // ─── CALENDAR ──────────────────────────────────────────────
@@ -2311,9 +2348,11 @@
                   “${escapeHtml(m.memory)}”
                 </blockquote>
               `;
-            } else {
+            } else if (m.memory) {
               contentHtml = `<div class="mem-text" style="font-size:14px;color:#1a1a2e;line-height:1.5;margin:8px 0;">${escapeHtml(m.memory)}</div>`;
             }
+            
+            const imageHtml = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin:8px 0;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.05);" onclick="openChatLightbox('${m.imageUrl}')">` : '';
             
             return `
               <div class="card" style="padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03);border:1.5px solid #e4e6ef;background:var(--bg-card);border-radius:12px;margin-bottom:0;">
@@ -2322,6 +2361,7 @@
                   <span style="font-size:11px;font-weight:700;color:#a85f89;text-transform:uppercase;letter-spacing:0.5px;">${icon} ${m.type}</span>
                 </div>
                 ${contentHtml}
+                ${imageHtml}
                 <div style="font-size:11px;color:var(--text-muted);margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;display:flex;justify-content:space-between;">
                   <span>📅 ${escapeHtml(m.date)}</span>
                   <span>Logged by <strong>${escapeHtml(m.loggedBy)}</strong></span>
@@ -2716,9 +2756,20 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const text = v('mem-text');
-        if(!text){ toast('Please write the memory'); return; }
-        await gPost({note:'add_memory',memory_type:gc('mt')||'💛 Moment',memory_person:gc('mp')||'Everyone',memory_text:text,memory_date:v('mem-date')?fmtDate(v('mem-date')):''});
-        closeM('m-memory'); clr('mem-text'); toast('Memory saved! 💛');
+        const image = memImageBase64 || '';
+        if(!text && !image){ toast('Please write the memory or attach a photo'); return; }
+        await gPost({
+          note: 'add_memory',
+          memory_type: gc('mt')||'💛 Moment',
+          memory_person: gc('mp')||'Everyone',
+          memory_text: text,
+          memory_date: v('mem-date')?fmtDate(v('mem-date')): '',
+          image: image
+        });
+        closeM('m-memory');
+        clr('mem-text');
+        clearMemoryFilePreview();
+        toast('Memory saved! 💛');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save'; }
     }
@@ -2828,9 +2879,24 @@
         document.querySelectorAll('#checkin-moods .checkin-tag.sel').forEach(t => selectedMoods.push(t.textContent.trim()));
         const notes = v('checkin-notes'), focus = v('checkin-focus');
         closeM('m-love-checkin');
+        
+        console.log('Sending check-in payload:', {note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
         const res = await gPost({note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
-        if(res && res.status === 'ok'){ toast('Check-in saved! 😊'); await loadData(); } else toast('Error saving check-in');
-      } finally { btn.disabled = false; btn.textContent = 'Save Check-in'; }
+        console.log('Check-in server response:', res);
+        
+        if(res && res.status === 'ok'){
+          toast('Check-in saved! 😊');
+          await loadData();
+        } else {
+          const errMsg = (res && res.message) ? res.message : 'Unknown error';
+          showError('Error saving check-in: ' + errMsg);
+        }
+      } catch (err) {
+        console.error('Check-in error:', err);
+        showError('Client error: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save Check-in';
+      }
     }
 
     // ─── TRAVEL ─────────────────────────────────────────────────
@@ -3256,13 +3322,14 @@
       
       container.innerHTML = messages.map(m => {
         const isMe = m.user === user;
-        const timeStr = m.timestamp ? m.timestamp.split(' ')[1]?.substring(0, 5) || '' : '';
+        const timeStr = m.timestamp ? (m.timestamp.includes('sending') ? m.timestamp : m.timestamp.split(' ')[1]?.substring(0, 5) || '') : '';
         const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${m.user}</div>`;
         const imageHtml = m.imageUrl ? `<img src="${m.imageUrl}" class="chat-bubble-img" onclick="openChatLightbox('${m.imageUrl}')">` : '';
         const bubbleClass = isMe ? 'me' : 'other';
+        const opacityStyle = m.isOptimistic ? 'style="opacity: 0.65;"' : '';
         
         return `
-          <div class="chat-bubble-row ${bubbleClass}">
+          <div class="chat-bubble-row ${bubbleClass}" ${opacityStyle}>
             <div class="chat-bubble">
               ${nameLabel}
               ${imageHtml}
@@ -3287,7 +3354,18 @@
       if (txtInput) txtInput.value = '';
       clearChatFilePreview();
       
-      document.body.classList.add('loading-state');
+      // Optimistic rendering
+      const tempMsg = {
+        user: user || 'Unknown',
+        message: text,
+        imageUrl: imageBase64,
+        timestamp: 'sending...',
+        isOptimistic: true
+      };
+      if(!data.chat) data.chat = [];
+      data.chat.push(tempMsg);
+      renderChat();
+      
       const payload = {
         note: 'add_chat_message',
         message: text,
@@ -3308,13 +3386,16 @@
           await loadData();
           renderChat();
         } else {
-          toast('Failed to send message');
+          // Remove optimistic message on failure
+          data.chat = data.chat.filter(m => m !== tempMsg);
+          renderChat();
+          toast('Failed to send message: ' + (res.message || 'unknown error'));
         }
       } catch (err) {
         console.error(err);
-        toast('Error sending message');
-      } finally {
-        document.body.classList.remove('loading-state');
+        data.chat = data.chat.filter(m => m !== tempMsg);
+        renderChat();
+        toast('Error sending message: ' + err.message);
       }
     }
 
@@ -3374,6 +3455,88 @@
       if (fileInput) fileInput.value = '';
       const previewArea = document.getElementById('chat-img-preview');
       if (previewArea) previewArea.style.display = 'none';
+    }
+
+    function handleMemoryFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          memImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('mem-img-preview');
+          const thumbnail = document.getElementById('mem-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = memImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearMemoryFilePreview() {
+      memImageBase64 = null;
+      const fileInput = document.getElementById('mem-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('mem-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    function pollChatOnly() {
+      const currentUser = firebase.auth().currentUser;
+      if(!currentUser) return;
+      currentUser.getIdToken().then(idToken => {
+        const cb = 'cb_' + (++_callbackId);
+        const s = document.createElement('script');
+        window[cb] = r => {
+          delete window[cb];
+          s.remove();
+          if(r && r.status === 'error') return;
+          
+          const oldChatJson = JSON.stringify(data.chat || []);
+          const newChatJson = JSON.stringify(r || []);
+          if(oldChatJson !== newChatJson) {
+            data.chat = r || [];
+            renderChat();
+          }
+        };
+        s.onerror = () => { delete window[cb]; s.remove(); };
+        s.src = GAS_URL + '?action=get_chat&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb;
+        document.body.appendChild(s);
+      }).catch(err => console.warn('Chat poll auth error:', err));
     }
 
     function openChatLightbox(url) {
