@@ -1681,7 +1681,11 @@
           return;
         }
         
-        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        const registration = await navigator.serviceWorker.ready;
+        const token = await messaging.getToken({
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: registration
+        });
         if (!token) {
           console.warn('No FCM token received');
           return;
