@@ -9,6 +9,15 @@ var DEFAULT_CALENDAR_ID    = "family09091668338066744284@group.calendar.google.c
 var DEFAULT_WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec";
 var DEFAULT_NOTIFY_EMAILS  = ["marcuswongjw@gmail.com", "eleanor.jiamin@gmail.com"];
 var DEFAULT_FIREBASE_API_KEY = "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0";
+// Only these accounts may read or write via the API. A valid Firebase
+// token alone is NOT enough — anyone who self-registers on the Firebase
+// project would otherwise pass verification.
+var DEFAULT_ALLOWED_EMAILS = [
+  "marcuswongjw@gmail.com",
+  "eleanor.jiamin@gmail.com",
+  "mikaelawonght@gmail.com",
+  "meaghanwongzx@gmail.com"
+];
 
 // ─── SCRIPT PROPERTIES HELPER ──────────────────────────────
 function getScriptProperty(key, defaultValue) {
@@ -24,13 +33,17 @@ var CONFIG = {
   CALENDAR_ID:    getScriptProperty('CALENDAR_ID', DEFAULT_CALENDAR_ID),
   WEB_APP_URL:    getScriptProperty('WEB_APP_URL', DEFAULT_WEB_APP_URL),
   NOTIFY_EMAILS:  getScriptProperty('NOTIFY_EMAILS', DEFAULT_NOTIFY_EMAILS.join(',')).split(',').map(function(s){ return s.trim(); }),
-  FIREBASE_API_KEY: getScriptProperty('FIREBASE_API_KEY', DEFAULT_FIREBASE_API_KEY)
+  FIREBASE_API_KEY: getScriptProperty('FIREBASE_API_KEY', DEFAULT_FIREBASE_API_KEY),
+  ALLOWED_EMAILS: getScriptProperty('ALLOWED_EMAILS', DEFAULT_ALLOWED_EMAILS.join(',')).split(',').map(function(s){ return s.trim().toLowerCase(); }),
+  APPROVAL_EMAIL: getScriptProperty('APPROVAL_EMAIL', 'marcuswongjw@gmail.com')
 };
 
 var CALENDAR_ID    = CONFIG.CALENDAR_ID;
 var WEB_APP_URL    = CONFIG.WEB_APP_URL;
 var NOTIFY_EMAILS  = CONFIG.NOTIFY_EMAILS;
 var FIREBASE_API_KEY = CONFIG.FIREBASE_API_KEY || DEFAULT_FIREBASE_API_KEY;
+var ALLOWED_EMAILS = CONFIG.ALLOWED_EMAILS;
+var APPROVAL_EMAIL = CONFIG.APPROVAL_EMAIL;
 
 // ─── FAMILY MEMBERS & EXPENSE GROUPS ────────────────────────
 var FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"];
@@ -58,42 +71,66 @@ function toStr(val) {
 }
 
 // ─── FIREBASE TOKEN VERIFICATION ──────────────────────────
+function isAllowedEmail_(email) {
+  return ALLOWED_EMAILS.indexOf(toStr(email).toLowerCase()) !== -1;
+}
+
+// Verifies the token with Firebase AND checks the resulting email
+// against the family allowlist. Results are cached for 10 minutes
+// (keyed by a hash of the token) so chat polling doesn't spend one
+// UrlFetchApp call per request — that quota is shared with the daily
+// digest, verse fetch, and expense scanner.
 function verifyFirebaseToken(idToken) {
   if (!idToken) {
     console.log('❌ No token provided');
     return null;
   }
-  console.log('✅ Token received (length: ' + idToken.length + ')');
+  var cache = null, cacheKey = null;
   try {
-    var apiKey = FIREBASE_API_KEY;
-    var url = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + apiKey;
-    var payload = { idToken: idToken };
+    cache = CacheService.getScriptCache();
+    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken);
+    cacheKey = 'tok_' + Utilities.base64EncodeWebSafe(digest);
+    var cached = cache.get(cacheKey);
+    if (cached === '__denied__') return null;
+    if (cached) return cached;
+  } catch (e) { /* cache unavailable — fall through to live check */ }
+
+  var email = null;
+  try {
+    var url = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY;
     var options = {
       method: 'post',
       contentType: 'application/json',
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify({ idToken: idToken }),
       muteHttpExceptions: true
     };
-    console.log('📤 Sending request to Firebase...');
     var response = UrlFetchApp.fetch(url, options);
-    var responseText = response.getContentText();
-    console.log('📥 Response status: ' + response.getResponseCode());
-    var result = JSON.parse(responseText);
+    var result = JSON.parse(response.getContentText());
     if (result.users && result.users.length > 0) {
-      console.log('✅ Token verified for: ' + result.users[0].email);
-      return result.users[0].email;
+      email = result.users[0].email;
     } else if (result.error) {
       console.log('❌ Firebase error: ' + result.error.message);
     }
   } catch (e) {
     console.log('❌ Token verification error: ' + e.toString());
   }
-  return null;
+
+  if (email && !isAllowedEmail_(email)) {
+    console.log('❌ Verified account is not in the family allowlist: ' + email);
+    email = null;
+  } else if (email) {
+    console.log('✅ Token verified for: ' + email);
+  }
+
+  try { if (cache && cacheKey) cache.put(cacheKey, email || '__denied__', 600); } catch (e) {}
+  return email;
 }
 
 function respondJSONP(data, callback) {
   var json = JSON.stringify(data);
-  if (callback) {
+  // The callback name is echoed into an executable JS response, so it
+  // must be a plain identifier — anything else is a script injection.
+  if (callback && /^[A-Za-z0-9_$.]+$/.test(callback)) {
     return ContentService
       .createTextOutput(callback + '(' + json + ')')
       .setMimeType(ContentService.MimeType.JAVASCRIPT);
@@ -101,6 +138,13 @@ function respondJSONP(data, callback) {
   return ContentService
     .createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// HTML-escape for values interpolated into served pages and emails.
+function escapeHtml_(s) {
+  return toStr(s).replace(/[&<>"']/g, function(c) {
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
 }
 
 // ============================================================
@@ -275,6 +319,14 @@ function sendExpenseReport(now) {
   sendFamilyEmail('📊 Wong Family — ' + monthName + ' Full Report', body);
 }
 
+// new Date(year, 1, 29) silently rolls to Mar 1 in non-leap years;
+// celebrate Feb-29 birthdays on Feb 28 instead.
+function annualEventDate_(year, month, day) {
+  var d = new Date(year, month, day);
+  if (month === 1 && day === 29 && d.getMonth() !== 1) d = new Date(year, 1, 28);
+  return d;
+}
+
 function checkUpcomingBirthdays() {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var bdSheet = ss.getSheetByName('Birthdays');
@@ -294,8 +346,8 @@ function checkUpcomingBirthdays() {
     if (!name || !raw) continue;
     var parts = raw.split('-'); if (parts.length !== 2) continue;
     var month         = parseInt(parts[0]) - 1; var day = parseInt(parts[1]);
-    var eventThisYear = new Date(now.getFullYear(), month, day);
-    var eventDate     = eventThisYear >= today ? eventThisYear : new Date(now.getFullYear() + 1, month, day);
+    var eventThisYear = annualEventDate_(now.getFullYear(), month, day);
+    var eventDate     = eventThisYear >= today ? eventThisYear : annualEventDate_(now.getFullYear() + 1, month, day);
     var daysAway      = Math.floor((eventDate - today) / (1000 * 60 * 60 * 24));
     var dateStr       = Utilities.formatDate(eventDate, tz, 'MMM d');
     var agePart       = '';
@@ -352,16 +404,35 @@ function checkBudgetAlerts() {
     }
     
     var pct = spent / limit;
-    if (pct >= 1.0) alerts.push({ group: group, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'over' });
-    else if (pct >= 0.8) alerts.push({ group: group, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'warning' });
+    if (pct >= 1.0) alerts.push({ group: group, account: budgetAcc, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'over' });
+    else if (pct >= 0.8) alerts.push({ group: group, account: budgetAcc, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'warning' });
   }
   return alerts;
 }
 
 function sendBudgetAlerts(alerts) {
   if (!alerts || alerts.length === 0) return;
+
+  // Only email when a group's alert level CHANGES this month. Previously
+  // the same 80%/over-budget alert was re-sent every single day.
+  var props = PropertiesService.getScriptProperties();
+  var tz = Session.getScriptTimeZone();
+  var monthKey = 'budgetAlertState_' + Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  var prevMonth = new Date(); prevMonth.setMonth(prevMonth.getMonth() - 1);
+  try { props.deleteProperty('budgetAlertState_' + Utilities.formatDate(prevMonth, tz, 'yyyy-MM')); } catch (e) {}
+  var prevState = {};
+  try { prevState = JSON.parse(props.getProperty(monthKey) || '{}'); } catch (e) {}
+
+  var fresh = alerts.filter(function(a) {
+    return prevState[a.group + '|' + (a.account || '')] !== a.level;
+  });
+  var nextState = {};
+  alerts.forEach(function(a) { nextState[a.group + '|' + (a.account || '')] = a.level; });
+  try { props.setProperty(monthKey, JSON.stringify(nextState)); } catch (e) {}
+  if (fresh.length === 0) return;
+
   var body = _h('h2', '📊 Budget Alert', 'font-family:sans-serif;color:#333;');
-  alerts.forEach(function(a) {
+  fresh.forEach(function(a) {
     var colour = a.level === 'over' ? '#c0392b' : '#c9a84c';
     var emoji  = a.level === 'over' ? '🚨' : '⚠️';
     var label  = a.level === 'over' ? 'OVER BUDGET by $' + (a.spent - a.budget).toFixed(2) : a.pct + '% used';
@@ -377,21 +448,48 @@ function sendBudgetAlerts(alerts) {
   sendFamilyEmail('📊 Wong Family — Budget Alert', body);
 }
 
+// ─── CYCLE ESTIMATION ──────────────────────────────────────
+// Collect all 'Period Start' dates from the Fertility sheet values.
+function getPeriodStarts_(fertVals) {
+  var starts = [];
+  for (var i = 1; i < fertVals.length; i++) {
+    var row = fertVals[i];
+    if (toStr(row[2]) !== 'Period Start') continue;
+    var d = row[1] ? new Date(row[1]) : null;
+    if (d && !isNaN(d.getTime())) starts.push(d);
+  }
+  starts.sort(function(a, b) { return a - b; });
+  return starts;
+}
+
+// Average of the last few observed cycle lengths, clamped to a sane
+// range — instead of the fixed 28-day assumption used previously.
+function estimateCycleLengthDays_(periodStarts) {
+  if (!periodStarts || periodStarts.length < 2) return 28;
+  var gaps = [];
+  for (var i = 1; i < periodStarts.length; i++) {
+    var gap = Math.round((periodStarts[i] - periodStarts[i - 1]) / 86400000);
+    if (gap >= 21 && gap <= 45) gaps.push(gap);   // ignore data-entry gaps
+  }
+  if (gaps.length === 0) return 28;
+  var recent = gaps.slice(-3);
+  var avg = Math.round(recent.reduce(function(a, b) { return a + b; }, 0) / recent.length);
+  return Math.min(35, Math.max(21, avg));
+}
+
 function checkFertilityNotifications(now) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var fertSheet = ss.getSheetByName('Fertility'); if (!fertSheet) return;
   var fertVals  = fertSheet.getDataRange().getValues();
-  var lastPeriodStart = null;
-  for (var i = 1; i < fertVals.length; i++) {
-    var row = fertVals[i]; var fType = toStr(row[2]); var fDate = row[1] ? new Date(row[1]) : null;
-    if (fDate && isNaN(fDate.getTime())) fDate = null;
-    if (fType === 'Period Start' && fDate) { if (!lastPeriodStart || fDate > lastPeriodStart) lastPeriodStart = fDate; }
-  }
-  if (!lastPeriodStart) return;
+  var starts    = getPeriodStarts_(fertVals);
+  if (starts.length === 0) return;
+  var lastPeriodStart = starts[starts.length - 1];
+  var cycleLen        = estimateCycleLengthDays_(starts);
+  var ovulationOffset = cycleLen - 14;   // luteal phase ≈ 14 days
   var tz           = Session.getScriptTimeZone();
-  var fertileStart = new Date(lastPeriodStart); fertileStart.setDate(fertileStart.getDate() + 10);
-  var fertileEnd   = new Date(lastPeriodStart); fertileEnd.setDate(fertileEnd.getDate() + 16);
-  var nextPeriod   = new Date(lastPeriodStart); nextPeriod.setDate(nextPeriod.getDate() + 28);
+  var fertileStart = new Date(lastPeriodStart); fertileStart.setDate(fertileStart.getDate() + ovulationOffset - 4);
+  var fertileEnd   = new Date(lastPeriodStart); fertileEnd.setDate(fertileEnd.getDate() + ovulationOffset + 2);
+  var nextPeriod   = new Date(lastPeriodStart); nextPeriod.setDate(nextPeriod.getDate() + cycleLen);
   var today            = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   var fertileStartDay  = new Date(fertileStart.getFullYear(), fertileStart.getMonth(), fertileStart.getDate());
   var nextPeriodDay    = new Date(nextPeriod.getFullYear(), nextPeriod.getMonth(), nextPeriod.getDate());
@@ -446,8 +544,7 @@ function processRecurringExpenses() {
   }
 
   if (logged.length > 0) {
-    var lastRow = expSheet.getLastRow();
-    if (lastRow > 2) expSheet.getRange(2, 1, lastRow - 1, expSheet.getLastColumn()).sort({ column: 2, ascending: true });
+    // No sheet re-sort — see the note in add_expense.
     var body = _h('h2', '🔄 Recurring Expenses Logged', 'font-family:sans-serif;color:#333;');
     var items = '';
     logged.forEach(function(r) { items += _li('<strong>' + r.name + '</strong> — $' + r.amount.toFixed(2) + ' (' + r.account + ')'); });
@@ -470,8 +567,12 @@ function doGet(e) {
     var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
     var idToken  = e && e.parameter && e.parameter.idToken  ? e.parameter.idToken  : '';
 
-    var protectedActions = ['get_all', 'write', 'get_chat'];
-    if (protectedActions.indexOf(action) !== -1) {
+    // Default-deny: EVERY action requires a verified family token except
+    // the expense-approval endpoints, which are opened from email links.
+    // (Previously get_expenses, get_fertility, get_memories, etc. were
+    // readable by anyone who knew the /exec URL.)
+    var openActions = ['confirm_expense_page', 'submit_confirmed_expense'];
+    if (openActions.indexOf(action) === -1) {
       var verifiedEmail = verifyFirebaseToken(idToken);
       if (!verifiedEmail) {
         var error = { status: 'error', message: 'Unauthorized: invalid or missing token' };
@@ -516,12 +617,13 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-    if (data.idToken) {
-      var verified = verifyFirebaseToken(data.idToken);
-      if (!verified) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
+    // The token is mandatory. The old check only ran `if (data.idToken)`,
+    // so omitting the token skipped verification entirely — an
+    // unauthenticated write path for anyone who knew the URL.
+    var verified = verifyFirebaseToken(data.idToken);
+    if (!verified) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
     var result = handleWrite(data);
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
@@ -535,7 +637,24 @@ function doPost(e) {
 // ============================================================
 // HANDLE WRITE (with all existing + new endpoints)
 // ============================================================
+// All mutations run under a script lock so two family members writing
+// at the same moment can't interleave read-modify-write sequences
+// (e.g. a delete-by-row landing while another handler is mid-update).
 function handleWrite(data) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { status: 'error', message: 'Server busy — please try again in a moment.' };
+  }
+  try {
+    return handleWriteInner_(data);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleWriteInner_(data) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var logSheet  = ss.getSheetByName('Log') || ss.insertSheet('Log');
   var note      = toStr(data.note);
@@ -545,8 +664,10 @@ function handleWrite(data) {
   // ---- Helper validation functions ----
   function validateDate(d) {
     if (!d) return true;
-    var parsed = parseEventDate(d, '');
-    return parsed && !isNaN(parsed.getTime());
+    // Uses the strict parser: the lenient parseEventDate falls back to
+    // "today" on garbage input, which made this check always pass and
+    // silently logged wrong dates.
+    return parseEventDateStrict(d, '') !== null;
   }
   function validateAmount(a) {
     var num = parseFloat(a);
@@ -667,7 +788,7 @@ function handleWrite(data) {
       if (due && !validateDate(due)) return { status: 'error', message: 'Invalid due date' };
 
       var tdSheet = ss.getSheetByName('ToDo');
-      if (!tdSheet) { tdSheet = ss.insertSheet('ToDo'); tdSheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status']); }
+      if (!tdSheet) { tdSheet = ss.insertSheet('ToDo'); tdSheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At']); }
       var parsedDue = due ? parseEventDate(due, '') : '';
       tdSheet.appendRow([new Date(), task, assignee, parsedDue, user, 'Open']);
       console.log('✅ Task added: ' + task);
@@ -711,8 +832,11 @@ function handleWrite(data) {
       if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
       var parsedDate = parseEventDate(date, '');
       expSheet.appendRow([new Date(), parsedDate, account, category, amount, desc]);
-      var lastRow = expSheet.getLastRow();
-      if (lastRow > 2) expSheet.getRange(2, 1, lastRow - 1, expSheet.getLastColumn()).sort({ column: 2, ascending: true });
+      // NOTE: the sheet is intentionally NOT re-sorted here. Sorting on
+      // every insert shuffled every row number, so a delete sent from a
+      // client that loaded before someone else's add could remove the
+      // wrong expense. Date ordering is applied in getExpensesData()
+      // instead, so the app still shows newest-first.
       console.log('✅ Expense added: ' + desc + ' $' + amount);
       return { status: 'ok' };
     }
@@ -1274,11 +1398,14 @@ function getExpensesData(ss) {
         account: acc,
         category: cat,
         amount: amount,
-        desc: toStr(row[5])
+        desc: toStr(row[5]),
+        ts: rowDate.getTime()
       });
     }
   }
-  rows.reverse();
+  // Newest first, sorted explicitly — the sheet itself is append-ordered
+  // now that per-insert sorting was removed (see add_expense).
+  rows.sort(function(a, b) { return b.ts - a.ts; });
   return {
     rows: rows,
     total: total,
@@ -1341,8 +1468,8 @@ function getBirthdays(ss) {
     var row = bdVals[i]; if (!row[0] || !row[2]) continue;
     var parts = toStr(row[2]).split('-'); if (parts.length !== 2) continue;
     var month = parseInt(parts[0]) - 1; var day = parseInt(parts[1]);
-    var eventThisYear = new Date(now.getFullYear(), month, day);
-    var eventDate     = eventThisYear >= today ? eventThisYear : new Date(now.getFullYear() + 1, month, day);
+    var eventThisYear = annualEventDate_(now.getFullYear(), month, day);
+    var eventDate     = eventThisYear >= today ? eventThisYear : annualEventDate_(now.getFullYear() + 1, month, day);
     var daysAway      = Math.floor((eventDate - today) / (1000 * 60 * 60 * 24));
     var agePart = ''; var yearVal = toStr(row[3]);
     if (yearVal) {
@@ -1364,7 +1491,11 @@ function getMemories(ss) {
   var result  = [];
   for (var i = 1; i < memVals.length; i++) {
     var row = memVals[i];
-    if (!row[4] && !row[5]) continue;
+    // Sheet columns: 0 LoggedBy, 1 Date, 2 Type, 3 Person, 4 Memory,
+    // 5 LoggedAt, 6 ImageUrl, 7 ImageId. The old code read the image
+    // from columns 5/6 — off by one — so photos never rendered and the
+    // empty-row filter compared against LoggedAt (always populated).
+    if (!row[4] && !row[6]) continue;
     result.push({
       rowNum: i + 1,
       loggedBy: toStr(row[0]),
@@ -1372,8 +1503,8 @@ function getMemories(ss) {
       type: toStr(row[2]) || 'Moment',
       person: toStr(row[3]) || 'Everyone',
       memory: toStr(row[4]),
-      imageUrl: toStr(row[5]),
-      imageId: toStr(row[6])
+      imageUrl: toStr(row[6]),
+      imageId: toStr(row[7])
     });
   }
   result.reverse();
@@ -1396,11 +1527,15 @@ function getFertilityData(ss) {
     if (fType === 'Symptom') symptoms.push({ date: fDate ? Utilities.formatDate(fDate, tz, 'dd MMM yyyy') : '', note: toStr(row[3]) });
   }
   var result = {};
+  var starts = getPeriodStarts_(fertVals);
   if (lastPeriodStart) {
+    var cycleLen        = estimateCycleLengthDays_(starts);
+    var ovulationOffset = cycleLen - 14;
     result.lastPeriodStart = Utilities.formatDate(lastPeriodStart, tz, 'dd MMM yyyy');
-    var nextPeriod   = new Date(lastPeriodStart); nextPeriod.setDate(nextPeriod.getDate() + 28);
-    var fertileStart = new Date(lastPeriodStart); fertileStart.setDate(fertileStart.getDate() + 10);
-    var fertileEnd   = new Date(lastPeriodStart); fertileEnd.setDate(fertileEnd.getDate() + 16);
+    result.cycleLength     = cycleLen;
+    var nextPeriod   = new Date(lastPeriodStart); nextPeriod.setDate(nextPeriod.getDate() + cycleLen);
+    var fertileStart = new Date(lastPeriodStart); fertileStart.setDate(fertileStart.getDate() + ovulationOffset - 4);
+    var fertileEnd   = new Date(lastPeriodStart); fertileEnd.setDate(fertileEnd.getDate() + ovulationOffset + 2);
     result.nextPeriod   = Utilities.formatDate(nextPeriod,   tz, 'dd MMM yyyy');
     result.fertileStart = Utilities.formatDate(fertileStart, tz, 'dd MMM yyyy');
     result.fertileEnd   = Utilities.formatDate(fertileEnd,   tz, 'dd MMM yyyy');
@@ -1509,6 +1644,8 @@ function getLoveCheckinsData(ss) {
       focus: toStr(row[5])
     });
   }
+  // The missing return here was why the check-in history never displayed.
+  return result;
 }
 
 function getChatMessages(ss) {
@@ -1540,8 +1677,11 @@ function getChatMessages(ss) {
 // ============================================================
 // 7. HELPERS
 // ============================================================
-function parseEventDate(dateStr, timeStr) {
+// Strict parser: returns null when the date string can't be understood,
+// so validation can actually reject bad input.
+function parseEventDateStrict(dateStr, timeStr) {
   dateStr = toStr(dateStr).trim(); timeStr = toStr(timeStr).trim();
+  if (!dateStr) return null;
   var now = new Date(); var year = now.getFullYear(); var parsed = null;
   var dmySlash = dateStr.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
   if (dmySlash) { var yr = dmySlash[3] ? parseInt(dmySlash[3]) : year; if (yr < 100) yr += 2000; parsed = new Date(yr, parseInt(dmySlash[2]) - 1, parseInt(dmySlash[1])); }
@@ -1550,17 +1690,27 @@ function parseEventDate(dateStr, timeStr) {
     if (dmy) {
       var months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
       var mo = months[dmy[2].toLowerCase().substring(0,3)];
-      if (mo !== undefined) { var yr = dmy[3] ? parseInt(dmy[3]) : year; if (yr < 100) yr += 2000; parsed = new Date(yr, mo, parseInt(dmy[1])); }
+      if (mo !== undefined) { var yr2 = dmy[3] ? parseInt(dmy[3]) : year; if (yr2 < 100) yr2 += 2000; parsed = new Date(yr2, mo, parseInt(dmy[1])); }
     }
   }
   if (!parsed || isNaN(parsed.getTime())) parsed = new Date(dateStr);
-  if (!parsed || isNaN(parsed.getTime())) parsed = new Date();
+  if (!parsed || isNaN(parsed.getTime())) return null;
   if (timeStr && timeStr !== '') {
     var t12 = timeStr.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i); var t24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
     if (t12) { var h = parseInt(t12[1]); var min = t12[2] ? parseInt(t12[2]) : 0; var mer = t12[3].toLowerCase(); if (mer === 'pm' && h !== 12) h += 12; if (mer === 'am' && h === 12) h = 0; parsed.setHours(h, min, 0, 0); }
     else if (t24) { parsed.setHours(parseInt(t24[1]), parseInt(t24[2]), 0, 0); }
   } else { parsed.setHours(0, 0, 0, 0); }
   return parsed;
+}
+
+// Lenient wrapper kept for existing callers that expect a date back no
+// matter what — falls back to today (midnight) on unparseable input.
+function parseEventDate(dateStr, timeStr) {
+  var parsed = parseEventDateStrict(dateStr, timeStr);
+  if (parsed) return parsed;
+  var fallback = new Date();
+  fallback.setHours(0, 0, 0, 0);
+  return fallback;
 }
 
 function daysInMonth(date) {
@@ -1586,6 +1736,16 @@ function scanInboxForPayLah() {
 }
 
 // ---- PARSERS (with transaction reference extraction) ----
+// Bank alerts often omit the year ("16 Jun"). Assuming the current year
+// mislabels December transactions scanned in January, so if the
+// resulting date lands in the future, it must belong to last year.
+function inferYearForPastDate_(day, monthStr) {
+  var year = new Date().getFullYear();
+  var candidate = parseEventDateStrict(day + ' ' + monthStr + ' ' + year, '');
+  if (candidate && candidate.getTime() > Date.now() + 86400000) year -= 1;
+  return year;
+}
+
 function parsePayLah(body) {
   var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.]+)/i);
   var toMatch = body.match(/To:\s*(.+?)(?:\r|\n)/i);
@@ -1598,7 +1758,7 @@ function parsePayLah(body) {
     if (dateMatch) {
       var parts = dateMatch[1].trim().split(/\s+/);
       if (parts.length >= 2) {
-        dateStr = parts[0] + ' ' + parts[1] + ' ' + new Date().getFullYear();
+        dateStr = parts[0] + ' ' + parts[1] + ' ' + inferYearForPastDate_(parts[0], parts[1]);
       }
     }
     var txRef = refMatch ? refMatch[1].trim() : null;
@@ -1662,8 +1822,7 @@ function parseDbsPayNow(body, msg) {
       var parts = dateMatch[1].trim().split(/\s+/);
       var day = parts[0];
       var month = parts[1];
-      var year = new Date().getFullYear();
-      dateStr = day + ' ' + month + ' ' + year;
+      dateStr = day + ' ' + month + ' ' + inferYearForPastDate_(day, month);
     }
     var txRef = refMatch ? refMatch[1].trim() : null;
     return { amount: amount, merchant: merchant, dateStr: dateStr, txRef: txRef };
@@ -1772,6 +1931,8 @@ function scanInboxForTransactions() {
   var expSheet = ss.getSheetByName('Expenses');
   var label = GmailApp.getUserLabelByName('Expense-Processed');
   if (!label) label = GmailApp.createLabel('Expense-Processed');
+  var failLabel = GmailApp.getUserLabelByName('Expense-Failed');
+  if (!failLabel) failLabel = GmailApp.createLabel('Expense-Failed');
 
   var templates = [
     { name: 'paylah', query: 'from:paylah.alert@dbs.com label:inbox', parse: parsePayLah },
@@ -1793,6 +1954,7 @@ function scanInboxForTransactions() {
     var threads = GmailApp.search(tpl.query, 0, 20);
     threads.forEach(function(thread) {
       var messages = thread.getMessages();
+      var hadParseFailure = false;
       messages.forEach(function(msg) {
         if (msg.isStarred()) return;
         var body = msg.getPlainBody();
@@ -1824,9 +1986,16 @@ function scanInboxForTransactions() {
           pendingSheet.appendRow([id, dateStr, account, category, amount, note, new Date()]);
           sendApprovalEmail(id, dateStr, amount, merchant, category, account);
           console.log('[' + tpl.name + '] Logged new pending: ' + merchant + ' ($' + amount + ')' + (txRef ? ' Ref: ' + txRef : ''));
+        } else {
+          // Previously unparseable messages were starred and archived with
+          // no trace — a silently dropped transaction. Flag the thread so
+          // it can be reviewed under the Expense-Failed label.
+          hadParseFailure = true;
+          console.log('[' + tpl.name + '] Could not parse message: ' + msg.getSubject());
         }
         msg.star();
       });
+      if (hadParseFailure) thread.addLabel(failLabel);
       thread.addLabel(label);
       thread.moveToArchive();
     });
@@ -1895,21 +2064,21 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
   var subject = '❓ Confirm ' + sourceTitle + ': $' + amount.toFixed(2) + ' at ' + merchant;
   var htmlBody = '<div style="font-family:sans-serif;max-width:400px;border:1px solid #e4e6ef;border-radius:10px;padding:20px;background:#f9f9fb;">' +
                  '<h3 style="color:#2c7a4b;margin-top:0;border-bottom:1px solid #e4e6ef;padding-bottom:10px;">' + sourceTitle + ' Detected</h3>' +
-                 '<p style="margin:8px 0;font-size:14px;"><strong>Merchant:</strong> ' + merchant + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Merchant:</strong> ' + escapeHtml_(merchant) + '</p>' +
                  '<p style="margin:8px 0;font-size:14px;"><strong>Amount:</strong> $' + amount.toFixed(2) + '</p>' +
-                 '<p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ' + dateStr + '</p>' +
-                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Account:</strong> ' + account + '</p>' +
-                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Category:</strong> ' + category + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Date:</strong> ' + escapeHtml_(dateStr) + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Account:</strong> ' + escapeHtml_(account) + '</p>' +
+                 '<p style="margin:8px 0;font-size:14px;"><strong>Proposed Category:</strong> ' + escapeHtml_(category) + '</p>' +
                  '<div style="margin-top:20px;text-align:center;">' +
                    '<a href="' + approvalUrl + '" style="background:#4f86c6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;font-size:14px;">Verify & Log Expense</a>' +
                  '</div>' +
                  '</div>';
   var plainBody = htmlBody.replace(/<[^>]+>/g, '').replace(/\n\n+/g, '\n').trim();
   try {
-    MailApp.sendEmail({ to: "marcuswongjw@gmail.com", subject: subject, body: plainBody, htmlBody: htmlBody });
-    console.log('✅ email sent to: marcuswongjw@gmail.com');
+    MailApp.sendEmail({ to: APPROVAL_EMAIL, subject: subject, body: plainBody, htmlBody: htmlBody });
+    console.log('✅ email sent to: ' + APPROVAL_EMAIL);
   } catch (err) {
-    console.log('❌ email failed (marcuswongjw@gmail.com): ' + err);
+    console.log('❌ email failed (' + APPROVAL_EMAIL + '): ' + err);
   }
 }
 
@@ -1937,11 +2106,11 @@ function renderConfirmExpensePage(id) {
   var desc    = toStr(vals[rowIdx-1][5]);
   var groupOptionsHtml = '';
   for (var grp in EXPENSE_GROUPS) {
-    groupOptionsHtml += '<optgroup label="' + grp + '">';
+    groupOptionsHtml += '<optgroup label="' + escapeHtml_(grp) + '">';
     var cats = EXPENSE_GROUPS[grp];
     for (var c = 0; c < cats.length; c++) {
       var sel = (cats[c] === cat) ? ' selected' : '';
-      groupOptionsHtml += '<option value="' + cats[c] + '"' + sel + '>' + cats[c] + '</option>';
+      groupOptionsHtml += '<option value="' + escapeHtml_(cats[c]) + '"' + sel + '>' + escapeHtml_(cats[c]) + '</option>';
     }
     groupOptionsHtml += '</optgroup>';
   }
@@ -1969,10 +2138,10 @@ function renderConfirmExpensePage(id) {
       '<div class="card">' +
         '<h3>Verify PayLah! Expense</h3>' +
         '<form id="exp-form">' +
-          '<input type="hidden" name="id" value="' + id + '">' +
-          '<div class="field"><label>Description</label><input type="text" name="desc" value="' + desc + '"></div>' +
+          '<input type="hidden" name="id" value="' + escapeHtml_(id) + '">' +
+          '<div class="field"><label>Description</label><input type="text" name="desc" value="' + escapeHtml_(desc) + '"></div>' +
           '<div class="field"><label>Amount ($)</label><input type="number" step="0.01" name="amount" value="' + amt.toFixed(2) + '"></div>' +
-          '<div class="field"><label>Date</label><input type="text" name="date" value="' + dateStr + '"></div>' +
+          '<div class="field"><label>Date</label><input type="text" name="date" value="' + escapeHtml_(dateStr) + '"></div>' +
           '<div class="field"><label>Account</label>' +
             '<select name="account">' +
               '<option value="Family" ' + (acc === 'Family' ? 'selected' : '') + '>Family</option>' +
@@ -2015,6 +2184,23 @@ function renderConfirmExpensePage(id) {
 }
 
 function handleSubmitConfirmedExpense(params) {
+  // Same lock as handleWrite — this reads a pending row, appends an
+  // expense, then deletes the pending row, which must not interleave
+  // with other writes.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { status: 'error', message: 'Server busy — please try again in a moment.' };
+  }
+  try {
+    return handleSubmitConfirmedExpenseInner_(params);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleSubmitConfirmedExpenseInner_(params) {
   var id = params.id;
   var status = params.status;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2036,8 +2222,7 @@ function handleSubmitConfirmedExpense(params) {
     if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
     var parsedDate = parseEventDate(dateStr, '');
     expSheet.appendRow([new Date(), parsedDate, account, category, amount, desc]);
-    var lastRow = expSheet.getLastRow();
-    if (lastRow > 2) expSheet.getRange(2, 1, lastRow - 1, expSheet.getLastColumn()).sort({ column: 2, ascending: true });
+    // No sheet re-sort — see the note in add_expense.
     pendingSheet.deleteRow(rowIdx);
     return { status: 'ok', message: 'Expense of $' + amount.toFixed(2) + ' logged to ' + category + '!' };
   } else {
