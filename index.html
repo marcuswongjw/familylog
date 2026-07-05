@@ -1669,26 +1669,47 @@
     }
 
     // ─── FCM TOKEN REQUEST ────────────────────────────────────
-    function requestFCMToken() {
+    async function requestFCMToken() {
       if (!messaging) return;
-      Notification.requestPermission().then(perm => {
-        if (perm === 'granted') {
-          return messaging.getToken({ vapidKey: VAPID_KEY });
-        } else {
+      
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
           console.warn('Notification permission denied');
-          return null;
+          return;
         }
-      }).then(token => {
-        if (token) {
-          console.log('✅ FCM token:', token);
-          // You can store this token in Firestore (e.g., /users/{uid}/fcmTokens)
-          // and later use it to send push messages from your server.
-          // For now, just log it.
+        
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        if (!token) {
+          console.warn('No FCM token received');
+          return;
         }
-      }).catch(err => {
+        
+        console.log('✅ FCM token:', token);
+        
+        // Save token to Firestore
+        const currentUser = firebase.auth().currentUser;
+        if (!currentUser) {
+          console.warn('No authenticated user – cannot save token');
+          return;
+        }
+        
+        const userEmail = currentUser.email;
+        const userRef = db.collection('users').doc(userEmail);
+        
+        await userRef.set({
+          email: userEmail,
+          name: user || 'Unknown',
+          fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
+        }, { merge: true });
+        
+        console.log('✅ FCM token saved to Firestore');
+        
+      } catch (err) {
         console.warn('❌ FCM token error:', err);
-      });
+      }
     }
+    
 
     // ─── XSS ESCAPE ───────────────────────────────────────────
     function escapeHtml(text) {
