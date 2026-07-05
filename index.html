@@ -1446,6 +1446,7 @@
 
     // Firestore chat listener
     let chatUnsubscribe = null;
+    let memoriesUnsubscribe = null;
 
     // Notifications
     let notificationsEnabled = false;
@@ -1656,6 +1657,7 @@
     }
     function logout() {
       stopChatListener();
+      stopMemoriesListener();
       firebase.auth().signOut().then(() => {
         user = null;
         document.getElementById('app-screen').classList.remove('active');
@@ -1761,7 +1763,11 @@
             delete window[cb];
             s.remove();
             if(r && r.status === 'error'){ showError('Server error: '+ (r.message||'unknown')); finishProgressBar(); resolve(); return; }
+            const prevChat = data.chat;
+            const prevMems = data.memories;
             data = r || {};
+            if (prevChat) data.chat = prevChat;
+            if (prevMems) data.memories = prevMems;
             if(r && r.expenseGroups) GROUPS = r.expenseGroups;
             if(r && r.bucketList) bucketList = r.bucketList;
             buildDynamicSelectors();
@@ -1864,6 +1870,13 @@
         requestNotificationPermission();
       } else {
         stopChatListener();
+      }
+      
+      // Handle memories listener
+      if(id === 'memories') {
+        startMemoriesListener();
+      } else {
+        stopMemoriesListener();
       }
       
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -2922,22 +2935,44 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const text = v('mem-text');
-        const image = memImageBase64 || '';
-        if(!text && !image){ toast('Please write the memory or attach a photo'); return; }
-        await gPost({
-          note: 'add_memory',
-          memory_type: gc('mt')||'💛 Moment',
-          memory_person: gc('mp')||'Everyone',
-          memory_text: text,
-          memory_date: v('mem-date')?fmtDate(v('mem-date')): '',
-          image: image
+        if(!text && !memImageBase64){ toast('Please write the memory or attach a photo'); return; }
+        
+        let imageUrl = '';
+        
+        // Upload image to Firebase Storage if present
+        if (memImageBase64) {
+          try {
+            const blob = dataURItoBlob(memImageBase64);
+            const ref = storage.ref(`memories/${Date.now()}_${user}.jpg`);
+            const snapshot = await ref.put(blob);
+            imageUrl = await snapshot.ref.getDownloadURL();
+          } catch (err) {
+            toast('Image upload failed: ' + err.message, true);
+            return;
+          } finally {
+            clearMemoryFilePreview();
+          }
+        }
+        
+        // Save memory metadata in Firestore
+        await db.collection('memories').add({
+          loggedBy: user || 'Unknown',
+          date: v('mem-date') || new Date().toISOString().slice(0,10),
+          type: gc('mt') || 'Moment',
+          person: gc('mp') || 'Everyone',
+          memory: text,
+          imageUrl: imageUrl,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
+        
         closeM('m-memory');
         clr('mem-text');
-        clearMemoryFilePreview();
         toast('Memory saved! 💛');
-        await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Save'; }
+      } catch (err) {
+        toast('Failed to save memory: ' + err.message, true);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save';
+      }
     }
     async function submitBirthday(btn) {
       if(!btn) btn = document.getElementById('bd-submit');
@@ -3617,6 +3652,56 @@
       if (chatUnsubscribe) {
         chatUnsubscribe();
         chatUnsubscribe = null;
+      }
+    }
+
+    // ─── FIRESTORE MEMORIES LISTENER ──────────────────────────
+    function startMemoriesListener() {
+      if (memoriesUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      memoriesUnsubscribe = db.collection('memories')
+        .orderBy('timestamp', 'desc')
+        .onSnapshot((snapshot) => {
+          const memories = [];
+          snapshot.forEach((doc) => {
+            const d = doc.data();
+            
+            let formattedDate = '';
+            if (d.date) {
+              const dateObj = new Date(d.date);
+              if (!isNaN(dateObj.getTime())) {
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                formattedDate = String(dateObj.getDate()).padStart(2, '0') + ' ' + months[dateObj.getMonth()] + ' ' + dateObj.getFullYear();
+              }
+            }
+            
+            memories.push({
+              id: doc.id,
+              loggedBy: d.loggedBy || 'Unknown',
+              date: formattedDate,
+              dateRaw: d.date || '',
+              type: d.type || 'Moment',
+              person: d.person || 'Everyone',
+              memory: d.memory || '',
+              imageUrl: d.imageUrl || '',
+              timestamp: d.timestamp?.toDate?.() || new Date()
+            });
+          });
+          data.memories = memories;
+          if (section === 'memories') renderMemories();
+        }, (error) => {
+          console.error('Memories listener error:', error);
+          toast('Memories connection error', true);
+        });
+    }
+
+    function stopMemoriesListener() {
+      if (memoriesUnsubscribe) {
+        memoriesUnsubscribe();
+        memoriesUnsubscribe = null;
       }
     }
 
