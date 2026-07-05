@@ -14,11 +14,12 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- Firebase SDK + Firestore + Storage -->
+  <!-- Firebase SDK + Firestore + Storage + Messaging -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     /* ─── CSS Variables ─── */
@@ -1349,7 +1350,7 @@
     </div>
   </div>
 
-  <!-- Log Daily Check-in (renamed) -->
+  <!-- Log Daily Check-in -->
   <div class="overlay" id="m-love-checkin">
     <div class="modal">
       <div class="modal-handle"></div>
@@ -1394,7 +1395,7 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIRESTORE CHAT)          -->
+  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIRESTORE CHAT + FCM)     -->
   <!-- ============================================================ -->
   <script>
     // ─── FIREBASE CONFIG ────────────────────────────────────────
@@ -1407,6 +1408,7 @@
       appId: "1:171956350431:web:6094e6bafb0bb849ed286a",
       measurementId: "G-HCHV787ZPJ"
     };
+    const VAPID_KEY = 'BAs6TNKZd4jhJwSXah-Q5DQtVG0h0uaoQmopSBG9gu1AtvaHRKqAeG8ZvW3Og2PrJpLz_VxXoxzhvS5nrbt6HUU';
 
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
 
@@ -1421,7 +1423,7 @@
     let GROUPS = {};
 
     let _callbackId = 0;
-    let db, storage; // will be set after Firebase init
+    let db, storage, messaging; // will be set after Firebase init
 
     // ─── PERSISTENT PREFERENCES ──────────────────────────────────
     function loadPreference(key, fallback) {
@@ -1497,6 +1499,8 @@
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
       storage = firebase.storage();
+      messaging = firebase.messaging();
+
       // Enable offline persistence (optional)
       db.enablePersistence().catch(() => {});
 
@@ -1516,10 +1520,14 @@
       const pill = document.getElementById('pill-'+activeSchedChild);
       if (pill) pill.classList.add('active');
 
-      // Service worker
+      // Service worker (for FCM)
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(() => console.log('✅ SW registered'))
+        navigator.serviceWorker.register('/firebase-messaging-sw.js')
+          .then((registration) => {
+            console.log('✅ FCM Service Worker registered');
+            // Pass the registration to Firebase Messaging
+            messaging.useServiceWorker(registration);
+          })
           .catch(err => console.warn('❌ SW registration failed:', err));
       }
 
@@ -1616,7 +1624,6 @@
       document.getElementById('pinbox').style.display = 'block';
       document.getElementById('pinlbl').textContent = name + "'s password";
       document.getElementById('login-error').textContent = '';
-      // removed email auto-fill since we removed email login
       setTimeout(() => document.getElementById('login-password').focus(), 100);
     }
     function loginWithSelectedMember() {
@@ -1626,7 +1633,11 @@
       const email = selectedMember.email, errorEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
       btn.disabled = true; errorEl.textContent = '';
       firebase.auth().signInWithEmailAndPassword(email, password)
-        .then(() => { btn.disabled = false; })
+        .then(() => {
+          btn.disabled = false;
+          // After login, request FCM permission and get token
+          requestFCMToken();
+        })
         .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
     }
     function loginAs(name) {
@@ -1640,6 +1651,8 @@
       setDefaultDates();
       goTo('home');
       loadData();
+      // Request FCM token after login
+      requestFCMToken();
     }
     function logout() {
       stopChatListener();
@@ -1652,6 +1665,28 @@
         selectedMember = null;
         document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
         document.getElementById('pinbox').style.display = 'none';
+      });
+    }
+
+    // ─── FCM TOKEN REQUEST ────────────────────────────────────
+    function requestFCMToken() {
+      if (!messaging) return;
+      Notification.requestPermission().then(perm => {
+        if (perm === 'granted') {
+          return messaging.getToken({ vapidKey: VAPID_KEY });
+        } else {
+          console.warn('Notification permission denied');
+          return null;
+        }
+      }).then(token => {
+        if (token) {
+          console.log('✅ FCM token:', token);
+          // You can store this token in Firestore (e.g., /users/{uid}/fcmTokens)
+          // and later use it to send push messages from your server.
+          // For now, just log it.
+        }
+      }).catch(err => {
+        console.warn('❌ FCM token error:', err);
       });
     }
 
@@ -1953,9 +1988,7 @@
       `;
     }
 
-    // Navigate to member-specific tasks (filter by assignee)
     function goToMember(member) {
-      // Navigate to tasks and set search filter
       goTo('tasks');
       const searchInput = document.getElementById('task-search');
       if (searchInput) {
@@ -3783,7 +3816,7 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('✅ Wong Family app with Firestore chat and notifications loaded successfully.');
+    console.log('✅ Wong Family app with Firestore chat and FCM push notifications loaded successfully.');
   </script>
 </body>
 </html>
