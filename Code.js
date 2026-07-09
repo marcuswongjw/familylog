@@ -662,7 +662,10 @@ function doGet(e) {
     var output;
     switch (action) {
       case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
-      case 'get_chat':      output = getChatMessages();     break;
+      // Chat lives in Firestore only — Sheets chat endpoints removed
+      case 'get_chat':
+        output = { status: 'error', message: 'Chat is served from Firestore, not Sheets.' };
+        break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos();            break;
       case 'get_expenses':  output = getExpensesData();     break;
@@ -933,30 +936,12 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
-    // ── CHAT: add message ──
+    // ── CHAT: removed (Firestore is the only chat backend) ──
     if (noteLower === 'add_chat_message') {
-      var chatSheet = ss.getSheetByName('Chat');
-      if (!chatSheet) {
-        chatSheet = ss.insertSheet('Chat');
-        chatSheet.appendRow(['Timestamp', 'User', 'Message', 'ImageUrl', 'ImageId']);
-      }
-      var msgText = toStr(data.message) || '';
-      var imgUrl = '';
-      var imgId = '';
-      
-      // New chat images go through Firebase Storage in the PWA — not Drive.
-      // Reject base64 uploads here so we never create more public Drive links.
-      if (data.image && data.image.indexOf('data:image/') === 0) {
-        return {
-          status: 'error',
-          message: 'Chat images must be uploaded via the app (Firebase Storage). Drive uploads are disabled.'
-        };
-      }
-      if (data.imageUrl) imgUrl = toStr(data.imageUrl);
-
-      chatSheet.appendRow([new Date(), user, msgText, imgUrl, imgId]);
-      console.log('✅ Chat message added: ' + msgText.substring(0, 30));
-      return { status: 'ok' };
+      return {
+        status: 'error',
+        message: 'Chat uses Firestore. Send messages from the app Chat tab, not Sheets.'
+      };
     }
 
     // ── EXPENSE: delete ──
@@ -1289,7 +1274,7 @@ function getAllDashboardData(verifiedEmail) {
     appreciations:  adult ? getAppreciationsData(ss) : [],
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
     bucketList:     adult ? getBucketList(ss) : [],
-    chat:           getChatMessages(ss),
+    // chat is NOT included — live via Firestore only (avoids dual Sheets path)
     expenseGroups:  EXPENSE_GROUPS,
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || ''
@@ -1703,31 +1688,7 @@ function getLoveCheckinsData(ss) {
   return result;
 }
 
-function getChatMessages(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Chat');
-  if (!sheet) {
-    sheet = ss.insertSheet('Chat');
-    sheet.appendRow(['Timestamp', 'User', 'Message', 'ImageUrl', 'ImageId']);
-  }
-  var vals = sheet.getDataRange().getValues();
-  var tz = Session.getScriptTimeZone();
-  var result = [];
-  for (var i = 1; i < vals.length; i++) {
-    var row = vals[i];
-    if (!row[0]) continue;
-    var tDate = new Date(row[0]);
-    result.push({
-      timestamp: isNaN(tDate.getTime()) ? '' : Utilities.formatDate(tDate, tz, 'yyyy-MM-dd HH:mm:ss'),
-      user: toStr(row[1]),
-      message: toStr(row[2]),
-      imageUrl: toStr(row[3]),
-      imageId: toStr(row[4]),
-      rowNum: i + 1
-    });
-  }
-  return result.slice(-100);
-}
+// getChatMessages removed — chat is Firestore-only (see index.html startChatListener).
 
 // ============================================================
 // 7. HELPERS

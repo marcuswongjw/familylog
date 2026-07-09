@@ -164,6 +164,8 @@
     .fab{position:fixed;bottom:88px;right:20px;width:56px;height:56px;border-radius:50%;background:#4f86c6;color:#fff;font-size:28px;box-shadow:0 4px 16px rgba(79,134,198,.4);z-index:50;display:flex;align-items:center;justify-content:center;transition:transform .2s, box-shadow .2s;}
     .fab:active{transform:scale(0.92);}
     .fab.hide{display:none;}
+    /* Kids: hide Us sanctuary + fertility entry points (server also empties data) */
+    body.is-child .adult-only{display:none!important;}
 
     /* ── MODAL ── */
     .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
@@ -1018,7 +1020,7 @@
       <div class="nav-it" id="nav-chat" onclick="goTo('chat')"><div class="ni">💬</div><div>Chat</div></div>
       <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
       <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
-      <div class="nav-it" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
+      <div class="nav-it adult-only" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
     </div>
   </div>
 
@@ -1052,7 +1054,7 @@
         <span class="di-icon">🎂</span>
         <span class="di-lbl">Birthdays & Anniversaries</span>
       </div>
-      <div class="drawer-item" onclick="navigateDrawer('fertility')">
+      <div class="drawer-item adult-only" id="drawer-fertility" onclick="navigateDrawer('fertility')">
         <span class="di-icon">🌸</span>
         <span class="di-lbl">Fertility Tracker</span>
       </div>
@@ -1443,8 +1445,11 @@
     let chatImageBase64 = null;
     let memImageBase64 = null;
     let lastIdToken = '';   // cached Firebase token for beacon-style requests
+    // Parents only for Us / fertility (server also enforces). Default conservative until get_all.
+    const ADULT_EMAILS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
+    let isAdultUser = false;
 
-    // Firestore chat listener
+    // Firestore is the sole source of truth for chat (not Google Sheets)
     let chatUnsubscribe = null;
     let memoriesUnsubscribe = null;
 
@@ -1682,6 +1687,9 @@
       document.getElementById('hav').textContent = m ? m.emoji : '👤';
       document.getElementById('hdate').textContent = new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});
       setDefaultDates();
+      // Immediate adult gate from email (refined when get_all returns isAdult)
+      const email = (m && m.email) || currentUserEmail || '';
+      setAdultAccess(ADULT_EMAILS.includes(String(email).toLowerCase()));
       goTo('home');
       loadData();
       // Request FCM token after login
@@ -1692,6 +1700,9 @@
       stopMemoriesListener();
       firebase.auth().signOut().then(() => {
         user = null;
+        isAdultUser = false;
+        document.body.classList.remove('is-child');
+        data = {};
         document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');
         document.getElementById('login-password').value = '';
@@ -1700,6 +1711,16 @@
         document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
         document.getElementById('pinbox').style.display = 'none';
       });
+    }
+
+    /** Show/hide Us + Fertility entry points. Kids get body.is-child. */
+    function setAdultAccess(adult) {
+      isAdultUser = !!adult;
+      document.body.classList.toggle('is-child', !isAdultUser);
+      buildMore();
+      if (!isAdultUser && (section === 'us' || section === 'fertility')) {
+        goTo('home');
+      }
     }
 
     // ─── FCM TOKEN REQUEST ────────────────────────────────────
@@ -1813,13 +1834,17 @@
             delete window[cb];
             s.remove();
             if(r && r.status === 'error'){ showError('Server error: '+ (r.message||'unknown')); finishProgressBar(); resolve(); return; }
+            // Preserve Firestore live data — never take chat from Sheets/GAS
             const prevChat = data.chat;
             const prevMems = data.memories;
             data = r || {};
-            if (prevChat) data.chat = prevChat;
+            data.chat = Array.isArray(prevChat) ? prevChat : [];
             if (prevMems) data.memories = prevMems;
             if(r && r.expenseGroups) GROUPS = r.expenseGroups;
             if(r && r.bucketList) bucketList = r.bucketList;
+            // Server isAdult is authoritative; fall back to email allowlist
+            if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
+            else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
             buildDynamicSelectors();
             render(section);
             renderHome();
@@ -1955,10 +1980,15 @@
     }
 
     function goTo(id) {
+      // Adults-only destinations (UI + server); kids never enter these sections
+      if ((id === 'us' || id === 'fertility') && !isAdultUser) {
+        toast('That space is for Mom & Dad only 💖', true);
+        id = 'home';
+      }
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
       
-      // Handle chat listener
+      // Handle chat listener (Firestore only)
       if(id === 'chat') {
         startChatListener();
         // Request notification permission
@@ -1995,7 +2025,8 @@
       if (!el) return;
       const tiles = [
         {id:'budgets',icon:'📊',label:'Budgets'},{id:'memories',icon:'💛',label:'Memories'},
-        {id:'birthdays',icon:'🎂',label:'Birthdays'},{id:'fertility',icon:'🌸',label:'Fertility'},
+        {id:'birthdays',icon:'🎂',label:'Birthdays'},
+        ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'}] : []),
         {id:'recurring',icon:'🔄',label:'Recurring'},{id:'schedules',icon:'⛵',label:'Schedules'},
         {id:'travel',icon:'✈️',label:'Travel'}
       ];
