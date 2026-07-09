@@ -1,0 +1,66 @@
+rules_version = '2';
+// Wong Family Log — Storage rules for chat & memory images
+// New uploads must live under chat/{email}/… or memories/{email}/…
+// Old Drive links are unchanged and not governed by these rules.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function familyEmails() {
+      return [
+        'marcuswongjw@gmail.com',
+        'eleanor.jiamin@gmail.com',
+        'mikaelawonght@gmail.com',
+        'meaghanwongzx@gmail.com'
+      ];
+    }
+
+    function isFamily() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in familyEmails();
+    }
+
+    function callerEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isImageUnder5mb() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // chat/{ownerEmail}/{fileName}
+    match /chat/{ownerEmail}/{fileName} {
+      allow read: if isFamily();
+      allow write: if isFamily()
+        && ownerEmail.lower() == callerEmail()
+        && isImageUnder5mb();
+      allow delete: if isFamily() && ownerEmail.lower() == callerEmail();
+    }
+
+    // memories/{ownerEmail}/{fileName}
+    match /memories/{ownerEmail}/{fileName} {
+      allow read: if isFamily();
+      allow write: if isFamily()
+        && ownerEmail.lower() == callerEmail()
+        && isImageUnder5mb();
+      allow delete: if isFamily() && ownerEmail.lower() == callerEmail();
+    }
+
+    // Block legacy flat paths (chat/timestamp_name.jpg) for NEW writes.
+    // Existing objects remain readable if already public-URL based; rules
+    // only apply to SDK access. Prefer migrating new uploads to nested paths.
+    match /chat/{fileName} {
+      allow read: if isFamily();
+      allow write: if false;
+    }
+    match /memories/{fileName} {
+      allow read: if isFamily();
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

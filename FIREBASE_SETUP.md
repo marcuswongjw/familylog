@@ -38,15 +38,15 @@ const firebaseConfig = {
 
 For each family member, you need to create an account where:
 - **Email**: Use the email you added to the MEMBERS array in index.html
-- **Password**: Set this to their 4-digit PIN (e.g., "1811" for Marcus)
+- **Password**: Exactly a **6-digit numeric PIN** (same policy for kids and parents), e.g. `181109`
 
 ### How to create users:
 
 **Option A: Using Firebase Console (Easiest)**
 1. Go to **Build** → **Authentication** → **Users** tab
 2. Click "Add user"
-3. Enter the email (e.g., `marcus@example.com`)
-4. Enter the password (their 4-digit PIN, e.g., `1811`)
+3. Enter the email (e.g., `marcuswongjw@gmail.com`)
+4. Enter the password (their **6-digit PIN**, e.g. `181109`)
 5. Click "Add user"
 6. Repeat for each family member
 
@@ -84,14 +84,14 @@ const MEMBERS = [
 
 ⚠️ **Important considerations:**
 - The emails in the MEMBERS array are public (this is okay)
-- Prefer strong passwords over short PINs when possible
+- Family policy: **6-digit numeric PINs** for everyone (kids same as parents). The login screen enforces this format.
 - Firebase Authentication provides rate-limiting against brute force
 - In Apps Script **Project Settings → Script properties**, set:
   - `APPROVAL_SECRET` — long random string used to sign expense approval links
   - Optional: `ADULT_EMAILS`, `ALLOWED_EMAILS` (comma-separated)
 - After changing `Code.js`, re-paste into Apps Script and **Deploy → Manage deployments → Edit → New version**
-- After changing `index.js`, run `firebase deploy --only functions`
-- Harden Firestore security rules so only authenticated family emails can read/write `chat` and `users`
+- Deploy backend: `firebase deploy --only functions,firestore:rules,storage`
+- Firestore + Storage rules allow only the four family emails; chat delete = own messages only; new images go under `chat/{email}/` and `memories/{email}/`
 
 ## Troubleshooting
 

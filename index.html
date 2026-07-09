@@ -1540,9 +1540,21 @@
         });
       }
 
-      // Deep link: #chat (also used when openWindow loads the app from a notification)
+      // Deep links: ?open=chat and #chat (notification click / PWA cold start)
       window.addEventListener('hashchange', () => {
-        if (location.hash === '#chat') handleNotificationNavigation('chat');
+        const t = screenFromLocation();
+        if (t) handleNotificationNavigation(t);
+      });
+      // iOS PWA: pageshow fires when returning from notification / bfcache
+      window.addEventListener('pageshow', () => {
+        const t = screenFromLocation();
+        if (t) handleNotificationNavigation(t);
+      });
+      window.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          const t = screenFromLocation();
+          if (t) handleNotificationNavigation(t);
+        }
       });
 
       firebase.auth().onAuthStateChanged(user => {
@@ -1551,7 +1563,7 @@
           const member = MEMBERS.find(m => m.email === user.email);
           if (member) loginAs(member.name);
           else loginAs(user.email.split('@')[0]);
-          // After login, honor pending notification / hash target
+          // After login, honor pending notification / hash / query target
           applyPendingNotificationScreen();
         } else {
           document.getElementById('login-screen').classList.add('active');
@@ -1648,6 +1660,11 @@
       if(!password){ document.getElementById('login-error').textContent = 'Please enter your password.'; return; }
       const email = selectedMember.email, errorEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
       btn.disabled = true; errorEl.textContent = '';
+      // Family policy: 6-digit numeric PIN (same for kids and parents)
+      if (!/^\d{6}$/.test(password)) {
+        errorEl.textContent = 'PIN must be exactly 6 digits.';
+        return;
+      }
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(() => {
           btn.disabled = false;
@@ -1893,12 +1910,33 @@
     // ─── NAVIGATION ───────────────────────────────────────────
     const NAV_SECONDARY = ['tasks','budgets','memories','fertility','recurring','birthdays','schedules','travel'];
 
-    /** Navigate from a notification tap (or #chat deep link). Works before/after login. */
+    /** Read deep-link target from ?open= or #hash (iOS PWAs keep query more reliably). */
+    function screenFromLocation() {
+      try {
+        const q = new URLSearchParams(location.search).get('open');
+        if (q) return q.replace(/^\//, '') || 'chat';
+      } catch (e) { /* ignore */ }
+      if (location.hash === '#chat' || location.hash === '#/chat') return 'chat';
+      if (location.hash && location.hash.length > 1) {
+        const h = location.hash.replace(/^#\/?/, '');
+        if (['chat', 'home', 'calendar', 'expenses', 'us'].includes(h)) return h;
+      }
+      return null;
+    }
+
+    /** Navigate from a notification tap (or deep link). Works before/after login. */
     function handleNotificationNavigation(screen) {
       const target = screen || 'chat';
       if (user) {
         goTo(target);
-        try { if (location.hash !== '#' + target) history.replaceState(null, '', '#' + target); } catch (e) {}
+        try {
+          const url = new URL(location.href);
+          url.searchParams.set('open', target);
+          url.hash = target;
+          history.replaceState(null, '', url.pathname + url.search + url.hash);
+        } catch (e) {
+          try { history.replaceState(null, '', '?open=' + encodeURIComponent(target) + '#' + target); } catch (e2) {}
+        }
       } else {
         try { sessionStorage.setItem('wf_pending_screen', target); } catch (e) {}
       }
@@ -1907,11 +1945,12 @@
     function applyPendingNotificationScreen() {
       let target = null;
       try { target = sessionStorage.getItem('wf_pending_screen'); } catch (e) {}
-      if (!target && location.hash === '#chat') target = 'chat';
+      if (!target) target = screenFromLocation();
       if (target) {
         try { sessionStorage.removeItem('wf_pending_screen'); } catch (e) {}
-        // Defer so login UI has finished switching screens
-        setTimeout(() => goTo(target), 80);
+        // Defer so login UI has finished switching screens (iOS needs a beat)
+        setTimeout(() => goTo(target), 120);
+        setTimeout(() => { if (section !== target) goTo(target); }, 600);
       }
     }
 
@@ -2995,12 +3034,14 @@
         
         let imageUrl = '';
         
-        // Upload image to Firebase Storage if present
+        // Upload image to Firebase Storage (path: memories/{email}/…)
         if (memImageBase64) {
           try {
+            const authUser = firebase.auth().currentUser;
+            const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
             const blob = dataURItoBlob(memImageBase64);
-            const ref = storage.ref(`memories/${Date.now()}_${user}.jpg`);
-            const snapshot = await ref.put(blob);
+            const ref = storage.ref(`memories/${emailKey}/${Date.now()}.jpg`);
+            const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
             imageUrl = await snapshot.ref.getDownloadURL();
           } catch (err) {
             toast('Image upload failed: ' + err.message, true);
@@ -3011,8 +3052,10 @@
         }
         
         // Save memory metadata in Firestore
+        const authUser = firebase.auth().currentUser;
         await db.collection('memories').add({
           loggedBy: user || 'Unknown',
+          loggedByEmail: (authUser && authUser.email) || currentUserEmail || '',
           date: v('mem-date') || new Date().toISOString().slice(0,10),
           type: gc('mt') || 'Moment',
           person: gc('mp') || 'Everyone',
@@ -3795,12 +3838,14 @@
 
       let imageUrl = '';
 
-      // Upload image if present
+      // Upload image to Firebase Storage (path: chat/{email}/…) — not Drive
       if (chatImageBase64) {
         try {
+          const authUser = firebase.auth().currentUser;
+          const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
           const blob = dataURItoBlob(chatImageBase64);
-          const ref = storage.ref(`chat/${Date.now()}_${user}.jpg`);
-          const snapshot = await ref.put(blob);
+          const ref = storage.ref(`chat/${emailKey}/${Date.now()}.jpg`);
+          const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
           imageUrl = await snapshot.ref.getDownloadURL();
         } catch (err) {
           toast('Image upload failed: ' + err.message, true);

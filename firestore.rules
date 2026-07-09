@@ -1,0 +1,71 @@
+rules_version = '2';
+// Wong Family Log — Firestore security rules
+// Only the four family emails may access chat / users / memories.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function familyEmails() {
+      return [
+        'marcuswongjw@gmail.com',
+        'eleanor.jiamin@gmail.com',
+        'mikaelawonght@gmail.com',
+        'meaghanwongzx@gmail.com'
+      ];
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function callerEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isFamily() {
+      return isSignedIn() && callerEmail() in familyEmails();
+    }
+
+    // ── Chat: all family can read & create; only sender can delete ──
+    match /chat/{messageId} {
+      allow read: if isFamily();
+      allow create: if isFamily()
+        && request.resource.data.keys().hasAll(['user', 'senderEmail', 'timestamp'])
+        && request.resource.data.senderEmail is string
+        && request.resource.data.senderEmail.lower() == callerEmail()
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 4000;
+      // No arbitrary edits of other people's messages
+      allow update: if false;
+      allow delete: if isFamily()
+        && resource.data.senderEmail is string
+        && resource.data.senderEmail.lower() == callerEmail();
+    }
+
+    // ── Users / FCM tokens: each member writes only their own doc ──
+    // Doc id is the member's email (see requestFCMToken in index.html).
+    match /users/{userId} {
+      allow read: if isFamily();
+      allow create, update: if isFamily()
+        && userId.lower() == callerEmail()
+        && (!('email' in request.resource.data)
+            || request.resource.data.email.lower() == callerEmail());
+      allow delete: if false;
+    }
+
+    // ── Memories (Firestore metadata; images live in Storage) ──
+    match /memories/{memoryId} {
+      allow read: if isFamily();
+      allow create: if isFamily()
+        && request.resource.data.loggedByEmail is string
+        && request.resource.data.loggedByEmail.lower() == callerEmail();
+      allow update, delete: if isFamily()
+        && resource.data.loggedByEmail is string
+        && resource.data.loggedByEmail.lower() == callerEmail();
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

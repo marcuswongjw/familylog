@@ -5,8 +5,19 @@
       "codebase": "default",
       "ignore": [
         "node_modules",
-        ".git"
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.png",
+        "favicon.png",
+        "icon.png"
       ]
     }
-  ]
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
 }

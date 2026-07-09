@@ -944,36 +944,16 @@ function handleWriteInner_(data) {
       var imgUrl = '';
       var imgId = '';
       
+      // New chat images go through Firebase Storage in the PWA — not Drive.
+      // Reject base64 uploads here so we never create more public Drive links.
       if (data.image && data.image.indexOf('data:image/') === 0) {
-        try {
-          var folderName = 'FamilyLogChatImages';
-          var folders = DriveApp.getFoldersByName(folderName);
-          var folder;
-          if (folders.hasNext()) {
-            folder = folders.next();
-          } else {
-            folder = DriveApp.createFolder(folderName);
-          }
-          
-          var parts = data.image.split(',');
-          var mimeType = parts[0].match(/:(.*?);/)[1];
-          var base64Data = parts[1];
-          var decoded = Utilities.base64Decode(base64Data);
-          
-          var ext = mimeType.split('/')[1] || 'jpg';
-          var filename = 'chat_' + Date.now() + '.' + ext;
-          var blob = Utilities.newBlob(decoded, mimeType, filename);
-          var file = folder.createFile(blob);
-          
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          
-          imgId = file.getId();
-          imgUrl = 'https://drive.google.com/uc?export=view&id=' + imgId;
-        } catch (uploadErr) {
-          logSheet.appendRow([new Date(), 'CHAT IMAGE UPLOAD ERROR', uploadErr.toString()]);
-        }
+        return {
+          status: 'error',
+          message: 'Chat images must be uploaded via the app (Firebase Storage). Drive uploads are disabled.'
+        };
       }
-      
+      if (data.imageUrl) imgUrl = toStr(data.imageUrl);
+
       chatSheet.appendRow([new Date(), user, msgText, imgUrl, imgId]);
       console.log('✅ Chat message added: ' + msgText.substring(0, 30));
       return { status: 'ok' };
@@ -1085,35 +1065,14 @@ function handleWriteInner_(data) {
       var imgUrl = '';
       var imgId = '';
       
+      // New memory images go through Firebase Storage in the PWA — not Drive.
       if (data.image && data.image.indexOf('data:image/') === 0) {
-        try {
-          var folderName = 'FamilyLogChatImages';
-          var folders = DriveApp.getFoldersByName(folderName);
-          var folder;
-          if (folders.hasNext()) {
-            folder = folders.next();
-          } else {
-            folder = DriveApp.createFolder(folderName);
-          }
-          
-          var parts = data.image.split(',');
-          var mimeType = parts[0].match(/:(.*?);/)[1];
-          var base64Data = parts[1];
-          var decoded = Utilities.base64Decode(base64Data);
-          
-          var ext = mimeType.split('/')[1] || 'jpg';
-          var filename = 'mem_' + Date.now() + '.' + ext;
-          var blob = Utilities.newBlob(decoded, mimeType, filename);
-          var file = folder.createFile(blob);
-          
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          
-          imgId = file.getId();
-          imgUrl = 'https://drive.google.com/uc?export=view&id=' + imgId;
-        } catch (uploadErr) {
-          logSheet.appendRow([new Date(), 'MEMORY IMAGE UPLOAD ERROR', uploadErr.toString()]);
-        }
+        return {
+          status: 'error',
+          message: 'Memory images must be uploaded via the app (Firebase Storage). Drive uploads are disabled.'
+        };
       }
+      if (data.imageUrl) imgUrl = toStr(data.imageUrl);
 
       var memSheet = ss.getSheetByName('Memories');
       if (!memSheet) {
