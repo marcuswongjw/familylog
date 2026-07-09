@@ -1521,16 +1521,29 @@
       const pill = document.getElementById('pill-'+activeSchedChild);
       if (pill) pill.classList.add('active');
 
-      // Service worker (for FCM)
+      // Service worker (for FCM + notification click → chat)
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('firebase-messaging-sw.js')
           .then((registration) => {
             console.log('✅ FCM Service Worker registered');
-            // Pass the registration to Firebase Messaging
             messaging.useServiceWorker(registration);
+            // Pick up a new SW version (v3+) without waiting forever
+            registration.update().catch(() => {});
           })
           .catch(err => console.warn('❌ SW registration failed:', err));
+
+        // When user taps a push while the app is already open / focused
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'NOTIFICATION_CLICK') {
+            handleNotificationNavigation(event.data.screen || 'chat');
+          }
+        });
       }
+
+      // Deep link: #chat (also used when openWindow loads the app from a notification)
+      window.addEventListener('hashchange', () => {
+        if (location.hash === '#chat') handleNotificationNavigation('chat');
+      });
 
       firebase.auth().onAuthStateChanged(user => {
         if (user) {
@@ -1538,6 +1551,8 @@
           const member = MEMBERS.find(m => m.email === user.email);
           if (member) loginAs(member.name);
           else loginAs(user.email.split('@')[0]);
+          // After login, honor pending notification / hash target
+          applyPendingNotificationScreen();
         } else {
           document.getElementById('login-screen').classList.add('active');
           document.getElementById('app-screen').classList.remove('active');
@@ -1877,6 +1892,29 @@
 
     // ─── NAVIGATION ───────────────────────────────────────────
     const NAV_SECONDARY = ['tasks','budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+
+    /** Navigate from a notification tap (or #chat deep link). Works before/after login. */
+    function handleNotificationNavigation(screen) {
+      const target = screen || 'chat';
+      if (user) {
+        goTo(target);
+        try { if (location.hash !== '#' + target) history.replaceState(null, '', '#' + target); } catch (e) {}
+      } else {
+        try { sessionStorage.setItem('wf_pending_screen', target); } catch (e) {}
+      }
+    }
+
+    function applyPendingNotificationScreen() {
+      let target = null;
+      try { target = sessionStorage.getItem('wf_pending_screen'); } catch (e) {}
+      if (!target && location.hash === '#chat') target = 'chat';
+      if (target) {
+        try { sessionStorage.removeItem('wf_pending_screen'); } catch (e) {}
+        // Defer so login UI has finished switching screens
+        setTimeout(() => goTo(target), 80);
+      }
+    }
+
     function goTo(id) {
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
@@ -3578,19 +3616,43 @@
       });
     }
 
-    // Show notification for new messages
+    // Show notification for new messages (when tab is in background but still open)
     function showChatNotification(message) {
       if (!notificationPermissionGranted) return;
-      if (document.hidden) {
-        try {
-          const notif = new Notification('💬 New message from ' + message.user, {
-            body: message.message || '📷 Image',
-            icon: '/icon.png'
-          });
-          setTimeout(() => notif.close(), 4000);
-        } catch (e) {
-          console.warn('Notification error:', e);
-        }
+      if (!document.hidden) return;
+      const title = '💬 New message from ' + (message.user || 'Someone');
+      const body = message.message || '📷 Image';
+      const opts = {
+        body,
+        icon: 'favicon.png',
+        tag: 'familylog-chat',
+        data: { screen: 'chat' }
+      };
+      // Prefer SW so notificationclick opens Chat (same path as FCM)
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, opts);
+        }).catch(() => {
+          try {
+            const notif = new Notification(title, opts);
+            notif.onclick = () => {
+              window.focus();
+              handleNotificationNavigation('chat');
+              notif.close();
+            };
+          } catch (e) { console.warn('Notification error:', e); }
+        });
+        return;
+      }
+      try {
+        const notif = new Notification(title, opts);
+        notif.onclick = () => {
+          window.focus();
+          handleNotificationNavigation('chat');
+          notif.close();
+        };
+      } catch (e) {
+        console.warn('Notification error:', e);
       }
     }
 
