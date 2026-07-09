@@ -1800,28 +1800,141 @@ function parseTrust(body) {
   return null;
 }
 
+/**
+ * Shopee payment / order confirmation emails.
+ * - Amount = order total paid (Amount Paid / Total Payment), never a single line-item Price.
+ * - Description includes ALL numbered products (not only item 1).
+ */
 function parseShopee(body) {
-  var amtMatch = body.match(/(?:Amount Paid|Total Payment):\s*(?:S?\$|SGD)\s*([\d\.]+)/i);
-  var orderMatch = body.match(/Order ID:\s*(#?\w+)/i);
-  var dateMatch = body.match(/(?:Payment Date|Order Date):\s*(\d{1,2}\s+[a-z]{3}\s+\d{4})/i);
-  var itemMatch = body.match(/^\s*1\.\s+(.+)$/m) || body.match(/1\.\s+(.+?)(?:\r|\n)/);
-  if (amtMatch) {
-    var amount = parseFloat(amtMatch[1]);
-    var orderId = orderMatch ? orderMatch[1].trim() : '';
-    var merchant = 'Shopee';
-    if (itemMatch) {
-      var itemName = itemMatch[1].trim();
-      if (itemName.length > 50) itemName = itemName.substring(0, 47) + '...';
-      merchant = 'Shopee: ' + itemName;
-    } else if (orderId) {
-      merchant = 'Shopee Order ' + orderId;
+  if (!body) return null;
+  var text = String(body);
+
+  // --- Order total (prefer paid totals; never "Price:" on a line item) ---
+  var amount = null;
+  var totalPatterns = [
+    /Amount\s*Paid\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /Total\s*Payment\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /Grand\s*Total\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /Order\s*Total\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /Total\s*Amount\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i
+  ];
+  for (var tp = 0; tp < totalPatterns.length; tp++) {
+    var tm = text.match(totalPatterns[tp]);
+    if (tm) {
+      amount = parseFloat(String(tm[1]).replace(/,/g, ''));
+      if (!isNaN(amount) && amount > 0) break;
+      amount = null;
     }
-    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
-    if (dateMatch) dateStr = dateMatch[1].trim();
-    var txRef = orderId || null;
-    return { amount: amount, merchant: merchant, dateStr: dateStr, txRef: txRef };
   }
-  return null;
+  // Last resort only: merchandise subtotal (pre-discount), still not line Price
+  if (amount === null) {
+    var sub = text.match(/Merchandise\s*Subtotal\s*[:：]\s*(?:S?\$|SGD)\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (sub) {
+      amount = parseFloat(String(sub[1]).replace(/,/g, ''));
+      if (isNaN(amount) || amount <= 0) amount = null;
+    }
+  }
+  if (amount === null) return null;
+
+  // --- All line items: "1. name", "2. name", ... ---
+  var items = [];
+  var itemRe = /^\s*(\d+)\.\s+(.+?)\s*$/gm;
+  var im;
+  while ((im = itemRe.exec(text)) !== null) {
+    var rawName = im[2].trim().replace(/\s+/g, ' ');
+    if (!rawName || rawName.length < 2) continue;
+    // Skip numbered non-product lines
+    if (/^(order|payment|shipping|delivery|subtotal|total|seller)/i.test(rawName)) continue;
+    // Quantity often sits on the next few lines after the title
+    var window = text.substring(im.index, Math.min(text.length, im.index + 500));
+    var qtyMatch = window.match(/Quantity\s*[:：]\s*(\d+)/i);
+    var qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+    if (isNaN(qty) || qty < 1) qty = 1;
+    items.push({ name: rawName, qty: qty });
+  }
+  if (items.length === 0) {
+    var prodMatch = text.match(/Product\s*Name\s*[:：]\s*(.+)/i);
+    if (prodMatch) {
+      items.push({ name: prodMatch[1].trim().split(/\r?\n/)[0].trim(), qty: 1 });
+    }
+  }
+
+  var orderMatch = text.match(/Order\s*ID\s*[:：]\s*(#?[\w-]+)/i)
+    || text.match(/order\s+(#?[\w-]+)\s+has been confirmed/i);
+  var orderId = orderMatch ? orderMatch[1].trim() : '';
+
+  var sellerMatch = text.match(/Seller\s*[:：]\s*(.+)/i);
+  var seller = sellerMatch ? sellerMatch[1].trim().split(/\r?\n/)[0].trim() : '';
+
+  var dateMatch = text.match(/(?:Payment Date|Order Date)\s*[:：]\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})/i);
+  var dateStr = new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (dateMatch) dateStr = dateMatch[1].trim();
+
+  // Description covers every product (capped for sheet cells)
+  var merchant = formatShopeeMerchant_(items, seller, orderId);
+
+  return {
+    amount: amount,
+    merchant: merchant,
+    dateStr: dateStr,
+    txRef: orderId || null,
+    itemCount: items.length,
+    items: items
+  };
+}
+
+/** Build a Shopee expense note from all line items. */
+function formatShopeeMerchant_(items, seller, orderId) {
+  if (!items || items.length === 0) {
+    if (seller) return 'Shopee: ' + seller;
+    if (orderId) return 'Shopee Order ' + orderId;
+    return 'Shopee';
+  }
+  function shortLabel(it, maxLen) {
+    var n = it.name || '';
+    if (it.qty > 1) n = it.qty + '× ' + n;
+    if (n.length > maxLen) n = n.substring(0, maxLen - 3) + '...';
+    return n;
+  }
+  if (items.length === 1) {
+    return 'Shopee: ' + shortLabel(items[0], 100);
+  }
+  var maxList = 5;
+  var parts = [];
+  for (var i = 0; i < items.length && i < maxList; i++) {
+    parts.push(shortLabel(items[i], 40));
+  }
+  var more = items.length > maxList ? ' (+' + (items.length - maxList) + ' more)' : '';
+  var desc = 'Shopee (' + items.length + ' items): ' + parts.join('; ') + more;
+  if (desc.length > 200) desc = desc.substring(0, 197) + '...';
+  return desc;
+}
+
+/**
+ * Prefer plain text; if thin (HTML-only emails), strip HTML so item lists survive.
+ */
+function emailBodyText_(msg) {
+  if (!msg) return '';
+  var plain = '';
+  try { plain = msg.getPlainBody() || ''; } catch (e) { plain = ''; }
+  if (plain && plain.replace(/\s+/g, ' ').trim().length >= 80) return plain;
+  var html = '';
+  try { html = msg.getBody() || ''; } catch (e2) { html = ''; }
+  if (!html) return plain || '';
+  return html
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*p\s*>/gi, '\n')
+    .replace(/<\s*\/\s*div\s*>/gi, '\n')
+    .replace(/<\s*\/\s*tr\s*>/gi, '\n')
+    .replace(/<\s*li[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, function(_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 function parseDbsPayNow(body, msg) {
@@ -1973,7 +2086,8 @@ function scanInboxForTransactions() {
       var hadParseFailure = false;
       messages.forEach(function(msg) {
         if (msg.isStarred()) return;
-        var body = msg.getPlainBody();
+        // Plain text first; fall back to stripped HTML (Shopee is often HTML-heavy)
+        var body = typeof emailBodyText_ === 'function' ? emailBodyText_(msg) : (msg.getPlainBody() || '');
         var parsed = tpl.parse(body, msg);
         if (parsed) {
           var amount = parsed.amount;
@@ -1981,7 +2095,10 @@ function scanInboxForTransactions() {
           if (merchant.toLowerCase().indexOf('fairprice') !== -1) merchant = 'NTUC FairPrice';
           var dateStr = parsed.dateStr;
           var txRef = parsed.txRef || null;
-          var details = proposeExpenseDetails(tpl.name === 'shopee' ? 'Shopee' : merchant);
+          // Categorise Shopee by store name, not the long multi-item description
+          var details = proposeExpenseDetails(
+            tpl.name === 'shopee' || merchant.indexOf('Shopee') === 0 ? 'Shopee' : merchant
+          );
           var category = details.category;
           var account = details.account;
 
@@ -2306,12 +2423,20 @@ function testAllScanners() {
                    "Variation: Zootopia-Pink,24oz (710ml)\n" +
                    "Quantity: 1\n" +
                    "Price: S$31.00\n\n" +
-                   "Merchandise Subtotal: S$31.00\n" +
-                   "Total Payment: S$18.90\n\n" +
+                   "2. Clear Soft TPU Phone Case for iPhone 15\n" +
+                   "Variation: Transparent\n" +
+                   "Quantity: 2\n" +
+                   "Price: S$12.00\n\n" +
+                   "3. USB-C Cable 1m Braided\n" +
+                   "Quantity: 1\n" +
+                   "Price: S$5.50\n\n" +
+                   "Merchandise Subtotal: S$60.50\n" +
+                   "Shipping Fee: S$0.00\n" +
+                   "Total Payment: S$42.50\n\n" +
                    "PAYMENT DETAILS\n" +
                    "Payment Method: Mari Credit Card Instant Checkout\n" +
                    "Payment Date: 09 Jun 2026 14:54:39\n" +
-                   "Amount Paid: S$18.90";
+                   "Amount Paid: S$42.50";
 
   console.log('=== TEST: PAYLAH ===');
   var parsed = parsePayLah(mockPayLah);
@@ -2323,10 +2448,17 @@ function testAllScanners() {
   if (parsed2) console.log('Trust: ' + parsed2.merchant + ' $' + parsed2.amount + (parsed2.txRef ? ' Ref: ' + parsed2.txRef : ''));
   else console.log('Trust: failed');
 
-  console.log('=== TEST: SHOPEE ===');
+  console.log('=== TEST: SHOPEE (multi-item) ===');
   var parsed3 = parseShopee(mockShopee);
-  if (parsed3) console.log('Shopee: ' + parsed3.merchant + ' $' + parsed3.amount + (parsed3.txRef ? ' Ref: ' + parsed3.txRef : ''));
-  else console.log('Shopee: failed');
+  if (parsed3) {
+    console.log('Shopee amount (must be 42.50 paid total, NOT first Price 31.00): $' + parsed3.amount);
+    console.log('Shopee items: ' + (parsed3.itemCount || 0) + ' → ' + parsed3.merchant);
+    console.log('Shopee ref: ' + (parsed3.txRef || ''));
+    if (Math.abs(parsed3.amount - 42.50) > 0.01) console.log('FAIL: amount should be order total 42.50');
+    if ((parsed3.itemCount || 0) < 3) console.log('FAIL: should detect 3 line items');
+  } else {
+    console.log('Shopee: failed');
+  }
 }
 
 function testVerifyToken() {
