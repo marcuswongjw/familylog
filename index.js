@@ -7,7 +7,10 @@ exports.sendChatNotification = functions.firestore
   .document('chat/{messageId}')
   .onCreate(async (snap, context) => {
     const message = snap.data();
-    const sender = message.user; // e.g., "Marcus"
+    const senderName = message.user || 'Someone';
+    // Prefer explicit senderEmail; fall back to doc id pattern is not used —
+    // must compare email-to-email (users collection is keyed by email).
+    const senderEmail = String(message.senderEmail || '').toLowerCase().trim();
     const text = message.message || '📷 Image';
     const imageUrl = message.imageUrl || '';
 
@@ -16,22 +19,31 @@ exports.sendChatNotification = functions.firestore
     const tokens = [];
     usersSnapshot.forEach(doc => {
       const userData = doc.data();
-      if (userData.email !== sender && userData.fcmTokens) {
+      const memberEmail = String(userData.email || doc.id || '').toLowerCase().trim();
+      // Skip the sender (email match). If senderEmail is missing, still notify
+      // everyone except when name matches stored name (legacy messages).
+      const isSender = senderEmail
+        ? memberEmail === senderEmail
+        : (userData.name && userData.name === senderName);
+      if (!isSender && userData.fcmTokens && userData.fcmTokens.length) {
         tokens.push(...userData.fcmTokens);
       }
     });
 
-    if (tokens.length === 0) {
+    // Deduplicate tokens
+    const uniqueTokens = [...new Set(tokens.filter(Boolean))];
+
+    if (uniqueTokens.length === 0) {
       console.log('No tokens to send to.');
-      return;
+      return null;
     }
 
     // 2. Build the notification payload
     const payload = {
       notification: {
-        title: `💬 New message from ${sender}`,
-        body: text,
-        image: imageUrl || undefined,
+        title: `💬 New message from ${senderName}`,
+        body: text.length > 120 ? text.slice(0, 117) + '…' : text,
+        ...(imageUrl ? { image: imageUrl } : {}),
       },
       data: {
         click_action: 'FLUTTER_NOTIFICATION_CLICK',
@@ -42,11 +54,13 @@ exports.sendChatNotification = functions.firestore
     // 3. Send to all tokens
     try {
       const response = await admin.messaging().sendEachForMulticast({
-        tokens: tokens,
+        tokens: uniqueTokens,
         ...payload,
       });
-      console.log('Successfully sent messages:', response);
+      console.log('Successfully sent messages:', response.successCount, 'ok /', response.failureCount, 'failed');
+      return response;
     } catch (error) {
       console.error('Error sending notifications:', error);
+      return null;
     }
   });

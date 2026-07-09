@@ -76,15 +76,22 @@ const MEMBERS = [
 ## Security Notes
 
 ✅ **What's secure now:**
-- PINs are no longer visible in the source code
-- PIN verification happens on Firebase servers
-- Users can't inspect the page to find other people's PINs
+- Passwords are verified by Firebase (not embedded in the page source)
+- Google Apps Script maps the verified email → member name server-side (client cannot spoof identity)
+- Us / fertility / bucket list data is withheld for non-parent accounts on the server
+- Expense approval email links are HMAC-signed and expire after 7 days; amount/date come from the pending sheet
+- Chat push notifications exclude the sender by email (`senderEmail` on each chat doc)
 
 ⚠️ **Important considerations:**
 - The emails in the MEMBERS array are public (this is okay)
-- Make sure each user's password is exactly their 4-digit PIN
-- Firebase Authentication provides rate-limiting to prevent brute force attacks
-- For production, consider enabling additional security rules in Firebase
+- Prefer strong passwords over short PINs when possible
+- Firebase Authentication provides rate-limiting against brute force
+- In Apps Script **Project Settings → Script properties**, set:
+  - `APPROVAL_SECRET` — long random string used to sign expense approval links
+  - Optional: `ADULT_EMAILS`, `ALLOWED_EMAILS` (comma-separated)
+- After changing `Code.js`, re-paste into Apps Script and **Deploy → Manage deployments → Edit → New version**
+- After changing `index.js`, run `firebase deploy --only functions`
+- Harden Firestore security rules so only authenticated family emails can read/write `chat` and `users`
 
 ## Troubleshooting
 

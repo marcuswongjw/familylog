@@ -18,6 +18,18 @@ var DEFAULT_ALLOWED_EMAILS = [
   "mikaelawonght@gmail.com",
   "meaghanwongzx@gmail.com"
 ];
+// Parents only — Us sanctuary, fertility, bucket list (server-enforced).
+var DEFAULT_ADULT_EMAILS = [
+  "marcuswongjw@gmail.com",
+  "eleanor.jiamin@gmail.com"
+];
+// Canonical email → display name. Client-supplied "user" is never trusted.
+var DEFAULT_EMAIL_TO_MEMBER = {
+  "marcuswongjw@gmail.com": "Marcus",
+  "eleanor.jiamin@gmail.com": "Eleanor",
+  "mikaelawonght@gmail.com": "Mikaela",
+  "meaghanwongzx@gmail.com": "Meaghan"
+};
 
 // ─── SCRIPT PROPERTIES HELPER ──────────────────────────────
 function getScriptProperty(key, defaultValue) {
@@ -35,7 +47,9 @@ var CONFIG = {
   NOTIFY_EMAILS:  getScriptProperty('NOTIFY_EMAILS', DEFAULT_NOTIFY_EMAILS.join(',')).split(',').map(function(s){ return s.trim(); }),
   FIREBASE_API_KEY: getScriptProperty('FIREBASE_API_KEY', DEFAULT_FIREBASE_API_KEY),
   ALLOWED_EMAILS: getScriptProperty('ALLOWED_EMAILS', DEFAULT_ALLOWED_EMAILS.join(',')).split(',').map(function(s){ return s.trim().toLowerCase(); }),
-  APPROVAL_EMAIL: getScriptProperty('APPROVAL_EMAIL', 'marcuswongjw@gmail.com')
+  ADULT_EMAILS:   getScriptProperty('ADULT_EMAILS', DEFAULT_ADULT_EMAILS.join(',')).split(',').map(function(s){ return s.trim().toLowerCase(); }),
+  APPROVAL_EMAIL: getScriptProperty('APPROVAL_EMAIL', 'marcuswongjw@gmail.com'),
+  APPROVAL_SECRET: getScriptProperty('APPROVAL_SECRET', '')
 };
 
 var CALENDAR_ID    = CONFIG.CALENDAR_ID;
@@ -43,10 +57,18 @@ var WEB_APP_URL    = CONFIG.WEB_APP_URL;
 var NOTIFY_EMAILS  = CONFIG.NOTIFY_EMAILS;
 var FIREBASE_API_KEY = CONFIG.FIREBASE_API_KEY || DEFAULT_FIREBASE_API_KEY;
 var ALLOWED_EMAILS = CONFIG.ALLOWED_EMAILS;
+var ADULT_EMAILS   = CONFIG.ADULT_EMAILS;
 var APPROVAL_EMAIL = CONFIG.APPROVAL_EMAIL;
+var APPROVAL_SECRET = CONFIG.APPROVAL_SECRET;
 
 // ─── FAMILY MEMBERS & EXPENSE GROUPS ────────────────────────
 var FAMILY_MEMBERS = ["Mikaela", "Meaghan", "Eleanor", "Marcus", "Everyone"];
+var EMAIL_TO_MEMBER = DEFAULT_EMAIL_TO_MEMBER;
+// Adult-only write actions (Us / fertility / couple bucket list)
+var ADULT_ONLY_NOTES = [
+  'add_appreciation', 'add_love_checkin', 'add_fertility',
+  'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item'
+];
 
 var EXPENSE_GROUPS = {
   '👶 Children':      ['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
@@ -70,10 +92,60 @@ function toStr(val) {
   return String(val).valueOf();
 }
 
-// ─── FIREBASE TOKEN VERIFICATION ──────────────────────────
+// ─── IDENTITY & ROLE HELPERS ──────────────────────────────
 function isAllowedEmail_(email) {
   return ALLOWED_EMAILS.indexOf(toStr(email).toLowerCase()) !== -1;
 }
+
+function isAdultEmail_(email) {
+  return ADULT_EMAILS.indexOf(toStr(email).toLowerCase()) !== -1;
+}
+
+/** Map verified Firebase email → family display name. Never trust client. */
+function memberNameFromEmail_(email) {
+  var key = toStr(email).toLowerCase();
+  if (EMAIL_TO_MEMBER[key]) return EMAIL_TO_MEMBER[key];
+  return null;
+}
+
+// ─── EXPENSE APPROVAL SIGNING ─────────────────────────────
+// Links in approval emails carry id + exp + HMAC so guessing pending
+// IDs is not enough to approve/reject expenses.
+function getApprovalSecret_() {
+  if (APPROVAL_SECRET) return APPROVAL_SECRET;
+  // Stable fallback so signing works without extra setup. Prefer setting
+  // Script Property APPROVAL_SECRET to a long random string in production.
+  return 'familylog-approval-v1|' + FIREBASE_API_KEY + '|' + WEB_APP_URL;
+}
+
+function makeApprovalSig_(id, exp) {
+  var payload = toStr(id) + '|' + toStr(exp);
+  var raw = Utilities.computeHmacSha256Signature(payload, getApprovalSecret_());
+  return Utilities.base64EncodeWebSafe(raw).replace(/=+$/, '');
+}
+
+/** Build signed query params for an approval link (7-day expiry). */
+function buildApprovalToken_(id) {
+  var exp = Math.floor(Date.now() / 1000) + 7 * 24 * 3600;
+  return { id: id, exp: String(exp), sig: makeApprovalSig_(id, String(exp)) };
+}
+
+function verifyApprovalToken_(id, exp, sig) {
+  if (!id || !exp || !sig) return false;
+  var expNum = parseInt(exp, 10);
+  if (!expNum || isNaN(expNum)) return false;
+  if (expNum < Math.floor(Date.now() / 1000)) return false;
+  var expected = makeApprovalSig_(id, String(expNum));
+  // Constant-time-ish compare
+  if (expected.length !== toStr(sig).length) return false;
+  var ok = true;
+  for (var i = 0; i < expected.length; i++) {
+    if (expected.charAt(i) !== sig.charAt(i)) ok = false;
+  }
+  return ok;
+}
+
+// ─── FIREBASE TOKEN VERIFICATION ──────────────────────────
 
 // Verifies the token with Firebase AND checks the resulting email
 // against the family allowlist. Results are cached for 10 minutes
@@ -566,14 +638,13 @@ function doGet(e) {
     var action   = e && e.parameter && e.parameter.action   ? e.parameter.action   : '';
     var callback = e && e.parameter && e.parameter.callback ? e.parameter.callback : '';
     var idToken  = e && e.parameter && e.parameter.idToken  ? e.parameter.idToken  : '';
+    var verifiedEmail = null;
 
     // Default-deny: EVERY action requires a verified family token except
-    // the expense-approval endpoints, which are opened from email links.
-    // (Previously get_expenses, get_fertility, get_memories, etc. were
-    // readable by anyone who knew the /exec URL.)
+    // the expense-approval endpoints, which are opened from signed email links.
     var openActions = ['confirm_expense_page', 'submit_confirmed_expense'];
     if (openActions.indexOf(action) === -1) {
-      var verifiedEmail = verifyFirebaseToken(idToken);
+      verifiedEmail = verifyFirebaseToken(idToken);
       if (!verifiedEmail) {
         var error = { status: 'error', message: 'Unauthorized: invalid or missing token' };
         return respondJSONP(error, callback);
@@ -581,13 +652,16 @@ function doGet(e) {
     }
 
     if (action === 'confirm_expense_page') {
-      var id = e && e.parameter && e.parameter.id ? e.parameter.id : '';
-      return renderConfirmExpensePage(id);
+      return renderConfirmExpensePage(
+        e.parameter.id || '',
+        e.parameter.exp || '',
+        e.parameter.sig || ''
+      );
     }
 
     var output;
     switch (action) {
-      case 'get_all':       output = getAllDashboardData(); break;
+      case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
       case 'get_chat':      output = getChatMessages();     break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos();            break;
@@ -595,13 +669,18 @@ function doGet(e) {
       case 'get_budgets':   output = getBudgets();          break;
       case 'get_birthdays': output = getBirthdays();        break;
       case 'get_memories':  output = getMemories();         break;
-      case 'get_fertility': output = getFertilityData();    break;
+      case 'get_fertility':
+        output = isAdultEmail_(verifiedEmail) ? getFertilityData() : [];
+        break;
       case 'get_recurring': output = getRecurring();        break;
       case 'get_travel':    output = getTravelData();       break;
-      case 'submit_confirmed_expense': output = handleSubmitConfirmedExpense(e.parameter); break;
+      case 'submit_confirmed_expense':
+        output = handleSubmitConfirmedExpense(e.parameter);
+        break;
       case 'write':
         var writeData = {};
         try { writeData = JSON.parse(e.parameter.data || '{}'); } catch(pe) {}
+        writeData._verifiedEmail = verifiedEmail;
         output = handleWrite(writeData);
         break;
       default: output = { error: 'unknown action: ' + action };
@@ -625,6 +704,7 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    data._verifiedEmail = verified;
     var result = handleWrite(data);
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -659,7 +739,19 @@ function handleWriteInner_(data) {
   var logSheet  = ss.getSheetByName('Log') || ss.insertSheet('Log');
   var note      = toStr(data.note);
   var noteLower = note.toLowerCase().trim();
-  var user      = toStr(data.user) || 'Unknown';
+
+  // Identity is derived only from the verified Firebase email.
+  // Client-supplied data.user is ignored (spoof protection).
+  var verifiedEmail = toStr(data._verifiedEmail).toLowerCase();
+  var user = memberNameFromEmail_(verifiedEmail);
+  if (!user) {
+    return { status: 'error', message: 'Unauthorized: unknown family member' };
+  }
+
+  // Adults-only features (Us sanctuary, fertility, couple bucket list)
+  if (ADULT_ONLY_NOTES.indexOf(noteLower) !== -1 && !isAdultEmail_(verifiedEmail)) {
+    return { status: 'error', message: 'This feature is only available to parents.' };
+  }
 
   // ---- Helper validation functions ----
   function validateDate(d) {
@@ -1221,8 +1313,9 @@ function handleWriteInner_(data) {
 // ============================================================
 // 6. DATA FETCH FUNCTIONS (unchanged)
 // ============================================================
-function getAllDashboardData() {
+function getAllDashboardData(verifiedEmail) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var adult = isAdultEmail_(verifiedEmail);
   return {
     events:    getEvents(),
     todos:     getTodos(ss),
@@ -1230,14 +1323,17 @@ function getAllDashboardData() {
     budgets:   getBudgets(ss),
     birthdays: getBirthdays(ss),
     memories:  getMemories(ss),
-    fertility: getFertilityData(ss),
-    recurring: getRecurring(ss),
-    travel:    getTravelData(ss),
-    appreciations: getAppreciationsData(ss),
-    loveCheckins:  getLoveCheckinsData(ss),
-    bucketList:    getBucketList(ss),
-    chat:          getChatMessages(ss),
-    expenseGroups: EXPENSE_GROUPS
+    // Adult-only payloads are empty for children's accounts
+    fertility:      adult ? getFertilityData(ss) : [],
+    recurring:      getRecurring(ss),
+    travel:         getTravelData(ss),
+    appreciations:  adult ? getAppreciationsData(ss) : [],
+    loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
+    bucketList:     adult ? getBucketList(ss) : [],
+    chat:           getChatMessages(ss),
+    expenseGroups:  EXPENSE_GROUPS,
+    isAdult:        adult,
+    memberName:     memberNameFromEmail_(verifiedEmail) || ''
   };
 }
 
@@ -1982,7 +2078,8 @@ function scanInboxForTransactions() {
 
           var note = merchant;
           if (txRef) note += ' (Ref: ' + txRef + ')';
-          var id = 'p_' + tpl.name + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+          // Unguessable id (uuid) — approval links also carry an HMAC
+          var id = 'p_' + tpl.name + '_' + Utilities.getUuid().replace(/-/g, '');
           pendingSheet.appendRow([id, dateStr, account, category, amount, note, new Date()]);
           sendApprovalEmail(id, dateStr, amount, merchant, category, account);
           console.log('[' + tpl.name + '] Logged new pending: ' + merchant + ' ($' + amount + ')' + (txRef ? ' Ref: ' + txRef : ''));
@@ -2053,7 +2150,11 @@ function proposeExpenseDetails(merchant) {
 
 function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
   var webAppUrl = WEB_APP_URL;
-  var approvalUrl = webAppUrl + '?action=confirm_expense_page&id=' + id;
+  var tok = buildApprovalToken_(id);
+  var approvalUrl = webAppUrl + '?action=confirm_expense_page'
+    + '&id=' + encodeURIComponent(tok.id)
+    + '&exp=' + encodeURIComponent(tok.exp)
+    + '&sig=' + encodeURIComponent(tok.sig);
   var sourceTitle = 'Expense';
   if (id.indexOf('p_paylah_') === 0) sourceTitle = 'DBS PayLah!';
   else if (id.indexOf('p_dbs_paynow_') === 0) sourceTitle = 'DBS PayNow';
@@ -2072,6 +2173,7 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
                  '<div style="margin-top:20px;text-align:center;">' +
                    '<a href="' + approvalUrl + '" style="background:#4f86c6;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;font-size:14px;">Verify & Log Expense</a>' +
                  '</div>' +
+                 '<p style="margin-top:16px;font-size:11px;color:#888;text-align:center;">This link expires in 7 days and cannot be guessed.</p>' +
                  '</div>';
   var plainBody = htmlBody.replace(/<[^>]+>/g, '').replace(/\n\n+/g, '\n').trim();
   try {
@@ -2083,7 +2185,13 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
 }
 
 // ---- APPROVAL PAGE & HANDLER ----
-function renderConfirmExpensePage(id) {
+function renderConfirmExpensePage(id, exp, sig) {
+  if (!verifyApprovalToken_(id, exp, sig)) {
+    return HtmlService.createHtmlOutput(
+      '<h3 style="font-family:sans-serif;color:#e74c3c;text-align:center;margin-top:50px;padding:20px;">' +
+      'This approval link is invalid or has expired. Open the latest email link, or dismiss the pending expense from the app.</h3>'
+    ).addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('PendingExpenses');
   if (!sheet) {
@@ -2115,6 +2223,8 @@ function renderConfirmExpensePage(id) {
     groupOptionsHtml += '</optgroup>';
   }
   var webAppUrl = WEB_APP_URL;
+  // Amount/date are locked to the sheet values (hidden + display only).
+  // Category/account/description may be corrected by the family.
   var html = '<!DOCTYPE html>' +
     '<html>' +
     '<head>' +
@@ -2128,6 +2238,7 @@ function renderConfirmExpensePage(id) {
         'label { font-size:12px; font-weight:600; color:#5a5a72; }' +
         'input, select { padding:10px 12px; border:1.5px solid #e4e6ef; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box; width:100%; }' +
         'input:focus, select:focus { border-color:#4f86c6; }' +
+        'input:disabled { background:#f0f1f5; color:#555; }' +
         '.btn-row { display:flex; gap:10px; margin-top:20px; }' +
         'button { flex:1; padding:12px; border:none; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; }' +
         '.btn-p { background:#4f86c6; color:#fff; }' +
@@ -2136,12 +2247,14 @@ function renderConfirmExpensePage(id) {
     '</head>' +
     '<body>' +
       '<div class="card">' +
-        '<h3>Verify PayLah! Expense</h3>' +
+        '<h3>Verify Expense</h3>' +
         '<form id="exp-form">' +
           '<input type="hidden" name="id" value="' + escapeHtml_(id) + '">' +
-          '<div class="field"><label>Description</label><input type="text" name="desc" value="' + escapeHtml_(desc) + '"></div>' +
-          '<div class="field"><label>Amount ($)</label><input type="number" step="0.01" name="amount" value="' + amt.toFixed(2) + '"></div>' +
-          '<div class="field"><label>Date</label><input type="text" name="date" value="' + escapeHtml_(dateStr) + '"></div>' +
+          '<input type="hidden" name="exp" value="' + escapeHtml_(toStr(exp)) + '">' +
+          '<input type="hidden" name="sig" value="' + escapeHtml_(toStr(sig)) + '">' +
+          '<div class="field"><label>Description</label><input type="text" name="desc" value="' + escapeHtml_(desc) + '" maxlength="200"></div>' +
+          '<div class="field"><label>Amount ($)</label><input type="text" value="' + amt.toFixed(2) + '" disabled><div style="font-size:11px;color:#888;">Locked to bank alert (cannot be changed here)</div></div>' +
+          '<div class="field"><label>Date</label><input type="text" value="' + escapeHtml_(dateStr) + '" disabled></div>' +
           '<div class="field"><label>Account</label>' +
             '<select name="account">' +
               '<option value="Family" ' + (acc === 'Family' ? 'selected' : '') + '>Family</option>' +
@@ -2161,7 +2274,7 @@ function renderConfirmExpensePage(id) {
         'function submitForm(action) {' +
           'var form = document.getElementById(\'exp-form\');' +
           'var formData = new FormData(form);' +
-          'var query = \'?action=submit_confirmed_expense&status=\' + action;' +
+          'var query = \'?action=submit_confirmed_expense&status=\' + encodeURIComponent(action);' +
           'formData.forEach(function(value, key){' +
             'query += \'&\' + encodeURIComponent(key) + \'=\' + encodeURIComponent(value);' +
           '});' +
@@ -2171,11 +2284,17 @@ function renderConfirmExpensePage(id) {
           'document.body.appendChild(s);' +
         '}' +
         'window.onDone = function(r) {' +
-          'if (r && r.status === \'ok\') {' +
-            'document.body.innerHTML = \'<div class="card" style="text-align:center;"><h3 style="color:#2c7a4b;">Success!</h3><p>\' + r.message + \'</p></div>\';' +
-          '} else {' +
-            'document.body.innerHTML = \'<div class="card" style="text-align:center;"><h3 style="color:#e74c3c;">Error</h3><p>\' + (r ? r.message : \'Unknown error\') + \'</p></div>\';' +
-          '}' +
+          'var msg = (r && r.message) ? r.message : \'Unknown error\';' +
+          'var ok = r && r.status === \'ok\';' +
+          'var card = document.createElement(\'div\');' +
+          'card.className = \'card\'; card.style.textAlign = \'center\';' +
+          'var h = document.createElement(\'h3\');' +
+          'h.style.color = ok ? \'#2c7a4b\' : \'#e74c3c\';' +
+          'h.textContent = ok ? \'Success!\' : \'Error\';' +
+          'var p = document.createElement(\'p\');' +
+          'p.textContent = msg;' +
+          'card.appendChild(h); card.appendChild(p);' +
+          'document.body.innerHTML = \'\'; document.body.appendChild(card);' +
         '}' +
       '</script>' +
     '</body>' +
@@ -2201,8 +2320,13 @@ function handleSubmitConfirmedExpense(params) {
 }
 
 function handleSubmitConfirmedExpenseInner_(params) {
-  var id = params.id;
-  var status = params.status;
+  var id = toStr(params.id);
+  var status = toStr(params.status);
+  var exp = toStr(params.exp);
+  var sig = toStr(params.sig);
+  if (!verifyApprovalToken_(id, exp, sig)) {
+    return { status: 'error', message: 'Invalid or expired approval link' };
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendingSheet = ss.getSheetByName('PendingExpenses');
   if (!pendingSheet) return { status: 'error', message: 'PendingExpenses sheet not found' };
@@ -2212,19 +2336,25 @@ function handleSubmitConfirmedExpenseInner_(params) {
     if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
   }
   if (rowIdx === -1) return { status: 'error', message: 'This transaction was already processed' };
+
+  // Amount + date always come from the pending row (bank alert), not the form.
+  var sheetDateStr = toStr(vals[rowIdx - 1][1]);
+  var sheetAmount  = parseFloat(vals[rowIdx - 1][4]) || 0;
+  var sheetNote    = toStr(vals[rowIdx - 1][5]);
+
   if (status === 'approve') {
-    var desc = params.desc;
-    var amount = parseFloat(params.amount) || 0;
-    var dateStr = params.date;
-    var account = params.account;
-    var category = params.category;
+    var desc = toStr(params.desc) || sheetNote;
+    if (desc.length > 200) desc = desc.substring(0, 200);
+    var account = toStr(params.account) || 'Family';
+    if (account !== 'Family' && account !== 'Personal Account') account = 'Family';
+    var category = toStr(params.category) || toStr(vals[rowIdx - 1][3]) || 'Misc';
+    if (category.length > 100) category = category.substring(0, 100);
     var expSheet = ss.getSheetByName('Expenses');
     if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
-    var parsedDate = parseEventDate(dateStr, '');
-    expSheet.appendRow([new Date(), parsedDate, account, category, amount, desc]);
-    // No sheet re-sort — see the note in add_expense.
+    var parsedDate = parseEventDate(sheetDateStr, '');
+    expSheet.appendRow([new Date(), parsedDate, account, category, sheetAmount, desc]);
     pendingSheet.deleteRow(rowIdx);
-    return { status: 'ok', message: 'Expense of $' + amount.toFixed(2) + ' logged to ' + category + '!' };
+    return { status: 'ok', message: 'Expense of $' + sheetAmount.toFixed(2) + ' logged to ' + category + '!' };
   } else {
     pendingSheet.deleteRow(rowIdx);
     return { status: 'ok', message: 'Expense dismissed.' };
