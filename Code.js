@@ -1845,10 +1845,17 @@ function getIntimacyLogData(ss) {
 // so validation can actually reject bad input.
 function parseEventDateStrict(dateStr, timeStr) {
   dateStr = toStr(dateStr).trim(); timeStr = toStr(timeStr).trim();
+  // Normalize weird Unicode spaces from some locale formatters
+  dateStr = dateStr.replace(/[\u00a0\u202f]/g, ' ');
   if (!dateStr) return null;
   var now = new Date(); var year = now.getFullYear(); var parsed = null;
+  // ISO yyyy-MM-dd (preferred from date inputs)
+  var iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    parsed = new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+  }
   var dmySlash = dateStr.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
-  if (dmySlash) { var yr = dmySlash[3] ? parseInt(dmySlash[3]) : year; if (yr < 100) yr += 2000; parsed = new Date(yr, parseInt(dmySlash[2]) - 1, parseInt(dmySlash[1])); }
+  if (!parsed && dmySlash) { var yr = dmySlash[3] ? parseInt(dmySlash[3]) : year; if (yr < 100) yr += 2000; parsed = new Date(yr, parseInt(dmySlash[2]) - 1, parseInt(dmySlash[1])); }
   if (!parsed) {
     var dmy = dateStr.match(/^(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{2,4}))?$/);
     if (dmy) {
