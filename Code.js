@@ -707,6 +707,15 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    // Prefer POST for all app traffic so idTokens never appear in URLs / proxy logs.
+    var action = toStr(data.action).toLowerCase().trim();
+    if (action === 'get_all') {
+      return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Default: write (note field). Explicit action=write also accepted.
     data._verifiedEmail = verified;
     var result = handleWrite(data);
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
@@ -959,13 +968,24 @@ function handleWriteInner_(data) {
       var fertDate = toStr(data.fertility_date);
       var fertType = toStr(data.fertility_type);
       var fertNotes = toStr(data.fertility_notes);
+      var allowedFert = {
+        'Period Start': true,
+        'Period End': true,
+        'Ovulation': true,
+        'Symptom': true
+      };
       if (!fertDate || !fertType) return { status: 'error', message: 'Date and type required' };
+      if (!allowedFert[fertType]) return { status: 'error', message: 'Invalid fertility entry type' };
       if (!validateDate(fertDate)) return { status: 'error', message: 'Invalid date' };
       if (!validateString(fertNotes, 500)) return { status: 'error', message: 'Notes too long' };
 
       var fertSheet = ss.getSheetByName('Fertility');
-      if (!fertSheet) { fertSheet = ss.insertSheet('Fertility'); fertSheet.appendRow(['Logged By', 'Date', 'Type', 'Notes', 'Logged At']); }
+      if (!fertSheet) {
+        fertSheet = ss.insertSheet('Fertility');
+        fertSheet.appendRow(['Logged By', 'Date', 'Type', 'Notes', 'Logged At']);
+      }
       var parsed = parseEventDate(fertDate, '');
+      if (!parsed) return { status: 'error', message: 'Invalid date' };
       fertSheet.appendRow([user, parsed, fertType, fertNotes, new Date()]);
       console.log('✅ Fertility entry added: ' + fertType);
       return { status: 'ok' };
@@ -1556,33 +1576,85 @@ function getFertilityData(ss) {
   var fertSheet = ss.getSheetByName('Fertility');
   if (!fertSheet) return {};
   var fertVals        = fertSheet.getDataRange().getValues();
-  var lastPeriodStart = null; var lastPeriodEnd = null; var lastOvulation = null; var symptoms = [];
-  var tz              = Session.getScriptTimeZone();
+  var lastPeriodStart = null;
+  var lastOvulation = null;
+  var symptoms = [];
+  var tz = Session.getScriptTimeZone();
+  var ALLOWED_FERT_TYPES = {
+    'Period Start': true,
+    'Period End': true,
+    'Ovulation': true,
+    'Symptom': true
+  };
+
   for (var i = 1; i < fertVals.length; i++) {
-    var row = fertVals[i]; var fType = toStr(row[2]); var fDate = row[1] ? new Date(row[1]) : null;
+    var row = fertVals[i];
+    var fType = toStr(row[2]);
+    var fDate = row[1] ? new Date(row[1]) : null;
     if (fDate && isNaN(fDate.getTime())) fDate = null;
-    if (fType === 'Period Start' && fDate) { if (!lastPeriodStart || fDate > lastPeriodStart) lastPeriodStart = fDate; }
-    if (fType === 'Period End'   && fDate) { if (!lastPeriodEnd   || fDate > lastPeriodEnd)   lastPeriodEnd   = fDate; }
-    if (fType === 'Ovulation'    && fDate) { if (!lastOvulation   || fDate > lastOvulation)   lastOvulation   = fDate; }
-    if (fType === 'Symptom') symptoms.push({ date: fDate ? Utilities.formatDate(fDate, tz, 'dd MMM yyyy') : '', note: toStr(row[3]) });
+    if (!ALLOWED_FERT_TYPES[fType]) continue;
+
+    if (fType === 'Period Start' && fDate) {
+      if (!lastPeriodStart || fDate > lastPeriodStart) lastPeriodStart = fDate;
+    }
+    if (fType === 'Ovulation' && fDate) {
+      if (!lastOvulation || fDate > lastOvulation) lastOvulation = fDate;
+    }
+    // Log recent non-cycle notes for the timeline (symptoms + any type with notes)
+    if (fType === 'Symptom' || (fType !== 'Period Start' && toStr(row[3]))) {
+      symptoms.push({
+        date: fDate ? Utilities.formatDate(fDate, tz, 'dd MMM yyyy') : '',
+        type: fType,
+        note: toStr(row[3]) || fType
+      });
+    }
   }
+
   var result = {};
   var starts = getPeriodStarts_(fertVals);
   if (lastPeriodStart) {
-    var cycleLen        = estimateCycleLengthDays_(starts);
+    var cycleLen = estimateCycleLengthDays_(starts);
     var ovulationOffset = cycleLen - 14;
     result.lastPeriodStart = Utilities.formatDate(lastPeriodStart, tz, 'dd MMM yyyy');
-    result.cycleLength     = cycleLen;
-    var nextPeriod   = new Date(lastPeriodStart); nextPeriod.setDate(nextPeriod.getDate() + cycleLen);
-    var fertileStart = new Date(lastPeriodStart); fertileStart.setDate(fertileStart.getDate() + ovulationOffset - 4);
-    var fertileEnd   = new Date(lastPeriodStart); fertileEnd.setDate(fertileEnd.getDate() + ovulationOffset + 2);
-    result.nextPeriod   = Utilities.formatDate(nextPeriod,   tz, 'dd MMM yyyy');
+    result.lastPeriodStartRaw = Utilities.formatDate(lastPeriodStart, tz, 'yyyy-MM-dd');
+    result.cycleLength = cycleLen;
+
+    // Period duration: first Period End on/after the latest Period Start (same cycle)
+    var matchingEnd = null;
+    for (var j = 1; j < fertVals.length; j++) {
+      var r2 = fertVals[j];
+      if (toStr(r2[2]) !== 'Period End') continue;
+      var d2 = r2[1] ? new Date(r2[1]) : null;
+      if (!d2 || isNaN(d2.getTime())) continue;
+      if (d2 < lastPeriodStart) continue;
+      // Prefer the soonest end after start (typical menses length)
+      if (!matchingEnd || d2 < matchingEnd) matchingEnd = d2;
+    }
+    if (matchingEnd) {
+      var dur = Math.round((matchingEnd - lastPeriodStart) / (1000 * 60 * 60 * 24));
+      // Guard against bad pairings (e.g. end from a later cycle mis-tagged)
+      if (dur >= 0 && dur <= 14) result.duration = dur;
+    }
+
+    var nextPeriod = new Date(lastPeriodStart);
+    nextPeriod.setDate(nextPeriod.getDate() + cycleLen);
+    var fertileStart = new Date(lastPeriodStart);
+    fertileStart.setDate(fertileStart.getDate() + ovulationOffset - 4);
+    var fertileEnd = new Date(lastPeriodStart);
+    fertileEnd.setDate(fertileEnd.getDate() + ovulationOffset + 2);
+    result.nextPeriod = Utilities.formatDate(nextPeriod, tz, 'dd MMM yyyy');
+    result.nextPeriodRaw = Utilities.formatDate(nextPeriod, tz, 'yyyy-MM-dd');
     result.fertileStart = Utilities.formatDate(fertileStart, tz, 'dd MMM yyyy');
-    result.fertileEnd   = Utilities.formatDate(fertileEnd,   tz, 'dd MMM yyyy');
+    result.fertileEnd = Utilities.formatDate(fertileEnd, tz, 'dd MMM yyyy');
+    result.fertileStartRaw = Utilities.formatDate(fertileStart, tz, 'yyyy-MM-dd');
+    result.fertileEndRaw = Utilities.formatDate(fertileEnd, tz, 'yyyy-MM-dd');
   }
-  if (lastPeriodEnd && lastPeriodStart) result.duration = Math.round((lastPeriodEnd - lastPeriodStart) / (1000 * 60 * 60 * 24));
-  if (lastOvulation) result.lastOvulation = Utilities.formatDate(lastOvulation, tz, 'dd MMM yyyy');
-  result.symptoms = symptoms.slice(-5).reverse();
+  if (lastOvulation) {
+    result.lastOvulation = Utilities.formatDate(lastOvulation, tz, 'dd MMM yyyy');
+    result.lastOvulationRaw = Utilities.formatDate(lastOvulation, tz, 'yyyy-MM-dd');
+  }
+  // Newest symptoms first for the UI timeline
+  result.symptoms = symptoms.slice(-8).reverse();
   return result;
 }
 

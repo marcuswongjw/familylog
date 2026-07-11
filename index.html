@@ -1420,7 +1420,7 @@
       { name:'Mikaela', emoji:'👧', email:'mikaelawonght@gmail.com' },
       { name:'Meaghan', emoji:'👧', email:'meaghanwongzx@gmail.com' },
     ];
-    const FAM = ['Mikaela','Eleanor','Marcus','Everyone'];
+    const FAM = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
     const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#888'];
     let GROUPS = {};
 
@@ -1607,6 +1607,7 @@
       if(!payload) return;
       if(useBeacon && navigator.sendBeacon) {
         payload.user = user || 'Unknown';
+        payload.action = payload.action || 'write';
         if(lastIdToken) payload.idToken = lastIdToken;
         try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
       } else {
@@ -1820,89 +1821,38 @@
       }, 200);
     }
 
-    // ─── DATA FETCH (non-chat parts) ──────────────────────────
-    function loadData() {
-      startProgressBar();
-      return new Promise((resolve) => {
-        const currentUser = firebase.auth().currentUser;
-        if(!currentUser){ showError('Please log in'); finishProgressBar(); resolve(); return; }
-        currentUser.getIdToken().then(idToken => {
-          lastIdToken = idToken;
-          const cb = 'cb_' + (++_callbackId);
-          const s = document.createElement('script');
-          window[cb] = r => {
-            delete window[cb];
-            s.remove();
-            if(r && r.status === 'error'){ showError('Server error: '+ (r.message||'unknown')); finishProgressBar(); resolve(); return; }
-            // Preserve Firestore live data — never take chat from Sheets/GAS
-            const prevChat = data.chat;
-            const prevMems = data.memories;
-            data = r || {};
-            data.chat = Array.isArray(prevChat) ? prevChat : [];
-            if (prevMems) data.memories = prevMems;
-            if(r && r.expenseGroups) GROUPS = r.expenseGroups;
-            if(r && r.bucketList) bucketList = r.bucketList;
-            // Server isAdult is authoritative; fall back to email allowlist
-            if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
-            else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
-            buildDynamicSelectors();
-            render(section);
-            renderHome();
-            finishProgressBar();
-            resolve();
-          };
-          s.onerror = () => { delete window[cb]; s.remove(); showError('Network error'); finishProgressBar(); resolve(); };
-          s.src = GAS_URL + '?action=get_all&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb;
-          document.body.appendChild(s);
-        }).catch(err => { showError('Auth error: '+err.message); finishProgressBar(); resolve(); });
-      });
-    }
-    function gPost(payload) {
-      startProgressBar();
-      return new Promise((resolve) => {
-        const currentUser = firebase.auth().currentUser;
-        if(!currentUser){ showError('Please log in'); finishProgressBar(); resolve(null); return; }
-        currentUser.getIdToken().then(idToken => {
-          lastIdToken = idToken;
-          payload.user = user || 'Unknown';
-          const json = JSON.stringify(payload);
-          if (json.length > 6000 || payload.image) {
-            finishProgressBar();
-            resolve(postWrite(payload));
-            return;
-          }
-          const cb = 'cb_' + (++_callbackId);
-          const s = document.createElement('script');
-          window[cb] = r => {
-            delete window[cb];
-            s.remove();
-            if(r && r.status === 'error'){ showError('Server error: '+ (r.message||'unknown')); finishProgressBar(); resolve(null); return; }
-            finishProgressBar();
-            resolve(r);
-          };
-          s.onerror = () => { delete window[cb]; s.remove(); showError('Network error'); finishProgressBar(); resolve(null); };
-          s.src = GAS_URL + '?action=write&idToken=' + encodeURIComponent(idToken) + '&callback=' + cb + '&data=' + encodeURIComponent(json);
-          document.body.appendChild(s);
-        }).catch(err => { showError('Auth error: '+err.message); finishProgressBar(); resolve(null); });
-      });
-    }
-
-    async function postWrite(payload) {
+    // ─── DATA FETCH / WRITE (POST only — never put idToken in URL) ──
+    /**
+     * Single GAS transport: Firebase ID token in JSON body only (no JSONP query strings).
+     * @param {object} body  Must include action: 'get_all' | 'write' (writes also use note)
+     */
+    async function gasRequest(body) {
       startProgressBar();
       try {
         const currentUser = firebase.auth().currentUser;
-        if(!currentUser){ showError('Please log in'); return null; }
+        if (!currentUser) { showError('Please log in'); return null; }
         const idToken = await currentUser.getIdToken();
         lastIdToken = idToken;
-        payload.user = user || 'Unknown';
-        payload.idToken = idToken;
+        const payload = Object.assign({}, body, {
+          idToken: idToken,
+          user: user || 'Unknown'
+        });
         const response = await fetch(GAS_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(payload)
         });
-        const r = await response.json();
-        if(r && r.status === 'error'){ showError('Server error: ' + (r.message||'unknown')); return null; }
+        let r;
+        try {
+          r = await response.json();
+        } catch (parseErr) {
+          showError('Invalid server response');
+          return null;
+        }
+        if (r && r.status === 'error') {
+          showError('Server error: ' + (r.message || 'unknown'));
+          return null;
+        }
         return r;
       } catch (err) {
         showError('Network error: ' + err.message);
@@ -1910,6 +1860,40 @@
       } finally {
         finishProgressBar();
       }
+    }
+
+    function applyDashboardPayload(r) {
+      if (!r) return;
+      // Preserve Firestore live data — never take chat from Sheets/GAS
+      const prevChat = data.chat;
+      const prevMems = data.memories;
+      data = r || {};
+      data.chat = Array.isArray(prevChat) ? prevChat : [];
+      if (prevMems) data.memories = prevMems;
+      if (r.expenseGroups) GROUPS = r.expenseGroups;
+      if (r.bucketList) bucketList = r.bucketList;
+      // Server isAdult is authoritative; fall back to email allowlist
+      if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
+      else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
+      buildDynamicSelectors();
+      render(section);
+      renderHome();
+    }
+
+    function loadData() {
+      return gasRequest({ action: 'get_all' }).then(r => {
+        applyDashboardPayload(r);
+      });
+    }
+
+    /** Writes (and any non-get action) go through POST body with token. */
+    function gPost(payload) {
+      return gasRequest(Object.assign({ action: 'write' }, payload || {}));
+    }
+
+    // Back-compat alias
+    async function postWrite(payload) {
+      return gPost(payload);
     }
 
     // ─── BUILD DYNAMIC SELECTORS ──────────────────────────────
@@ -2681,36 +2665,74 @@
     }
 
     // ─── FERTILITY ──────────────────────────────────────────────
+    /** Parse server fertility dates: prefer ISO yyyy-MM-dd, else en-GB-ish "dd MMM yyyy". */
+    function parseFertDate(raw, display) {
+      if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const d = new Date(raw + 'T00:00:00');
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (display) {
+        const d = new Date(display);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    }
+
     function renderFertility() {
       const f  = data.fertility || {};
       const el = document.getElementById('fert-body');
-      if (!f.lastPeriodStart) {
+      if (!f.lastPeriodStart && !f.lastPeriodStartRaw) {
         el.innerHTML = '<div class="empty"><div class="ei">🌸</div>No data yet. Log your first entry below.</div>';
         return;
       }
-      
+
+      const cycleLen = Math.min(45, Math.max(21, Number(f.cycleLength) || 28));
       let cycleDayHtml = '';
-      if (f.lastPeriodStart) {
-        try {
-          const pStart = new Date(f.lastPeriodStart + 'T00:00:00');
+      try {
+        const pStart = parseFertDate(f.lastPeriodStartRaw, f.lastPeriodStart);
+        if (pStart) {
           const today = new Date();
-          today.setHours(0,0,0,0);
-          const diffTime = Math.abs(today - pStart);
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-          const progressPct = Math.min(Math.max((diffDays / 28) * 100, 0), 100);
-          
+          today.setHours(0, 0, 0, 0);
+          pStart.setHours(0, 0, 0, 0);
+          // Day 1 = period start date (no Math.abs — future-dated entries shouldn't look like day N)
+          const diffDays = Math.floor((today - pStart) / 86400000) + 1;
+          const dayInCycle = diffDays > 0 ? ((diffDays - 1) % cycleLen) + 1 : diffDays;
+          const progressPct = diffDays > 0
+            ? Math.min(Math.max((dayInCycle / cycleLen) * 100, 0), 100)
+            : 0;
+
+          // Phase windows aligned with server: luteal ≈ 14d, ovulation = cycleLen - 14
+          const ovulDay = Math.max(10, cycleLen - 14);
+          const mensesEnd = Math.min(7, Math.max(3, Math.round(cycleLen * 0.18)));
+          const fertileStart = Math.max(1, ovulDay - 4);
+          const fertileEnd = Math.min(cycleLen, ovulDay + 2);
+
           let phase = 'Follicular Phase';
           let phaseIcon = '🌱';
-          if (diffDays >= 1 && diffDays <= 5) { phase = 'Menstruation'; phaseIcon = '🩸'; }
-          else if (diffDays >= 11 && diffDays <= 16) { phase = 'Fertile Window / Ovulation'; phaseIcon = '🌸'; }
-          else if (diffDays > 16) { phase = 'Luteal Phase'; phaseIcon = '🍂'; }
-          
+          if (diffDays < 1) {
+            phase = 'Before recorded start';
+            phaseIcon = '⏳';
+          } else if (dayInCycle <= mensesEnd) {
+            phase = 'Menstruation';
+            phaseIcon = '🩸';
+          } else if (dayInCycle >= fertileStart && dayInCycle <= fertileEnd) {
+            phase = 'Fertile Window / Ovulation';
+            phaseIcon = '🌸';
+          } else if (dayInCycle > fertileEnd) {
+            phase = 'Luteal Phase';
+            phaseIcon = '🍂';
+          }
+
+          const dayLabel = diffDays < 1
+            ? 'Starts ' + escapeHtml(f.lastPeriodStart || '')
+            : 'Day ' + dayInCycle;
+
           cycleDayHtml = `
             <div class="card" style="padding:16px;background:linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);border:1.5px solid #fecdd3;border-radius:12px;margin-bottom:14px;box-shadow:0 2px 6px rgba(225, 29, 72, 0.05);">
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                  <div style="font-size:11px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:0.5px;">Current Cycle</div>
-                  <div style="font-size:18px;font-weight:800;color:#9f1239;margin-top:2px;">Day ${diffDays} <span style="font-size:13px;font-weight:600;color:#e11d48;margin-left:4px;">${phaseIcon} ${phase}</span></div>
+                  <div style="font-size:11px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:0.5px;">Current Cycle · ~${cycleLen}d avg</div>
+                  <div style="font-size:18px;font-weight:800;color:#9f1239;margin-top:2px;">${dayLabel} <span style="font-size:13px;font-weight:600;color:#e11d48;margin-left:4px;">${phaseIcon} ${escapeHtml(phase)}</span></div>
                 </div>
                 <div style="font-size:24px;">🌸</div>
               </div>
@@ -2719,16 +2741,17 @@
               </div>
             </div>
           `;
-        } catch(err) {
-          console.error(err);
         }
+      } catch (err) {
+        console.error(err);
       }
 
       const stats = [
-        { label: 'Last Period Start', val: f.lastPeriodStart, icon: '🩸', color: '#fda4af' },
-        { label: 'Next Period (est.)', val: f.nextPeriod, icon: '📅', color: '#fbcfe8' },
+        { label: 'Last Period Start', val: f.lastPeriodStart || '—', icon: '🩸', color: '#fda4af' },
+        { label: 'Next Period (est.)', val: f.nextPeriod || '—', icon: '📅', color: '#fbcfe8' },
         { label: 'Fertile Window', val: f.fertileStart && f.fertileEnd ? `${f.fertileStart} – ${f.fertileEnd}` : '—', icon: '🌸', color: '#fecdd3', span: true },
-        { label: 'Period Duration', val: f.duration ? `${f.duration} days` : '—', icon: '⏱️', color: '#fed7aa' },
+        { label: 'Period Duration', val: f.duration != null && f.duration >= 0 ? `${f.duration} days` : '—', icon: '⏱️', color: '#fed7aa' },
+        { label: 'Avg Cycle Length', val: f.cycleLength ? `${f.cycleLength} days` : '—', icon: '🔄', color: '#e9d5ff' },
         { label: 'Last Ovulation', val: f.lastOvulation || '—', icon: '✨', color: '#fef08a' }
       ];
 
@@ -2740,8 +2763,8 @@
               <div style="background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px;box-shadow:0 2px 4px rgba(0,0,0,0.02);display:flex;align-items:center;gap:10px;${gridSpan}">
                 <div style="width:34px;height:34px;border-radius:50%;background:${s.color};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">${s.icon}</div>
                 <div style="min-width:0;">
-                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">${s.label}</div>
-                  <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.val}</div>
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">${escapeHtml(s.label)}</div>
+                  <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(String(s.val))}</div>
                 </div>
               </div>
             `;
@@ -2758,7 +2781,7 @@
               ${f.symptoms.map(s => `
                 <div style="position:relative;font-size:13px;">
                   <div style="position:absolute;left:-19px;top:4px;width:8px;height:8px;border-radius:50%;background:#e11d48;border:2px solid #fff;box-shadow:0 0 0 2px #fecdd3;"></div>
-                  <strong style="color:var(--text-muted);">${escapeHtml(s.date)}:</strong> <span style="color:var(--text-primary);font-weight:500;">${escapeHtml(s.note)}</span>
+                  <strong style="color:var(--text-muted);">${escapeHtml(s.date)} · ${escapeHtml(s.type || 'Symptom')}:</strong> <span style="color:var(--text-primary);font-weight:500;">${escapeHtml(s.note)}</span>
                 </div>
               `).join('')}
             </div>
