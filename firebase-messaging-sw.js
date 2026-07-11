@@ -1,9 +1,11 @@
 // PWA cache + FCM background handler + notification click → open Chat
 // v4: network-first for navigations (fresh app after deploy), stronger open/focus for iOS/Android PWAs
-const CACHE_NAME = 'wong-family-v4';
+const CACHE_NAME = 'wong-family-v5';
 const ASSETS = [
   './',
   './index.html',
+  './css/styles.css',
+  './js/app.js',
   './manifest.json',
   './icon.png',
   './favicon.png'

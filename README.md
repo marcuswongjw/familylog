@@ -1,180 +1,132 @@
-# Wong Family Log
+# 🏡 Wong Family Log
 
-Private family hub as a **Progressive Web App (PWA)**: budgets & expenses, Gmail bank/Shopee auto-capture, calendar & tasks, travel map, live family chat, and a couple-only “Us” space.
+A private family hub PWA: budgets & expenses, calendar/tasks, travel map, chat, memories, and a parents-only **Us** sanctuary.
 
-**Live (typical):** `https://marcuswongjw.github.io/familylog/`
-
----
-
-## Features
-
-### Finances
-- Monthly **budgets** by category and account (Family / Personal)
-- Expense ledger with filters, search, and charts
-- Manual expense entry
-- **Gmail scanner** → pending expenses → signed email approval → ledger
-  - DBS PayLah!, DBS iBanking / PayNow, Trust Bank, **Shopee** (multi-item + order total)
-
-### Family ops
-- Google Calendar-backed **events**
-- Tasks, birthdays, kid schedules
-- **Travel map** (Leaflet)
-- **Memories** (Firestore + Storage photos)
-
-### Chat
-- Real-time **Firestore** chat + image uploads to **Firebase Storage**
-- Push notifications via **FCM** (tap opens Chat)
-- *Not* stored in Google Sheets (you can delete any leftover **Chat** sheet)
-
-### Us (parents only)
-- Appreciation jar (Friday reveal), battery check-ins, spark roulette, bucket list
-- Hidden in the UI for kids; **server also withholds** Us / fertility / bucket data
+**Live app:** [GitHub Pages](https://marcuswongjw.github.io/familylog/)  
+**Repo:** [marcuswongjw/familylog](https://github.com/marcuswongjw/familylog)
 
 ---
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph client [PWA - GitHub Pages]
-    HTML[index.html]
-    SW[firebase-messaging-sw.js]
-  end
-
-  subgraph firebase [Firebase project familylog-86db6]
-    Auth[Authentication - 6-digit PIN]
-    FS[(Firestore: chat, users, memories)]
-    ST[(Storage: chat/email, memories/email)]
-    CF[Cloud Function: sendChatNotification]
-    Rules[firestore.rules + storage.rules]
-  end
-
-  subgraph google [Google Workspace]
-    GAS[Apps Script Code.js Web App]
-    Sheets[(Sheets: expenses, tasks, Us, travel, ...)]
-    Gmail[Gmail bank/Shopee alerts]
-    Cal[Google Calendar]
-  end
-
-  HTML -->|sign-in| Auth
-  HTML -->|live chat + memories| FS
-  HTML -->|new photos| ST
-  HTML -->|get_all / write + idToken| GAS
-  GAS --> Sheets
-  GAS --> Cal
-  Gmail -->|scanInboxForTransactions| GAS
-  GAS -->|HMAC-signed approval email| Gmail
-  FS -->|onCreate chat| CF
-  CF -->|FCM| SW
-  SW -->|notification click → ?open=chat| HTML
-  Rules -.-> FS
-  Rules -.-> ST
+flowchart LR
+  PWA[PWA: index.html + css/ + js/] -->|POST JSON + Firebase ID token| GAS[Google Apps Script Code.js]
+  GAS --> Sheets[(Google Sheets)]
+  GAS --> GCal[Google Calendar]
+  GAS --> Gmail[Gmail bank alerts]
+  PWA -->|Auth / Chat / Memories / FCM| FB[Firebase]
+  FB --> FS[(Firestore)]
+  FB --> ST[(Storage)]
+  FB --> CF[Cloud Function: chat push]
 ```
 
-| Layer | Role |
-|--------|------|
-| **PWA** (`index.html`, `manifest.json`, `firebase-messaging-sw.js`) | UI, auth, chat, memories, calls GAS for sheet-backed data |
-| **Firebase Auth** | Family logins (email + **6-digit PIN**) |
-| **Firestore** | `chat`, `users` (FCM tokens), `memories` |
-| **Storage** | New images at `chat/{email}/…` and `memories/{email}/…` |
-| **Cloud Function** (`index.js`) | Push on new chat message; prune bad FCM tokens |
-| **Apps Script** (`Code.js`) | Token-verified API, Gmail expense scanner, digests, calendar, Us data in Sheets |
-| **Sheets** | Expenses, pending approvals, budgets, todos, travel, appreciations, love check-ins, fertility, log, etc. **No Chat tab** |
-
-### Security model (summary)
-
-- GAS: Firebase ID token **required** + **email allowlist** (not “any Firebase user”).
-- Display name on writes comes from **verified email**, not the client.
-- Us / fertility / bucket: **adult emails only** (server + UI).
-- Expense approval links: **HMAC + expiry**; amount/date locked to pending row.
-- Firestore/Storage rules: only the four family emails; chat delete = **own messages only**.
-
-Details: [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
+| Layer | Tech | Role |
+|--------|------|------|
+| **Frontend** | `index.html`, `css/styles.css`, `js/app.js` | UI, Firebase Auth login (6-digit PIN), Firestore chat/memories |
+| **API** | `Code.js` (Apps Script web app) | Expenses, budgets, calendar, todos, fertility, Us data — **family allowlist + token verify** |
+| **Realtime** | Firestore + Storage | Chat messages, memory images, FCM tokens |
+| **Push** | `index.js` Cloud Function + `firebase-messaging-sw.js` | Chat notifications |
+| **Hosting** | GitHub Pages | Static frontend |
 
 ---
 
-## Repository layout
+## Features
 
-| Path | Purpose |
-|------|---------|
-| `index.html` | Entire PWA (UI + client logic) |
-| `Code.js` | Google Apps Script backend (paste into the sheet’s script project) |
-| `index.js` | Cloud Function `sendChatNotification` |
-| `firebase-messaging-sw.js` | Service worker: cache, FCM background, notification click |
-| `firestore.rules` / `storage.rules` | Security rules |
-| `firebase.json` / `.firebaserc` | Firebase deploy config |
-| `manifest.json` | PWA manifest |
-| `FIREBASE_SETUP.md` | Auth, PIN policy, deploy commands |
+### Family
+- **Home dashboard** — summary, today events/tasks, member overview  
+- **Chat** — Firestore realtime (with optional images) + FCM push  
+- **Calendar / Tasks / Schedules** — Google Calendar + Sheets todos  
+- **Expenses & budgets** — ledger, categories, gauges; Gmail bank-alert scanner  
+- **Travel map** — Leaflet pins by trip  
+- **Memories** — photos + notes (Firestore + Storage)  
+- **Birthdays / recurring expenses**
+
+### Parents only (Us + Fertility)
+- **Us sanctuary** — battery check-ins, appreciation jar (Friday reveal), bucket list, spark roulette  
+- **Intimacy log** — private log when you make love (date, notes, optional 1–5 hearts); adults only  
+- **Fertility tracker** — period / ovulation / symptoms; adaptive cycle estimates  
+
+Kids’ accounts cannot open Us/Fertility (UI + server empty payloads / write deny).
 
 ---
 
-## Setup
+## Project layout
 
-### 1. Google Sheet + Apps Script
-
-1. Create a Google Sheet (tabs are created on demand; no **Chat** sheet needed).
-2. **Extensions → Apps Script** → paste entire [Code.js](Code.js).
-3. **Deploy → New deployment → Web app**
-   - Execute as: **Me**
-   - Who has access: **Anyone** (auth is still enforced via Firebase token + allowlist)
-4. Copy the `/exec` URL into `index.html` as `GAS_URL`.
-5. **Project Settings → Script properties** (recommended):
-   - `APPROVAL_SECRET` — long random string (expense approval signatures)
-   - Optional: `ALLOWED_EMAILS`, `ADULT_EMAILS`, `CALENDAR_ID`, `NOTIFY_EMAILS`, `WEB_APP_URL`
-6. **Triggers:** e.g. `scanInboxForTransactions` every 10–15 minutes; optional daily digests.
-
-### 2. Firebase
-
-1. Project with **Auth (Email/Password)**, **Firestore**, **Storage**, **Cloud Messaging**, **Functions**.
-2. Create one Auth user per family member (email = `MEMBERS` in `index.html`, password = **6-digit PIN**).
-3. Put web config + VAPID key in `index.html` / `firebase-messaging-sw.js`.
-4. Deploy rules and function (from repo root, logged into Firebase CLI):
-
-```bash
-npm install
-firebase use familylog-86db6   # or your project id
-firebase deploy --only firestore:rules,storage,functions
+```
+index.html              # Shell markup + third-party CDN scripts
+css/styles.css          # All app styles
+js/app.js               # Client logic (auth, GAS client, screens)
+Code.js                 # Google Apps Script backend (deploy separately)
+firebase-messaging-sw.js
+index.js                # Cloud Function (chat → FCM)
+firestore.rules
+storage.rules
+manifest.json
 ```
 
-See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for step-by-step Auth setup.
-
-### 3. GitHub Pages
-
-1. Push `main` to GitHub.
-2. **Settings → Pages →** deploy from `main` (root).
-3. Open the site → **Add to Home Screen** for PWA + notifications (iOS 16.4+ home-screen install required for web push).
-
-After deploys, hard-refresh or re-open the PWA so `firebase-messaging-sw.js` cache updates (versioned as `wong-family-v*`).
+After editing frontend files, commit and push to `main` for GitHub Pages.  
+After editing `Code.js`, **Deploy → Manage deployments → New version** in Apps Script.
 
 ---
 
-## Day-to-day operations
+## Security model
 
-| Task | Where |
-|------|--------|
-| Change UI / client | Edit `index.html` → push → Pages |
-| Change expense parsers / GAS API | Edit `Code.js` → paste into Apps Script → **New deployment version** |
-| Change push / rules | Edit `index.js` / `*.rules` → `firebase deploy --only …` |
-| Approve bank/Shopee pending | Email link or process pending sheet |
-| Kids vs parents | Adults: Marcus & Eleanor emails; kids UI hides Us + Fertility |
-
----
-
-## Expense scanner notes
-
-- Supported sources: PayLah, DBS iBanking, Trust, Shopee, plus optional Gmail labels `expense` / `expenses`.
-- **Shopee:** amount = **order total paid**; description lists **all** line items (not only the first product).
-- Duplicates checked via amount/date/merchant and **transaction / order ref**.
-- Failed parses: `Expense-Failed` label; processed: starred + archived + `Expense-Processed`.
+1. **Firebase Auth** — each member has an account (email + 6-digit PIN password).  
+2. **GAS API** — every `POST` must include a Firebase `idToken`; server verifies via Identity Toolkit and checks **ALLOWED_EMAILS**.  
+3. **Identity** — write actions use email→name mapping server-side; client `user` field is not trusted.  
+4. **Adult-only notes** — `add_intimacy`, Us, fertility, bucket list enforced in `ADULT_ONLY_NOTES`.  
+5. **Firestore / Storage rules** — family email allowlist; uploads under `chat/{email}/` and `memories/{email}/`.  
+6. **Expense approval emails** — signed links (`id` + `exp` + HMAC); set Script Property `APPROVAL_SECRET` to a long random string.
 
 ---
 
-## Privacy
+## Setup (short)
 
-This is a **private family** app. The GitHub repo may be public (static assets + client config). Do not put secrets in the client beyond normal Firebase web config. Keep Firestore/Storage rules and GAS allowlists tight. Prefer **Firebase Storage** for new photos (not public Drive links).
+### Firebase
+See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for Auth, family users, FCM, and rules deploy.
+
+### Apps Script
+1. Bind `Code.js` to the family spreadsheet.  
+2. Deploy as **Web App** (Execute as: Me, Access: Anyone).  
+3. Paste the web app URL into `js/app.js` as `GAS_URL`.  
+4. Triggers: inbox scanner, `dailyNotifications`, `keepAlive` as needed.  
+5. Script properties (optional but recommended): `APPROVAL_SECRET`, `CALENDAR_ID`, `NOTIFY_EMAILS`, etc.
+
+### GitHub Pages
+Settings → Pages → branch `main` / root.  
+App URL: `https://marcuswongjw.github.io/familylog/`
+
+### Phone PWA
+Open the site → **Add to Home Screen**.  
+Updates: open the app **online** after a deploy (no App Store reinstall). Redeploy **GAS** separately when `Code.js` changes.
 
 ---
 
-## License / use
+## API (client → GAS)
 
-Personal family project. Fork and adapt for your household if useful; update emails, Firebase project, `GAS_URL`, and rules allowlists before deploying.
+All app traffic uses **HTTP POST** with JSON body (no ID token in query strings):
+
+```json
+{ "action": "get_all", "idToken": "…" }
+{ "action": "write", "note": "add_expense", "idToken": "…", … }
+```
+
+Email approval pages still use **GET** with signed `id` / `exp` / `sig` (no Firebase session).
+
+---
+
+## Pull to refresh
+
+On the main app screens, **pull down** from the top of the scroll area (when already at scroll top) to reload dashboard data from GAS. The header 🔄 button still works too.
+
+---
+
+## Privacy note (Us / intimacy)
+
+Intimacy log and fertility data are:
+- Only returned for **adult** accounts in `get_all`  
+- Only writable by adults  
+- Stored in Google Sheets tabs `IntimacyLog` / `Fertility` (same Google account as the spreadsheet)
+
+Treat the spreadsheet ACL carefully (share only with parents if preferred).

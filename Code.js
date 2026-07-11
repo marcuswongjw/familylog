@@ -67,7 +67,8 @@ var EMAIL_TO_MEMBER = DEFAULT_EMAIL_TO_MEMBER;
 // Adult-only write actions (Us / fertility / couple bucket list)
 var ADULT_ONLY_NOTES = [
   'add_appreciation', 'add_love_checkin', 'add_fertility',
-  'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item'
+  'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item',
+  'add_intimacy', 'delete_intimacy'
 ];
 
 var EXPENSE_GROUPS = {
@@ -1208,6 +1209,45 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
+    // ── INTIMACY: log (couple only) ──
+    if (noteLower === 'add_intimacy') {
+      var intimacyDate = toStr(data.intimacy_date);
+      var intimacyNotes = toStr(data.intimacy_notes);
+      var intimacyRating = parseInt(data.intimacy_rating, 10);
+      if (!intimacyDate) return { status: 'error', message: 'Date required' };
+      if (!validateDate(intimacyDate)) return { status: 'error', message: 'Invalid date' };
+      if (!validateString(intimacyNotes, 500)) return { status: 'error', message: 'Notes too long' };
+      if (isNaN(intimacyRating) || intimacyRating < 1 || intimacyRating > 5) intimacyRating = 0;
+
+      var intSheet = ss.getSheetByName('IntimacyLog');
+      if (!intSheet) {
+        intSheet = ss.insertSheet('IntimacyLog');
+        intSheet.appendRow(['ID', 'Timestamp', 'LoggedBy', 'Date', 'Notes', 'Rating']);
+      }
+      var intId = 'int_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      var intParsed = parseEventDate(intimacyDate, '');
+      if (!intParsed) return { status: 'error', message: 'Invalid date' };
+      intSheet.appendRow([intId, new Date(), user, intParsed, intimacyNotes, intimacyRating || '']);
+      console.log('✅ Intimacy logged by ' + user);
+      return { status: 'ok', id: intId };
+    }
+
+    if (noteLower === 'delete_intimacy') {
+      var delId = toStr(data.id);
+      if (!delId) return { status: 'error', message: 'Missing id' };
+      var delSheet = ss.getSheetByName('IntimacyLog');
+      if (!delSheet) return { status: 'error', message: 'Not found' };
+      var delVals = delSheet.getDataRange().getValues();
+      for (var di = 1; di < delVals.length; di++) {
+        if (toStr(delVals[di][0]) === delId) {
+          delSheet.deleteRow(di + 1);
+          console.log('✅ Intimacy entry deleted: ' + delId);
+          return { status: 'ok' };
+        }
+      }
+      return { status: 'error', message: 'Entry not found' };
+    }
+
     // ── BUCKET LIST: add item ──
     if (noteLower === 'add_bucket_item') {
       var item = toStr(data.item);
@@ -1293,6 +1333,7 @@ function getAllDashboardData(verifiedEmail) {
     travel:         getTravelData(ss),
     appreciations:  adult ? getAppreciationsData(ss) : [],
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
+    intimacyLog:    adult ? getIntimacyLogData(ss) : [],
     bucketList:     adult ? getBucketList(ss) : [],
     // chat is NOT included — live via Firestore only (avoids dual Sheets path)
     expenseGroups:  EXPENSE_GROUPS,
@@ -1758,6 +1799,41 @@ function getLoveCheckinsData(ss) {
   }
   // The missing return here was why the check-in history never displayed.
   return result;
+}
+
+/** Private couple intimacy log (adults only). */
+function getIntimacyLogData(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('IntimacyLog');
+  if (!sheet) {
+    sheet = ss.insertSheet('IntimacyLog');
+    sheet.appendRow(['ID', 'Timestamp', 'LoggedBy', 'Date', 'Notes', 'Rating']);
+    return [];
+  }
+  var vals = sheet.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var result = [];
+  for (var i = 1; i < vals.length; i++) {
+    var row = vals[i];
+    if (!row[0] && !row[3]) continue;
+    var d = row[3] ? new Date(row[3]) : null;
+    if (d && isNaN(d.getTime())) d = null;
+    var ts = row[1] ? new Date(row[1]) : null;
+    result.push({
+      id: toStr(row[0]),
+      timestamp: ts && !isNaN(ts.getTime()) ? Utilities.formatDate(ts, tz, 'yyyy-MM-dd HH:mm:ss') : '',
+      loggedBy: toStr(row[2]),
+      date: d ? Utilities.formatDate(d, tz, 'dd MMM yyyy') : '',
+      dateRaw: d ? Utilities.formatDate(d, tz, 'yyyy-MM-dd') : '',
+      notes: toStr(row[4]),
+      rating: parseInt(row[5], 10) || 0
+    });
+  }
+  // Newest first
+  result.sort(function(a, b) {
+    return toStr(b.dateRaw).localeCompare(toStr(a.dateRaw)) || toStr(b.timestamp).localeCompare(toStr(a.timestamp));
+  });
+  return result.slice(0, 40);
 }
 
 // getChatMessages removed — chat is Firestore-only (see index.html startChatListener).

@@ -1,0 +1,2872 @@
+    // ─── FIREBASE CONFIG ────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",
+      authDomain: "familylog-86db6.firebaseapp.com",
+      projectId: "familylog-86db6",
+      storageBucket: "familylog-86db6.firebasestorage.app",
+      messagingSenderId: "171956350431",
+      appId: "1:171956350431:web:6094e6bafb0bb849ed286a",
+      measurementId: "G-HCHV787ZPJ"
+    };
+    const VAPID_KEY = 'BAs6TNKZd4jhJwSXah-Q5DQtVG0h0uaoQmopSBG9gu1AtvaHRKqAeG8ZvW3Og2PrJpLz_VxXoxzhvS5nrbt6HUU';
+
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
+
+    const MEMBERS = [
+      { name:'Marcus',  emoji:'👨', email:'marcuswongjw@gmail.com' },
+      { name:'Eleanor', emoji:'👩', email:'eleanor.jiamin@gmail.com' },
+      { name:'Mikaela', emoji:'👧', email:'mikaelawonght@gmail.com' },
+      { name:'Meaghan', emoji:'👧', email:'meaghanwongzx@gmail.com' },
+    ];
+    const FAM = ['Mikaela','Meaghan','Eleanor','Marcus','Everyone'];
+    const PIE_COLORS = ['#4f86c6','#3aaa75','#e05252','#d4861e','#7c5cbf','#2fb5b5','#e07b3a','#5aa832','#c05090','#888'];
+    let GROUPS = {};
+
+    let _callbackId = 0;
+    let db, storage, messaging; // will be set after Firebase init
+
+    // ─── PERSISTENT PREFERENCES ──────────────────────────────────
+    function loadPreference(key, fallback) {
+      try { const val = localStorage.getItem('wf_'+key); return val !== null ? val : fallback; } catch(e){return fallback;}
+    }
+    function savePreference(key, value) {
+      try { localStorage.setItem('wf_'+key, String(value)); } catch(e){}
+    }
+
+    // ─── STATE ───
+    let user = null;
+    let section = 'home';
+    let data = {};
+    let currentUserEmail = '';
+    let selectedMember = null;
+    let timelineInterval = null;
+    let chatImageBase64 = null;
+    let memImageBase64 = null;
+    let lastIdToken = '';   // cached Firebase token for beacon-style requests
+    // Parents only for Us / fertility (server also enforces). Default conservative until get_all.
+    const ADULT_EMAILS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
+    let isAdultUser = false;
+
+    // Firestore is the sole source of truth for chat (not Google Sheets)
+    let chatUnsubscribe = null;
+    let memoriesUnsubscribe = null;
+
+    // Notifications
+    let notificationsEnabled = false;
+
+    // Calendar state
+    let calView = loadPreference('calView', 'list');
+    let calYear = new Date().getFullYear();
+    let calMonth = new Date().getMonth();
+    let selectedCalDayStr = loadPreference('selectedCalDay', localDateStr());
+    let calWeekStart = getStartOfWeek(new Date());
+
+    // Expense & Budget filters
+    let activeExpenseAccount = loadPreference('expenseAccount', 'All');
+    let activeBudgetAccount = loadPreference('budgetAccount', 'All');
+
+    // Schedules state
+    let schedView = loadPreference('schedView', 'list');
+    let activeSchedChild = loadPreference('schedChild', 'Mikaela');
+    let schedYear = new Date().getFullYear();
+    let schedMonth = new Date().getMonth();
+    let selectedGridDayStr = localDateStr();
+
+    // Search queries
+    let searchTaskQuery = '';
+    let searchExpenseQuery = '';
+    let searchCalQuery = '';
+
+    // Bucket List
+    let bucketList = [];
+
+    // ─── DARK MODE ─────────────────────────────────────────────
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
+      savePreference('darkMode', isDark ? 'dark' : 'light');
+      document.getElementById('darkToggle').textContent = isDark ? '☀️' : '🌙';
+    }
+    function applyDarkMode() {
+      const pref = loadPreference('darkMode', 'light');
+      if (pref === 'dark') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('darkToggle').textContent = '☀️';
+      } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('darkToggle').textContent = '🌙';
+      }
+    }
+
+    // ─── INIT ──────────────────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      storage = firebase.storage();
+      messaging = firebase.messaging();
+
+      // Enable offline persistence (optional)
+      db.enablePersistence().catch(() => {});
+
+      applyDarkMode();
+      buildLogin();
+      buildModals();
+      buildMore();
+      document.querySelectorAll('.overlay').forEach(o => {
+        o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+      });
+      // Restore views
+      document.querySelectorAll('.toggle-pill').forEach(p => p.classList.remove('active'));
+      const viewBtn = document.getElementById('cal-view-'+calView);
+      if (viewBtn) viewBtn.classList.add('active');
+      const schedBtn = document.getElementById('sched-view-'+schedView);
+      if (schedBtn) schedBtn.classList.add('active');
+      const pill = document.getElementById('pill-'+activeSchedChild);
+      if (pill) pill.classList.add('active');
+
+      // Service worker (for FCM + notification click → chat)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('firebase-messaging-sw.js')
+          .then((registration) => {
+            console.log('✅ FCM Service Worker registered');
+            messaging.useServiceWorker(registration);
+            // Pick up a new SW version (v3+) without waiting forever
+            registration.update().catch(() => {});
+          })
+          .catch(err => console.warn('❌ SW registration failed:', err));
+
+        // When user taps a push while the app is already open / focused
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'NOTIFICATION_CLICK') {
+            handleNotificationNavigation(event.data.screen || 'chat');
+          }
+        });
+      }
+
+      // Deep links: ?open=chat and #chat (notification click / PWA cold start)
+      window.addEventListener('hashchange', () => {
+        const t = screenFromLocation();
+        if (t) handleNotificationNavigation(t);
+      });
+      // iOS PWA: pageshow fires when returning from notification / bfcache
+      window.addEventListener('pageshow', () => {
+        const t = screenFromLocation();
+        if (t) handleNotificationNavigation(t);
+      });
+      window.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          const t = screenFromLocation();
+          if (t) handleNotificationNavigation(t);
+        }
+      });
+
+      firebase.auth().onAuthStateChanged(user => {
+        if (user) {
+          currentUserEmail = user.email;
+          const member = MEMBERS.find(m => m.email === user.email);
+          if (member) loginAs(member.name);
+          else loginAs(user.email.split('@')[0]);
+          // After login, honor pending notification / hash / query target
+          applyPendingNotificationScreen();
+        } else {
+          document.getElementById('login-screen').classList.add('active');
+          document.getElementById('app-screen').classList.remove('active');
+        }
+      });
+
+      // Autocomplete blur
+      const searchInput = document.getElementById('tr-loc-search');
+      if (searchInput) {
+        searchInput.addEventListener('blur', () => {
+          setTimeout(() => { const sug = document.getElementById('tr-loc-suggestions'); if(sug) sug.style.display='none'; }, 200);
+        });
+      }
+    });
+
+    // ─── TOAST ──────────────────────────────────────────────────
+    let toastT;
+    function toast(msg, isError = false) {
+      const el = document.getElementById('toast');
+      el.textContent = (isError?'❌ ':'') + msg;
+      el.classList.add('show');
+      clearTimeout(toastT);
+      toastT = setTimeout(() => el.classList.remove('show'), 2800);
+    }
+    function showError(msg) { toast(msg, true); }
+
+    // ─── UNDO (deferred commit) ────────────────────────────────
+    let _pendingUndo = null;
+
+    function _flushPendingUndo(useBeacon) {
+      if(!_pendingUndo) return;
+      clearTimeout(_pendingUndo.timer);
+      const payload = _pendingUndo.payload;
+      _pendingUndo = null;
+      if(!payload) return;
+      if(useBeacon && navigator.sendBeacon) {
+        payload.user = user || 'Unknown';
+        payload.action = payload.action || 'write';
+        if(lastIdToken) payload.idToken = lastIdToken;
+        try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
+      } else {
+        gPost(payload);
+      }
+    }
+
+    function pushUndo(restoreFn, message, commitPayload) {
+      _flushPendingUndo();
+      const el = document.getElementById('toast');
+      _pendingUndo = {
+        restore: restoreFn,
+        payload: commitPayload || null,
+        message: message || 'Item deleted',
+        timer: setTimeout(() => {
+          el.classList.remove('show');
+          _flushPendingUndo();
+        }, 5000)
+      };
+      el.innerHTML = `${escapeHtml(_pendingUndo.message)} <button onclick="undoLast()" style="background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;">Undo</button>`;
+      el.classList.add('show');
+      clearTimeout(toastT);
+    }
+    function undoLast() {
+      if(!_pendingUndo) return;
+      clearTimeout(_pendingUndo.timer);
+      const item = _pendingUndo;
+      _pendingUndo = null;
+      item.restore();
+      toast('↩️ Undo successful');
+    }
+    window.addEventListener('pagehide', () => _flushPendingUndo(true));
+    document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true); });
+
+    // ─── LOGIN ──────────────────────────────────────────────────
+    function buildLogin() {
+      const grid = document.getElementById('mgrid');
+      if(!grid) return;
+      grid.innerHTML = MEMBERS.map(m =>
+        `<button class="member-btn" onclick="selectMember('${m.name}')"><span class="av">${m.emoji}</span>${m.name}</button>`
+      ).join('');
+    }
+    function selectMember(name) {
+      selectedMember = MEMBERS.find(m => m.name === name);
+      if(!selectedMember) return;
+      document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
+      document.querySelectorAll('.member-btn').forEach(b => { if(b.textContent.trim() === name) b.classList.add('sel'); });
+      document.getElementById('pinbox').style.display = 'block';
+      document.getElementById('pinlbl').textContent = name + "'s password";
+      document.getElementById('login-error').textContent = '';
+      setTimeout(() => document.getElementById('login-password').focus(), 100);
+    }
+    function loginWithSelectedMember() {
+      if(!selectedMember){ document.getElementById('login-error').textContent = 'Please select a member.'; return; }
+      const password = document.getElementById('login-password').value;
+      if(!password){ document.getElementById('login-error').textContent = 'Please enter your password.'; return; }
+      const email = selectedMember.email, errorEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
+      btn.disabled = true; errorEl.textContent = '';
+      // Family policy: 6-digit numeric PIN (same for kids and parents)
+      if (!/^\d{6}$/.test(password)) {
+        errorEl.textContent = 'PIN must be exactly 6 digits.';
+        return;
+      }
+      firebase.auth().signInWithEmailAndPassword(email, password)
+        .then(() => {
+          btn.disabled = false;
+          // After login, request FCM permission and get token
+          requestFCMToken();
+        })
+        .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
+    }
+    function loginAs(name) {
+      user = name;
+      const m = MEMBERS.find(m => m.name === name);
+      document.getElementById('login-screen').classList.remove('active');
+      document.getElementById('app-screen').classList.add('active');
+      document.getElementById('hname').textContent = name;
+      document.getElementById('hav').textContent = m ? m.emoji : '👤';
+      document.getElementById('hdate').textContent = new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});
+      setDefaultDates();
+      // Immediate adult gate from email (refined when get_all returns isAdult)
+      const email = (m && m.email) || currentUserEmail || '';
+      setAdultAccess(ADULT_EMAILS.includes(String(email).toLowerCase()));
+      goTo('home');
+      loadData();
+      // Request FCM token after login
+      requestFCMToken();
+      setupPullToRefresh();
+    }
+
+    // ─── PULL TO REFRESH ──────────────────────────────────────
+    let _ptrBound = false;
+    function setupPullToRefresh() {
+      if (_ptrBound) return;
+      const content = document.querySelector('#app-screen .content');
+      const ind = document.getElementById('ptr-indicator');
+      if (!content || !ind) return;
+      _ptrBound = true;
+
+      let startY = 0;
+      let pulling = false;
+      const THRESH = 72;
+
+      function activeSection() {
+        return document.querySelector('#app-screen .section.active');
+      }
+
+      content.addEventListener('touchstart', (e) => {
+        const sec = activeSection();
+        if (!sec || sec.scrollTop > 2) { pulling = false; return; }
+        if (!document.getElementById('app-screen').classList.contains('active')) return;
+        startY = e.touches[0].clientY;
+        pulling = true;
+      }, { passive: true });
+
+      content.addEventListener('touchmove', (e) => {
+        if (!pulling) return;
+        const sec = activeSection();
+        if (!sec || sec.scrollTop > 2) {
+          ind.style.height = '0px';
+          return;
+        }
+        const dy = e.touches[0].clientY - startY;
+        if (dy < 8) {
+          ind.style.height = '0px';
+          ind.classList.remove('ptr-ready', 'ptr-loading');
+          return;
+        }
+        const h = Math.min(dy * 0.45, 80);
+        ind.style.height = h + 'px';
+        ind.classList.toggle('ptr-ready', h >= THRESH * 0.55);
+        ind.classList.remove('ptr-loading');
+        ind.textContent = h >= THRESH * 0.55 ? 'Release to refresh' : 'Pull to refresh';
+      }, { passive: true });
+
+      content.addEventListener('touchend', async () => {
+        if (!pulling) return;
+        pulling = false;
+        const h = parseFloat(ind.style.height || '0');
+        if (h >= THRESH * 0.55) {
+          ind.classList.add('ptr-loading');
+          ind.classList.remove('ptr-ready');
+          ind.style.height = '48px';
+          ind.textContent = 'Refreshing…';
+          try {
+            await loadData();
+            toast('Refreshed');
+          } catch (err) {
+            toast('Refresh failed', true);
+          }
+        }
+        ind.style.height = '0px';
+        ind.textContent = '';
+        ind.classList.remove('ptr-ready', 'ptr-loading');
+      }, { passive: true });
+    }
+    function logout() {
+      stopChatListener();
+      stopMemoriesListener();
+      firebase.auth().signOut().then(() => {
+        user = null;
+        isAdultUser = false;
+        document.body.classList.remove('is-child');
+        data = {};
+        document.getElementById('app-screen').classList.remove('active');
+        document.getElementById('login-screen').classList.add('active');
+        document.getElementById('login-password').value = '';
+        document.getElementById('login-error').textContent = '';
+        selectedMember = null;
+        document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
+        document.getElementById('pinbox').style.display = 'none';
+      });
+    }
+
+    /** Show/hide Us + Fertility entry points. Kids get body.is-child. */
+    function setAdultAccess(adult) {
+      isAdultUser = !!adult;
+      document.body.classList.toggle('is-child', !isAdultUser);
+      buildMore();
+      if (!isAdultUser && (section === 'us' || section === 'fertility')) {
+        goTo('home');
+      }
+    }
+
+    // ─── FCM TOKEN REQUEST ────────────────────────────────────
+    async function requestFCMToken() {
+      if (!messaging) return;
+      
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          console.warn('Notification permission denied');
+          return;
+        }
+        
+        const registration = await navigator.serviceWorker.ready;
+        const token = await messaging.getToken({
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: registration
+        });
+        if (!token) {
+          console.warn('No FCM token received');
+          return;
+        }
+        
+        console.log('✅ FCM token:', token);
+        
+        // Save token to Firestore
+        const currentUser = firebase.auth().currentUser;
+        if (!currentUser) {
+          console.warn('No authenticated user – cannot save token');
+          return;
+        }
+        
+        const userEmail = currentUser.email;
+        const userRef = db.collection('users').doc(userEmail);
+        
+        await userRef.set({
+          email: userEmail,
+          name: user || 'Unknown',
+          fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
+        }, { merge: true });
+        
+        console.log('✅ FCM token saved to Firestore');
+        
+      } catch (err) {
+        console.warn('❌ FCM token error:', err);
+      }
+    }
+    
+
+    // ─── XSS ESCAPE / URL SAFETY ─────────────────────────────
+    function escapeHtml(text) {
+      if(text === null || text === undefined) return '';
+      return String(text).replace(/[&<>"']/g, c => (
+        {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+      ));
+    }
+    /** Only allow http(s) media URLs for img src / lightbox. */
+    function isSafeMediaUrl(url) {
+      if (!url || typeof url !== 'string') return false;
+      try {
+        const u = new URL(url, location.href);
+        return u.protocol === 'https:' || u.protocol === 'http:';
+      } catch (e) { return false; }
+    }
+    /** Safe img + lightbox markup; uses this.src so URLs never enter onclick JS strings. */
+    function mediaImgHtml(url, extraStyle) {
+      if (!isSafeMediaUrl(url)) return '';
+      const style = extraStyle || 'max-width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin:8px 0;cursor:pointer;display:block;';
+      return `<img src="${escapeHtml(url)}" style="${style}" class="chat-bubble-img" onclick="openChatLightbox(this.src)" alt="">`;
+    }
+
+    // ─── PROGRESS BAR ─────────────────────────────────────────
+    let progressInterval = null;
+    function startProgressBar() {
+      const bar = document.getElementById('top-progress-bar');
+      if(!bar) return;
+      clearInterval(progressInterval);
+      bar.style.opacity = '1';
+      bar.style.width = '0%';
+      let percent = 0;
+      progressInterval = setInterval(() => {
+        if(percent < 30) percent += Math.random()*8+5;
+        else if(percent < 75) percent += Math.random()*4+2;
+        else if(percent < 95) percent += Math.random()*1.5+0.5;
+        else if(percent < 99) percent += 0.1;
+        bar.style.width = Math.min(percent,99)+'%';
+      }, 120);
+    }
+    function finishProgressBar() {
+      const bar = document.getElementById('top-progress-bar');
+      if(!bar) return;
+      clearInterval(progressInterval);
+      bar.style.width = '100%';
+      setTimeout(() => {
+        bar.style.opacity = '0';
+        setTimeout(() => bar.style.width = '0%', 300);
+      }, 200);
+    }
+
+    // ─── DATA FETCH / WRITE (POST only — never put idToken in URL) ──
+    /**
+     * Single GAS transport: Firebase ID token in JSON body only (no JSONP query strings).
+     * @param {object} body  Must include action: 'get_all' | 'write' (writes also use note)
+     */
+    async function gasRequest(body) {
+      startProgressBar();
+      try {
+        const currentUser = firebase.auth().currentUser;
+        if (!currentUser) { showError('Please log in'); return null; }
+        const idToken = await currentUser.getIdToken();
+        lastIdToken = idToken;
+        const payload = Object.assign({}, body, {
+          idToken: idToken,
+          user: user || 'Unknown'
+        });
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        let r;
+        try {
+          r = await response.json();
+        } catch (parseErr) {
+          showError('Invalid server response');
+          return null;
+        }
+        if (r && r.status === 'error') {
+          showError('Server error: ' + (r.message || 'unknown'));
+          return null;
+        }
+        return r;
+      } catch (err) {
+        showError('Network error: ' + err.message);
+        return null;
+      } finally {
+        finishProgressBar();
+      }
+    }
+
+    function applyDashboardPayload(r) {
+      if (!r) return;
+      // Preserve Firestore live data — never take chat from Sheets/GAS
+      const prevChat = data.chat;
+      const prevMems = data.memories;
+      data = r || {};
+      data.chat = Array.isArray(prevChat) ? prevChat : [];
+      if (prevMems) data.memories = prevMems;
+      if (r.expenseGroups) GROUPS = r.expenseGroups;
+      if (r.bucketList) bucketList = r.bucketList;
+      // Server isAdult is authoritative; fall back to email allowlist
+      if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
+      else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
+      buildDynamicSelectors();
+      render(section);
+      renderHome();
+    }
+
+    function loadData() {
+      return gasRequest({ action: 'get_all' }).then(r => {
+        applyDashboardPayload(r);
+      });
+    }
+
+    /** Writes (and any non-get action) go through POST body with token. */
+    function gPost(payload) {
+      return gasRequest(Object.assign({ action: 'write' }, payload || {}));
+    }
+
+    // Back-compat alias
+    async function postWrite(payload) {
+      return gPost(payload);
+    }
+
+    // ─── BUILD DYNAMIC SELECTORS ──────────────────────────────
+    function buildDynamicSelectors() {
+      const bgs = document.getElementById('bud-grp');
+      if(bgs) bgs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join('');
+      const rgs = document.getElementById('rc-grp');
+      if(rgs){ rgs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join(''); updateRcCats(); }
+      const egs = document.getElementById('ex-grp');
+      if(egs){ egs.innerHTML = Object.keys(GROUPS).map(g => `<option value="${g}">${g}</option>`).join(''); updateExCats(); }
+    }
+    function updateRcCats() {
+      const grp = document.getElementById('rc-grp'), cat = document.getElementById('rc-cat');
+      if(!grp || !cat) return;
+      cat.innerHTML = (GROUPS[grp.value]||[]).map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    function updateExCats() {
+      const grp = document.getElementById('ex-grp'), cat = document.getElementById('ex-cat');
+      if(!grp || !cat) return;
+      cat.innerHTML = (GROUPS[grp.value]||[]).map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    // ─── NAVIGATION ───────────────────────────────────────────
+    const NAV_SECONDARY = ['tasks','budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+
+    /** Read deep-link target from ?open= or #hash (iOS PWAs keep query more reliably). */
+    function screenFromLocation() {
+      try {
+        const q = new URLSearchParams(location.search).get('open');
+        if (q) return q.replace(/^\//, '') || 'chat';
+      } catch (e) { /* ignore */ }
+      if (location.hash === '#chat' || location.hash === '#/chat') return 'chat';
+      if (location.hash && location.hash.length > 1) {
+        const h = location.hash.replace(/^#\/?/, '');
+        if (['chat', 'home', 'calendar', 'expenses', 'us'].includes(h)) return h;
+      }
+      return null;
+    }
+
+    /** Navigate from a notification tap (or deep link). Works before/after login. */
+    function handleNotificationNavigation(screen) {
+      const target = screen || 'chat';
+      if (user) {
+        goTo(target);
+        try {
+          const url = new URL(location.href);
+          url.searchParams.set('open', target);
+          url.hash = target;
+          history.replaceState(null, '', url.pathname + url.search + url.hash);
+        } catch (e) {
+          try { history.replaceState(null, '', '?open=' + encodeURIComponent(target) + '#' + target); } catch (e2) {}
+        }
+      } else {
+        try { sessionStorage.setItem('wf_pending_screen', target); } catch (e) {}
+      }
+    }
+
+    function applyPendingNotificationScreen() {
+      let target = null;
+      try { target = sessionStorage.getItem('wf_pending_screen'); } catch (e) {}
+      if (!target) target = screenFromLocation();
+      if (target) {
+        try { sessionStorage.removeItem('wf_pending_screen'); } catch (e) {}
+        // Defer so login UI has finished switching screens (iOS needs a beat)
+        setTimeout(() => goTo(target), 120);
+        setTimeout(() => { if (section !== target) goTo(target); }, 600);
+      }
+    }
+
+    function goTo(id) {
+      // Adults-only destinations (UI + server); kids never enter these sections
+      if ((id === 'us' || id === 'fertility') && !isAdultUser) {
+        toast('That space is for Mom & Dad only 💖', true);
+        id = 'home';
+      }
+      section = id;
+      if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
+      
+      // Handle chat listener (Firestore only)
+      if(id === 'chat') {
+        startChatListener();
+        // Request notification permission
+        requestNotificationPermission();
+      } else {
+        stopChatListener();
+      }
+      
+      // Handle memories listener
+      if(id === 'memories') {
+        startMemoriesListener();
+      } else {
+        stopMemoriesListener();
+      }
+      
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      const t = document.getElementById('s-'+id);
+      if(t) t.classList.add('active');
+      const navId = NAV_SECONDARY.includes(id) ? '' : id;
+      document.querySelectorAll('.nav-it').forEach(n => n.classList.remove('act'));
+      if (navId) {
+        const nb = document.getElementById('nav-'+navId);
+        if(nb) nb.classList.add('act');
+      }
+      const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
+      const fab = document.getElementById('fab');
+      if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
+      
+      render(id);
+    }
+    function onFab() { if(document.getElementById('fab')._m) openM(document.getElementById('fab')._m); }
+    function buildMore() {
+      const el = document.getElementById('more-grid');
+      if (!el) return;
+      const tiles = [
+        {id:'budgets',icon:'📊',label:'Budgets'},{id:'memories',icon:'💛',label:'Memories'},
+        {id:'birthdays',icon:'🎂',label:'Birthdays'},
+        ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'}] : []),
+        {id:'recurring',icon:'🔄',label:'Recurring'},{id:'schedules',icon:'⛵',label:'Schedules'},
+        {id:'travel',icon:'✈️',label:'Travel'}
+      ];
+      el.innerHTML = tiles.map(t =>
+        `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
+      ).join('');
+    }
+    function render(id) {
+      switch(id) {
+        case 'home': renderHome(); break;
+        case 'chat': renderChat(); break;
+        case 'calendar': renderCal(); break;
+        case 'tasks': renderTasks(); break;
+        case 'expenses': renderExpenses(); break;
+        case 'budgets': renderBudgets(); break;
+        case 'memories': renderMemories(); break;
+        case 'fertility': renderFertility(); break;
+        case 'recurring': renderRecurring(); break;
+        case 'birthdays': renderBirthdays(); break;
+        case 'schedules': renderSchedules(); break;
+        case 'travel': renderTravel(); break;
+        case 'us': renderUs(); break;
+      }
+    }
+
+    // ─── UTILITY ──────────────────────────────────────────────
+    function v(id){ return document.getElementById(id)?.value?.trim()||''; }
+    function clr(...ids){ ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
+    function localDateStr(d){ d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+    function todayStr(){ return localDateStr(); }
+    function fmtDate(s){ if(!s) return ''; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
+    function fmtTime(s){ if(!s) return ''; const [h,m]=s.split(':').map(Number); return `${h===0?12:h>12?h-12:h}:${String(m).padStart(2,'0')}${h>=12?'pm':'am'}`; }
+    function setDefaultDates(){ const tod=todayStr(); ['ev-date','tk-due','mem-date','fert-date','ex-date','act-date','tr-date'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=tod; }); }
+    function getMemberBadgeClass(tag){ switch(tag){ case 'Mikaela': return 'b-blue'; case 'Meaghan': return 'b-amber'; case 'Eleanor': return 'b-red'; case 'Marcus': return 'b-green'; case 'Everyone': return 'b-purple'; default: return 'b-gray'; } }
+
+    // ─── CHIPS ─────────────────────────────────────────────────
+    function chips(id, opts, def, key) {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.innerHTML = opts.map(o => `<span class="chip${o===def?' sel':''}" data-k="${key}" data-v="${o}" onclick="selChip(this,'${key}')">${o}</span>`).join('');
+    }
+    function selChip(el, key) { el.closest('.chips').querySelectorAll('.chip').forEach(c => c.classList.remove('sel')); el.classList.add('sel'); }
+    function gc(key) { const el=document.querySelector(`.chip[data-k="${key}"].sel`); return el ? el.dataset.v : null; }
+
+    // ─── MODALS ─────────────────────────────────────────────────
+    function buildModals() {
+      chips('ev-chips', FAM, 'Everyone', 'ev-tag');
+      chips('tk-chips', FAM, 'Everyone', 'tk-a');
+      chips('mem-type-chips', ['🏆 Milestone','💬 Quote','💛 Moment'], '💛 Moment', 'mt');
+      chips('mem-pers-chips', FAM, 'Everyone', 'mp');
+      chips('bd-type-chips', ['Birthday','Wedding Anniversary'], 'Birthday', 'bdt');
+      chips('fert-chips', ['Period Start','Period End','Ovulation','Symptom'], 'Period Start', 'ft');
+      chips('rc-acct-chips', ['Personal Account','Family'], 'Family', 'rca');
+      chips('ex-acct-chips', ['Personal Account','Family'], 'Family', 'exa');
+    }
+    function openM(id) {
+      document.getElementById(id).classList.add('open');
+      if(id === 'm-event'){ const el=document.getElementById('ev-date'); if(el) el.value=selectedCalDayStr||todayStr(); chips('ev-chips', FAM, 'Everyone', 'ev-tag'); }
+    }
+    function closeM(id){ document.getElementById(id).classList.remove('open'); }
+
+    // ─── SEARCH / FILTER ──────────────────────────────────────
+    function filterTasks() {
+      const input = document.getElementById('task-search');
+      searchTaskQuery = input ? input.value.toLowerCase().trim() : '';
+      renderTasks();
+    }
+    function filterExpenses() {
+      const input = document.getElementById('exp-search');
+      searchExpenseQuery = input ? input.value.toLowerCase().trim() : '';
+      renderExpenses();
+    }
+    function filterCalendar() {
+      const input = document.getElementById('cal-search');
+      searchCalQuery = input ? input.value.toLowerCase().trim() : '';
+      renderCal();
+    }
+
+    // ─── HOME (Dashboard) ────────────────────────────────────
+    function renderHome() {
+      const h = new Date().getHours();
+      const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}! 👋</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+      const exp = data.expenses || {};
+      const totalSpent = exp.total || 0;
+      const tasksOpen = (data.todos||[]).length;
+      const eventsToday = (data.events||[]).filter(e => e.dateRaw === todayStr()).length;
+      document.getElementById('dash-summary').innerHTML = `
+        <div class="dash-stat"><span class="num">$${totalSpent.toFixed(0)}</span><span class="lbl">Spent This Month</span></div>
+        <div class="dash-stat"><span class="num">${tasksOpen}</span><span class="lbl">Open Tasks</span></div>
+        <div class="dash-stat"><span class="num">${eventsToday}</span><span class="lbl">Today's Events</span></div>
+      `;
+      let membersHtml = '';
+      FAM.forEach(m => {
+        if(m === 'Everyone') return;
+        const tasks = (data.todos||[]).filter(t => t.assignee === m && t.dueRaw && t.dueRaw >= todayStr());
+        const events = (data.events||[]).filter(e => e.tags.includes(m) && e.dateRaw >= todayStr()).slice(0,3);
+        membersHtml += `
+          <div class="dash-member" onclick="goToMember('${m}')" title="Click to view tasks and calendar for ${m}">
+            <span class="emoji">${m==='Marcus'?'👨':m==='Eleanor'?'👩':'👧'}</span>
+            <div class="info"><div class="name">${m}</div><div class="detail">${tasks.length} tasks · ${events.length} upcoming events</div></div>
+            <span class="count">${tasks.length}</span>
+          </div>
+        `;
+      });
+      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Member Overview (click for details)</div>${membersHtml}`;
+      const tod = todayStr();
+      const evs = (data.events||[]).filter(e => e.dateRaw === tod);
+      const tks = (data.todos||[]).filter(t => t.dueRaw && t.dueRaw <= tod);
+      document.getElementById('today-wrap').innerHTML = `
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Today at a Glance</span></div>
+          <div class="card-body">
+            ${!evs.length && !tks.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
+            ${evs.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}</div></div></div>`).join('')}
+            ${tks.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">⚠️</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">Due today · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function goToMember(member) {
+      goTo('tasks');
+      const searchInput = document.getElementById('task-search');
+      if (searchInput) {
+        searchInput.value = member;
+        filterTasks();
+      }
+    }
+
+    // ─── CALENDAR ──────────────────────────────────────────────
+    function getStartOfWeek(d){ const date=new Date(d); const day=date.getDay(); const diff=date.getDate()-day; return new Date(date.setDate(diff)); }
+    function toggleCalView(view) {
+      calView = view;
+      savePreference('calView', view);
+      document.querySelectorAll('#s-calendar .toggle-pill').forEach(p => p.classList.remove('active'));
+      const btn = document.getElementById('cal-view-'+view);
+      if(btn) btn.classList.add('active');
+      renderCal();
+    }
+    function prevCalMonth(){ calMonth--; if(calMonth<0){calMonth=11;calYear--;} renderCal(); }
+    function nextCalMonth(){ calMonth++; if(calMonth>11){calMonth=0;calYear++;} renderCal(); }
+    function prevCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()-7); renderCal(); }
+    function nextCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()+7); renderCal(); }
+    function snapCalWeekToday(){ calWeekStart=getStartOfWeek(new Date()); renderCal(); }
+    function snapCalMonthToday(){ const d=new Date(); calMonth=d.getMonth(); calYear=d.getFullYear(); selectedCalDayStr=localDateStr(d); savePreference('selectedCalDay', selectedCalDayStr); renderCal(); }
+    function selectCalDay(dayStr){ selectedCalDayStr=dayStr; savePreference('selectedCalDay', dayStr); renderCal(); }
+
+    function renderCal() {
+      if(calView === 'year') renderCalYear();
+      else if(calView === 'month') renderCalMonth();
+      else if(calView === 'week') renderCalWeek();
+      else renderCalList();
+    }
+
+    function renderCalList() {
+      const today = todayStr();
+      let evs = (data.events || []).filter(e => e.dateRaw >= today);
+      if(searchCalQuery) evs = evs.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
+      const container = document.getElementById('cal-list');
+      if(!container) return;
+      if(!evs.length){ container.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
+      container.innerHTML = evs.map(e => `
+        <div class="row">
+          <div style="font-size:22px;flex-shrink:0;">📅</div>
+          <div class="row-main">
+            <div class="row-title">${escapeHtml(e.title)}</div>
+            <div class="row-sub">${escapeHtml(e.date)} · ${escapeHtml(e.time)}${e.notes?' · '+escapeHtml(e.notes):''}</div>
+            ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${escapeHtml(t)}</span>`).join('')}
+          </div>
+          <button onclick="delEvent('${e.id}')" style="color:var(--text-muted);font-size:18px;padding:4px 6px;flex-shrink:0;">✕</button>
+        </div>`).join('');
+    }
+
+    function renderCalWeek() {
+      const evs = data.events || [];
+      const container = document.getElementById('cal-list');
+      if(!container) return;
+      const weekStart = new Date(calWeekStart);
+      const daysOfWeek = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const monthNamesShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth()+1).padStart(2,'0')}-${String(weekStart.getDate()).padStart(2,'0')}`;
+      let html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border-color);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button onclick="prevCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+            <button onclick="snapCalWeekToday()" style="background:#edf4fc;border:none;font-size:11px;font-weight:700;color:#4f86c6;padding:4px 8px;border-radius:6px;cursor:pointer;">Today</button>
+          </div>
+          <span style="font-weight:700;font-size:14px;">Week of ${fmtDate(weekStartStr)}</span>
+          <button onclick="nextCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+        </div>
+        <div class="week-container" style="padding:8px 16px;">
+      `;
+      const today = todayStr();
+      for(let i=0; i<7; i++) {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate()+i);
+        const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const isToday = dStr === today;
+        let dayEvents = evs.filter(e => e.dateRaw === dStr);
+        if(searchCalQuery) dayEvents = dayEvents.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
+        let eventsHtml = '';
+        if(dayEvents.length > 0) {
+          eventsHtml = dayEvents.map(e => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border-color);">
+              <div style="flex:1;">
+                <div style="font-weight:600;font-size:13px;">${escapeHtml(e.title)}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(e.time)}${e.endTime ? ' - ' + escapeHtml(e.endTime) : ''}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
+                ${e.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(e.notes)}"</div>` : ''}
+                ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;font-size:9px;padding:1px 4px;">${escapeHtml(t)}</span>`).join('')}
+              </div>
+              <button onclick="delEvent('${e.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;">✕</button>
+            </div>
+          `).join('');
+        } else {
+          eventsHtml = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">No events</div>';
+        }
+        const dayStyle = isToday ? 'background:var(--bg-card);border-left:3px solid #4f86c6;padding:8px;border-radius:4px;margin-bottom:8px;' : 'padding:8px;margin-bottom:8px;';
+        html += `
+          <div style="${dayStyle}border-bottom:1px solid var(--border-color);">
+            <div style="font-weight:700;font-size:12px;color:${isToday ? '#4f86c6' : 'var(--text-secondary)'};margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+              <span>${daysOfWeek[d.getDay()]}, ${d.getDate()} ${monthNamesShort[d.getMonth()]}</span>
+              ${isToday ? '<span style="font-size:10px;background:#4f86c6;color:#fff;padding:1px 6px;border-radius:10px;">TODAY</span>' : ''}
+            </div>
+            <div style="padding-left:4px;">
+              ${eventsHtml}
+            </div>
+          </div>
+        `;
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
+    function renderCalMonth() {
+      const evs = data.events || [];
+      const container = document.getElementById('cal-list');
+      if(!container) return;
+      const firstDayOfMonth = new Date(calYear, calMonth, 1);
+      const startDayOfWeek = firstDayOfMonth.getDay();
+      const numDays = new Date(calYear, calMonth+1, 0).getDate();
+      const prevMonthDays = new Date(calYear, calMonth, 0).getDate();
+      const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      let html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border-color);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button onclick="prevCalMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+            <button onclick="snapCalMonthToday()" style="background:#edf4fc;border:none;font-size:11px;font-weight:700;color:#4f86c6;padding:4px 8px;border-radius:6px;cursor:pointer;">Today</button>
+          </div>
+          <span style="font-weight:700;font-size:14px;">${monthNames[calMonth]} ${calYear}</span>
+          <button onclick="nextCalMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+        </div>
+        <div class="cal-grid-hdr">
+          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+        </div>
+        <div class="cal-grid" id="cal-grid-container">
+      `;
+      for(let i=startDayOfWeek-1; i>=0; i--) { const dVal=prevMonthDays-i; html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${dVal}</span></div>`; }
+      const today = todayStr();
+      for(let day=1; day<=numDays; day++) {
+        const dayStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const isToday = today === dayStr;
+        const isSelected = selectedCalDayStr === dayStr;
+        let dayEvents = evs.filter(e => e.dateRaw === dayStr);
+        if(searchCalQuery) dayEvents = dayEvents.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
+        let dotsHtml = '';
+        if(dayEvents.length > 0) {
+          dotsHtml = '<div class="cal-dots-wrap">';
+          const uniqueTags = new Set();
+          dayEvents.forEach(e => { if(e.tags && e.tags.length>0) e.tags.forEach(t => uniqueTags.add(t)); else uniqueTags.add('Everyone'); });
+          uniqueTags.forEach(tag => dotsHtml += `<span class="cal-dot ${tag}"></span>`);
+          dotsHtml += '</div>';
+        }
+        const cellClass = `cal-day-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`;
+        html += `
+          <div class="${cellClass}" data-date="${dayStr}" onclick="selectCalDay('${dayStr}')">
+            <span class="cal-day-num">${day}</span>
+            ${dotsHtml}
+          </div>
+        `;
+      }
+      const totalCellsUsed = startDayOfWeek + numDays;
+      const nextDaysCount = 42 - totalCellsUsed;
+      for(let d=1; d<=nextDaysCount; d++) { html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${d}</span></div>`; }
+      html += `</div>`;
+      let selectedDayEvents = evs.filter(e => e.dateRaw === selectedCalDayStr);
+      if(searchCalQuery) selectedDayEvents = selectedDayEvents.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
+      let selectedDayHtml = '';
+      if(selectedDayEvents.length > 0) {
+        selectedDayHtml = selectedDayEvents.map(e => `
+          <div class="row" style="padding:10px 16px;cursor:grab;" draggable="true" data-event-id="${e.id}" data-date="${e.dateRaw}" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
+            <div style="font-size:20px;flex-shrink:0;margin-right:6px;">📅</div>
+            <div class="row-main">
+              <div class="row-title" style="font-weight:600;">${escapeHtml(e.title)}</div>
+              <div class="row-sub">${escapeHtml(e.time)}${e.endTime ? ' - ' + escapeHtml(e.endTime) : ''}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
+              ${e.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(e.notes)}"</div>` : ''}
+              ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${escapeHtml(t)}</span>`).join('')}
+            </div>
+            <button onclick="delEvent('${e.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button>
+          </div>
+        `).join('');
+      } else {
+        selectedDayHtml = '<div class="empty">No events scheduled for this day</div>';
+      }
+      html += `
+        <div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">
+          📅 Events: ${fmtDate(selectedCalDayStr)}
+        </div>
+        <div class="card-body" style="padding:0;" id="selected-day-events">
+          ${selectedDayHtml}
+        </div>
+      `;
+      container.innerHTML = html;
+      document.querySelectorAll('.cal-day-cell').forEach(cell => {
+        cell.addEventListener('dragover', onDragOver);
+        cell.addEventListener('drop', onDrop);
+      });
+    }
+
+    // ─── CALENDAR DRAG & DROP ──────────────────────────────
+    let draggedEventId = null;
+    function onDragStart(e) {
+      const el = e.target.closest('.row');
+      if(!el) return;
+      draggedEventId = el.dataset.eventId;
+      e.dataTransfer.setData('text/plain', draggedEventId);
+      el.classList.add('dragging');
+    }
+    function onDragEnd(e) {
+      const el = e.target.closest('.row');
+      if(el) el.classList.remove('dragging');
+    }
+    function onDragOver(e) {
+      e.preventDefault();
+      const cell = e.target.closest('.cal-day-cell');
+      if(cell) cell.classList.add('drag-over');
+    }
+    function onDrop(e) {
+      e.preventDefault();
+      const cell = e.target.closest('.cal-day-cell');
+      if(cell) cell.classList.remove('drag-over');
+      const newDate = cell.dataset.date;
+      if(!newDate || !draggedEventId) return;
+      const event = data.events.find(ev => ev.id === draggedEventId);
+      if(event) {
+        event.dateRaw = newDate;
+        event.date = fmtDate(newDate);
+        renderCal();
+        gPost({ note: 'update_event_date', event_id: draggedEventId, new_date: newDate });
+        toast('Event moved to ' + fmtDate(newDate));
+      }
+      draggedEventId = null;
+    }
+
+    // ─── CALENDAR YEAR VIEW ──────────────────────────────────
+    function renderCalYear() {
+      const container = document.getElementById('cal-list');
+      if(!container) return;
+      const evs = data.events || [];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      let html = `<div class="cal-year-grid">`;
+      for(let m=0; m<12; m++) {
+        const daysInMonth = new Date(calYear, m+1, 0).getDate();
+        const firstDay = new Date(calYear, m, 1).getDay();
+        const monthEvents = evs.filter(e => {
+          const d = new Date(e.dateRaw);
+          return d.getMonth() === m && d.getFullYear() === calYear;
+        });
+        const eventDays = new Set(monthEvents.map(e => e.dateRaw));
+        let miniGrid = '';
+        for(let i=0; i<firstDay; i++) miniGrid += '<div class="mini-day"></div>';
+        for(let d=1; d<=daysInMonth; d++) {
+          const dateStr = `${calYear}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          const hasEvent = eventDays.has(dateStr);
+          miniGrid += `<div class="mini-day ${hasEvent?'has-event':''}">${d}</div>`;
+        }
+        html += `
+          <div class="cal-year-month" onclick="goToMonthView(${m})">
+            <div class="month-label">${months[m]} ${calYear}</div>
+            <div class="mini-grid">${miniGrid}</div>
+          </div>
+        `;
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+    function goToMonthView(month) {
+      calMonth = month;
+      calView = 'month';
+      savePreference('calView', 'month');
+      document.querySelectorAll('#s-calendar .toggle-pill').forEach(p => p.classList.remove('active'));
+      document.getElementById('cal-view-month').classList.add('active');
+      renderCal();
+    }
+
+    // ─── TASKS ──────────────────────────────────────────────────
+    function renderTasks() {
+      let todos = data.todos || [];
+      if(searchTaskQuery) todos = todos.filter(t => t.task.toLowerCase().includes(searchTaskQuery) || (t.assignee||'').toLowerCase().includes(searchTaskQuery));
+      const el = document.getElementById('task-list');
+      if(!todos.length){ el.innerHTML = '<div class="empty"><div class="ei">✅</div>All done — no open tasks!</div>'; return; }
+      const g = {};
+      FAM.forEach(m => g[m] = []);
+      todos.forEach(t => {
+        const assignee = t.assignee || 'Everyone';
+        if(!g[assignee]) g[assignee] = [];
+        g[assignee].push(t);
+      });
+      el.innerHTML = `
+        <div style="padding: 16px;">
+          ${FAM.filter(m => g[m] && g[m].length).map(m => `
+            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid #a85f89;">${escapeHtml(m)}</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              ${g[m].map(t => {
+                const today = todayStr();
+                let dueClass = 'future';
+                let dueText = 'No due date';
+                if(t.due) {
+                  if(t.dueRaw < today) {
+                    dueClass = 'overdue';
+                    dueText = `⚠️ Overdue · ${escapeHtml(t.due)}`;
+                  } else if(t.dueRaw === today) {
+                    dueClass = 'today';
+                    dueText = `⏳ Due today`;
+                  } else {
+                    dueClass = 'future';
+                    dueText = `📅 Due ${escapeHtml(t.due)}`;
+                  }
+                }
+                return `
+                  <div class="task-row">
+                    <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
+                    <div class="task-main">
+                      <div class="task-ttl">${escapeHtml(t.task)}</div>
+                      <div class="task-meta">
+                        <span class="task-meta-badge ${dueClass}">${dueText}</span>
+                      </div>
+                    </div>
+                    <button onclick="delTask(${t.rowNum})" style="color:#cbd5e1;font-size:16px;padding:8px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    function doneTask(n, el) {
+      el.classList.add('done'); el.textContent='✓';
+      gPost({note:'complete_todo',todo_id:n});
+      data.todos = (data.todos||[]).filter(t => t.rowNum !== n);
+      setTimeout(()=>{ renderTasks(); renderHome(); }, 400);
+      toast('Task done! 🎉');
+    }
+    function delTask(n) {
+      const task = data.todos.find(t => t.rowNum === n);
+      if(!task) return;
+      if(!confirm('Delete task?')) return;
+      data.todos = data.todos.filter(t => t.rowNum !== n);
+      pushUndo(() => { data.todos.push(task); renderTasks(); renderHome(); }, 'Task deleted', { note: 'delete_todo', todo_id: n });
+      renderTasks(); renderHome();
+    }
+
+    // ─── EXPENSES ──────────────────────────────────────────────
+    function toggleExpenseAccount(acc) { activeExpenseAccount = acc; savePreference('expenseAccount', acc); renderExpenses(); }
+    function renderExpenses() {
+      const exp = data.expenses || { rows: [], total: 0, byCategory: {}, history: [], lastMonthTotal: 0, familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {}, familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0 };
+      const el = document.getElementById('exp-body');
+      const month = new Date().toLocaleDateString('en-SG', { month:'long', year:'numeric' });
+      let total = 0, cats = [], hist = [], lastMonth = 0, filteredRows = [];
+      if(activeExpenseAccount === 'Personal') {
+        total = exp.personalTotal || 0; cats = Object.entries(exp.personalByCategory||{}).sort((a,b)=>b[1]-a[1]); hist = exp.personalHistory||[]; lastMonth = exp.lastMonthPersonalTotal||0; filteredRows = (exp.rows||[]).filter(r => r.account === 'Personal Account');
+      } else if(activeExpenseAccount === 'Family') {
+        total = exp.familyTotal || 0; cats = Object.entries(exp.familyByCategory||{}).sort((a,b)=>b[1]-a[1]); hist = exp.familyHistory||[]; lastMonth = exp.lastMonthFamilyTotal||0; filteredRows = (exp.rows||[]).filter(r => r.account !== 'Personal Account');
+      } else {
+        total = exp.total || 0; cats = Object.entries(exp.byCategory||{}).sort((a,b)=>b[1]-a[1]); hist = exp.history||[]; lastMonth = exp.lastMonthTotal||0; filteredRows = exp.rows||[];
+      }
+      if(searchExpenseQuery) {
+        filteredRows = filteredRows.filter(r => (r.desc||'').toLowerCase().includes(searchExpenseQuery) || (r.category||'').toLowerCase().includes(searchExpenseQuery) || (r.account||'').toLowerCase().includes(searchExpenseQuery));
+      }
+      let currentPercent = 0, donutSvgCircles = '';
+      cats.forEach((c,i) => {
+        const amt = c[1], pct = total>0?(amt/total):0;
+        const strokeDashArray = `${pct*100} ${100-(pct*100)}`, strokeDashOffset = -currentPercent*100;
+        const color = PIE_COLORS[i%PIE_COLORS.length];
+        donutSvgCircles += `<circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="${color}" stroke-width="5.5" stroke-dasharray="${strokeDashArray}" stroke-dashoffset="${strokeDashOffset}"></circle>`;
+        currentPercent += pct;
+      });
+      if(cats.length === 0) donutSvgCircles = `<circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="var(--border-color)" stroke-width="5.5"></circle>`;
+      let momHtml = '';
+      if(lastMonth>0){ const diff=total-lastMonth, pctDiff=(diff/lastMonth)*100; if(diff>0) momHtml=`<span class="badge b-red" style="margin-left:8px;">📈 +${pctDiff.toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`; else momHtml=`<span class="badge b-green" style="margin-left:8px;">📉 ${Math.abs(pctDiff).toFixed(1)}% vs last month ($${lastMonth.toFixed(0)})</span>`; } else momHtml='<span class="badge b-blue" style="margin-left:8px;">New Tracker</span>';
+      const maxTotal = Math.max(...hist.map(h=>h.total),1);
+      const barChartHtml = hist.map((h,i) => {
+        const heightPct = (h.total/maxTotal)*100;
+        const isCurrent = (i === hist.length-1);
+        return `<div class="bar-col"><div class="bar-val">$${h.total.toFixed(0)}</div><div class="bar-fill ${isCurrent?'current':''}" style="height:${Math.max(heightPct,4)}%;"></div><div class="bar-lbl">${escapeHtml(h.label)}</div></div>`;
+      }).join('');
+      el.innerHTML = `
+        <div style="display:flex;background:var(--border-color);padding:3px;border-radius:8px;margin:10px 16px 16px;">
+          <button class="toggle-pill ${activeExpenseAccount==='All'?'active':''}" onclick="toggleExpenseAccount('All')" style="flex:1;text-align:center;">All</button>
+          <button class="toggle-pill ${activeExpenseAccount==='Family'?'active':''}" onclick="toggleExpenseAccount('Family')" style="flex:1;text-align:center;">Family</button>
+          <button class="toggle-pill ${activeExpenseAccount==='Personal'?'active':''}" onclick="toggleExpenseAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
+        </div>
+        <div class="search-wrap"><input type="text" id="exp-search" placeholder="Search expenses..." oninput="filterExpenses()" value="${escapeHtml(searchExpenseQuery)}"><span class="clear-btn" onclick="document.getElementById('exp-search').value='';filterExpenses();">✕</span></div>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">💰 ${month}</span><div style="display:flex;align-items:center;"><span class="badge b-blue">$${(total||0).toFixed(2)}</span>${momHtml}</div></div>
+          <div class="donut-container"><div class="donut-wrap"><svg viewBox="0 0 42 42" class="donut">${donutSvgCircles}<g class="chart-text"><text x="50%" y="50%" class="chart-number" style="font-size:5px;font-weight:800;">$${total.toFixed(0)}</text><text x="50%" y="64%" class="chart-label" style="font-size:2px;fill:var(--text-muted);">Total</text></g></svg></div><div class="pie-wrap" style="flex:1;padding:0;gap:6px;">${cats.slice(0,5).map((e,i)=>`<div class="pie-row"><div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-lbl" style="font-size:12px;">${escapeHtml(e[0].split(' - ').pop())}</span><span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span></div>`).join('')||'<div class="empty">No expenses</div>'}</div></div>
+        </div>
+        <div class="card"><div class="card-hdr"><span class="card-title">📈 6-Month Trend (${activeExpenseAccount})</span></div><div class="bar-chart-wrap">${barChartHtml||'<div class="empty">No trend data</div>'}</div></div>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
+          <div class="card-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;">
+            ${(filteredRows||[]).slice(0, 15).map(r => {
+              const emoji = getCategoryEmoji(r.desc || r.category);
+              const acctClass = r.account.includes('Personal') ? 'b-amber' : 'b-blue';
+              
+              return `
+                <div style="display:flex;align-items:center;background:#fff;border:1px solid #e4e6ef;border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;">
+                  <div style="width:36px;height:36px;border-radius:50%;background:#f8fafc;border:1px solid #e4e6ef;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${emoji}</div>
+                  
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:14px;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.desc || r.category)}</div>
+                    <div style="font-size:12px;color:#64748b;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;">
+                      <span>${escapeHtml(r.date)}</span>
+                      <span style="color:#cbd5e1;">•</span>
+                      <span>${escapeHtml(r.category)}</span>
+                      <span style="color:#cbd5e1;">•</span>
+                      <span class="badge ${acctClass}" style="font-size:9px;padding:1px 6px;">${escapeHtml(r.account)}</span>
+                    </div>
+                  </div>
+                  
+                  <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                    <div style="font-size:15px;font-weight:700;color:#1e293b;">$${r.amount.toFixed(2)}</div>
+                    <button onclick="delExp(${r.rowNum})" style="color:#9898aa;font-size:12px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9898aa'">Delete</button>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="empty">No entries yet</div>'}
+          </div>
+        </div>
+      `;
+    }
+    function delExp(n) {
+      const exp = data.expenses.rows.find(r => r.rowNum === n);
+      if(!exp) return;
+      if(!confirm('Delete expense?')) return;
+      data.expenses.rows = data.expenses.rows.filter(r => r.rowNum !== n);
+      data.expenses.total -= exp.amount;
+      pushUndo(() => { data.expenses.rows.push(exp); data.expenses.total += exp.amount; renderExpenses(); }, 'Expense deleted', { note: 'delete_expense', row_id: n });
+      renderExpenses();
+    }
+
+    // ─── BUDGETS ──────────────────────────────────────────────
+    function toggleBudgetAccount(acc) {
+      activeBudgetAccount = acc;
+      savePreference('budgetAccount', acc);
+      renderBudgets();
+    }
+    function renderBudgets() {
+      const buds = data.budgets || [];
+      const el = document.getElementById('bud-list');
+      if(!el) return;
+      const filteredBuds = buds.filter(b => {
+        if(activeBudgetAccount === 'Personal') return b.account === 'Personal Account';
+        if(activeBudgetAccount === 'Family') return b.account !== 'Personal Account';
+        return true;
+      });
+      let budgetsHtml = '';
+      if(!filteredBuds.length){ budgetsHtml = '<div class="empty"><div class="ei">📊</div>No budgets set for this account</div>'; }
+      else {
+        budgetsHtml = filteredBuds.sort((a,b)=>a.group.localeCompare(b.group)).map(b => {
+          const pct = b.budget>0 ? Math.round(b.spent/b.budget*100) : 0;
+          const over = b.spent > b.budget, warn = pct >= 80 && !over;
+          const col = over?'#e05252':warn?'#d4861e':'#3aaa75';
+          const cls = over?'b-red':warn?'b-amber':'b-green';
+          const lbl = over?'🚨 Over':warn?'⚠️ '+pct+'%':'✅ '+pct+'%';
+          return `<div class="bud-row" style="border-bottom:1px solid var(--border-color);padding:12px 0;">
+            <div class="bud-hdr"><span class="bud-name">${escapeHtml(b.group)}</span><div style="display:flex;align-items:center;gap:8px;"><span class="badge ${cls}">${lbl}</span><button type="button" data-group="${escapeHtml(b.group)}" data-budget="${Number(b.budget)||0}" data-account="${escapeHtml(b.account||'Family')}" onclick="editBudget(this.dataset.group, +this.dataset.budget, this.dataset.account)" style="color:#4f86c6;font-size:14px;">✏️</button><button type="button" data-group="${escapeHtml(b.group)}" data-account="${escapeHtml(b.account||'Family')}" onclick="delBudget(this.dataset.group, this.dataset.account)" style="color:#e05252;font-size:14px;">✕</button></div></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Account: ${escapeHtml(b.account||'Family')}</div>
+            <div class="prog-track"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${col};"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-top:4px;"><span>$${b.spent.toFixed(2)} spent</span><span>$${b.budget.toFixed(2)} budget</span></div>
+          </div>`;
+        }).join('');
+      }
+      el.innerHTML = `
+        <div style="display:flex;background:var(--border-color);padding:3px;border-radius:8px;margin-bottom:16px;">
+          <button class="toggle-pill ${activeBudgetAccount==='All'?'active':''}" onclick="toggleBudgetAccount('All')" style="flex:1;text-align:center;">All</button>
+          <button class="toggle-pill ${activeBudgetAccount==='Family'?'active':''}" onclick="toggleBudgetAccount('Family')" style="flex:1;text-align:center;">Family</button>
+          <button class="toggle-pill ${activeBudgetAccount==='Personal'?'active':''}" onclick="toggleBudgetAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
+        </div>
+        ${budgetsHtml}
+      `;
+    }
+    function editBudget(group, amount, account) {
+      document.getElementById('bud-grp').value = group;
+      document.getElementById('bud-amt').value = amount;
+      document.getElementById('bud-account').value = account;
+      openM('m-budget');
+    }
+    async function delBudget(group, account) {
+      if(!confirm('Delete budget for '+group+' under '+account+'?')) return;
+      await gPost({ note:'delete_budget', group, account });
+      toast('Budget deleted');
+      await loadData();
+      renderBudgets();
+    }
+
+    // ─── MEMORIES ──────────────────────────────────────────────
+    function renderMemories() {
+      const mems = data.memories || [];
+      const el   = document.getElementById('mem-list');
+      if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>No memories yet</div>'; return; }
+      
+      const getIcon = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
+      
+      el.innerHTML = `
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          ${mems.map(m => {
+            const icon = getIcon(m.type);
+            const isQuote = m.type.includes('Quote');
+            
+            let contentHtml = '';
+            if (isQuote) {
+              contentHtml = `
+                <blockquote style="font-size:15px;font-style:italic;font-family:Georgia,serif;color:#6b2d5c;line-height:1.5;margin:8px 0;padding-left:14px;border-left:3px solid #a85f89;">
+                  “${escapeHtml(m.memory)}”
+                </blockquote>
+              `;
+            } else if (m.memory) {
+              contentHtml = `<div class="mem-text" style="font-size:14px;color:#1a1a2e;line-height:1.5;margin:8px 0;">${escapeHtml(m.memory)}</div>`;
+            }
+            
+            const imageHtml = mediaImgHtml(m.imageUrl, 'max-width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin:8px 0;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.05);');
+            
+            return `
+              <div class="card" style="padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03);border:1.5px solid #e4e6ef;background:var(--bg-card);border-radius:12px;margin-bottom:0;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <span class="badge ${getMemberBadgeClass(m.person)}" style="font-size:11px;">${escapeHtml(m.person)}</span>
+                  <span style="font-size:11px;font-weight:700;color:#a85f89;text-transform:uppercase;letter-spacing:0.5px;">${icon} ${escapeHtml(m.type)}</span>
+                </div>
+                ${contentHtml}
+                ${imageHtml}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;display:flex;justify-content:space-between;">
+                  <span>📅 ${escapeHtml(m.date)}</span>
+                  <span>Logged by <strong>${escapeHtml(m.loggedBy)}</strong></span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    // ─── FERTILITY ──────────────────────────────────────────────
+    /** Parse server fertility dates: prefer ISO yyyy-MM-dd, else en-GB-ish "dd MMM yyyy". */
+    function parseFertDate(raw, display) {
+      if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const d = new Date(raw + 'T00:00:00');
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (display) {
+        const d = new Date(display);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    }
+
+    function renderFertility() {
+      const f  = data.fertility || {};
+      const el = document.getElementById('fert-body');
+      if (!f.lastPeriodStart && !f.lastPeriodStartRaw) {
+        el.innerHTML = '<div class="empty"><div class="ei">🌸</div>No data yet. Log your first entry below.</div>';
+        return;
+      }
+
+      const cycleLen = Math.min(45, Math.max(21, Number(f.cycleLength) || 28));
+      let cycleDayHtml = '';
+      try {
+        const pStart = parseFertDate(f.lastPeriodStartRaw, f.lastPeriodStart);
+        if (pStart) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          pStart.setHours(0, 0, 0, 0);
+          // Day 1 = period start date (no Math.abs — future-dated entries shouldn't look like day N)
+          const diffDays = Math.floor((today - pStart) / 86400000) + 1;
+          const dayInCycle = diffDays > 0 ? ((diffDays - 1) % cycleLen) + 1 : diffDays;
+          const progressPct = diffDays > 0
+            ? Math.min(Math.max((dayInCycle / cycleLen) * 100, 0), 100)
+            : 0;
+
+          // Phase windows aligned with server: luteal ≈ 14d, ovulation = cycleLen - 14
+          const ovulDay = Math.max(10, cycleLen - 14);
+          const mensesEnd = Math.min(7, Math.max(3, Math.round(cycleLen * 0.18)));
+          const fertileStart = Math.max(1, ovulDay - 4);
+          const fertileEnd = Math.min(cycleLen, ovulDay + 2);
+
+          let phase = 'Follicular Phase';
+          let phaseIcon = '🌱';
+          if (diffDays < 1) {
+            phase = 'Before recorded start';
+            phaseIcon = '⏳';
+          } else if (dayInCycle <= mensesEnd) {
+            phase = 'Menstruation';
+            phaseIcon = '🩸';
+          } else if (dayInCycle >= fertileStart && dayInCycle <= fertileEnd) {
+            phase = 'Fertile Window / Ovulation';
+            phaseIcon = '🌸';
+          } else if (dayInCycle > fertileEnd) {
+            phase = 'Luteal Phase';
+            phaseIcon = '🍂';
+          }
+
+          const dayLabel = diffDays < 1
+            ? 'Starts ' + escapeHtml(f.lastPeriodStart || '')
+            : 'Day ' + dayInCycle;
+
+          cycleDayHtml = `
+            <div class="card" style="padding:16px;background:linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);border:1.5px solid #fecdd3;border-radius:12px;margin-bottom:14px;box-shadow:0 2px 6px rgba(225, 29, 72, 0.05);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:0.5px;">Current Cycle · ~${cycleLen}d avg</div>
+                  <div style="font-size:18px;font-weight:800;color:#9f1239;margin-top:2px;">${dayLabel} <span style="font-size:13px;font-weight:600;color:#e11d48;margin-left:4px;">${phaseIcon} ${escapeHtml(phase)}</span></div>
+                </div>
+                <div style="font-size:24px;">🌸</div>
+              </div>
+              <div style="height:6px;background:rgba(225, 29, 72, 0.1);border-radius:3px;overflow:hidden;margin-top:12px;">
+                <div style="height:100%;width:${progressPct}%;background:#e11d48;border-radius:3px;"></div>
+              </div>
+            </div>
+          `;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      const stats = [
+        { label: 'Last Period Start', val: f.lastPeriodStart || '—', icon: '🩸', color: '#fda4af' },
+        { label: 'Next Period (est.)', val: f.nextPeriod || '—', icon: '📅', color: '#fbcfe8' },
+        { label: 'Fertile Window', val: f.fertileStart && f.fertileEnd ? `${f.fertileStart} – ${f.fertileEnd}` : '—', icon: '🌸', color: '#fecdd3', span: true },
+        { label: 'Period Duration', val: f.duration != null && f.duration >= 0 ? `${f.duration} days` : '—', icon: '⏱️', color: '#fed7aa' },
+        { label: 'Avg Cycle Length', val: f.cycleLength ? `${f.cycleLength} days` : '—', icon: '🔄', color: '#e9d5ff' },
+        { label: 'Last Ovulation', val: f.lastOvulation || '—', icon: '✨', color: '#fef08a' }
+      ];
+
+      let statsGrid = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+          ${stats.map(s => {
+            const gridSpan = s.span ? 'grid-column: span 2;' : '';
+            return `
+              <div style="background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px;box-shadow:0 2px 4px rgba(0,0,0,0.02);display:flex;align-items:center;gap:10px;${gridSpan}">
+                <div style="width:34px;height:34px;border-radius:50%;background:${s.color};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">${s.icon}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">${escapeHtml(s.label)}</div>
+                  <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(String(s.val))}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      let symptomsHtml = '';
+      if (f.symptoms && f.symptoms.length > 0) {
+        symptomsHtml = `
+          <div style="margin-top:16px;border-top:1px solid var(--border-color);padding-top:14px;">
+            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📝 Recent Symptoms Log</div>
+            <div style="position:relative;padding-left:14px;border-left:2px solid #fecdd3;display:flex;flex-direction:column;gap:12px;margin-left:6px;">
+              ${f.symptoms.map(s => `
+                <div style="position:relative;font-size:13px;">
+                  <div style="position:absolute;left:-19px;top:4px;width:8px;height:8px;border-radius:50%;background:#e11d48;border:2px solid #fff;box-shadow:0 0 0 2px #fecdd3;"></div>
+                  <strong style="color:var(--text-muted);">${escapeHtml(s.date)} · ${escapeHtml(s.type || 'Symptom')}:</strong> <span style="color:var(--text-primary);font-weight:500;">${escapeHtml(s.note)}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      el.innerHTML = cycleDayHtml + statsGrid + symptomsHtml;
+    }
+
+    // ─── RECURRING ──────────────────────────────────────────────
+    function renderRecurring() {
+      const items = data.recurring || [];
+      const el = document.getElementById('rec-list');
+      if(!items.length){ el.innerHTML = '<div class="empty"><div class="ei">🔄</div>No recurring expenses</div>'; return; }
+      
+      const totalCommitted = items.reduce((acc, curr) => acc + curr.amount, 0);
+      const sfx = d => d===1?'st':d===2?'nd':d===3?'rd':'th';
+      
+      const committedBannerHtml = `
+        <div style="background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);border:1.5px solid #bfdbfe;border-radius:12px;padding:16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(59, 130, 246, 0.05);">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px;">Committed Spending</div>
+            <div style="font-size:22px;font-weight:800;color:#1e40af;margin-top:2px;">$${totalCommitted.toFixed(2)}<span style="font-size:12px;font-weight:500;color:#3b82f6;margin-left:4px;">/ month</span></div>
+          </div>
+          <div style="font-size:28px;">🔄</div>
+        </div>
+      `;
+      
+      const itemsHtml = `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${items.map(r => {
+            const w = r.daysLeft===0
+              ? '<span class="badge b-red">Today</span>'
+              : r.daysLeft===1
+                ? '<span class="badge b-amber">Tomorrow</span>'
+                : `<span class="badge b-gray">In ${r.daysLeft}d</span>`;
+                
+            const initial = r.name.trim().charAt(0).toUpperCase() || 'R';
+            
+            return `
+              <div class="card" style="display:flex;align-items:center;background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;margin-bottom:0;">
+                <div style="width:36px;height:36px;border-radius:50%;background:#e8f0fb;color:#3a6fa8;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;">${initial}</div>
+                
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:14px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    ${escapeHtml(r.category)} · Due on ${r.day}${sfx(r.day)}
+                  </div>
+                </div>
+                
+                <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                  <div style="font-size:15px;font-weight:700;color:var(--text-primary);">$${r.amount.toFixed(2)}</div>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    ${w}
+                    <button onclick="delRec(${r.rowNum})" style="color:var(--text-muted);font-size:16px;padding:4px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='var(--text-muted)'">🗑️</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      
+      el.innerHTML = committedBannerHtml + itemsHtml;
+    }
+    function delRec(n) {
+      const rec = data.recurring.find(r => r.rowNum === n);
+      if(!rec) return;
+      if(!confirm('Remove recurring expense?')) return;
+      data.recurring = data.recurring.filter(r => r.rowNum !== n);
+      pushUndo(() => { data.recurring.push(rec); renderRecurring(); }, 'Recurring removed', { note:'delete_recurring', row_num:n });
+      renderRecurring();
+    }
+
+    // ─── BIRTHDAYS ──────────────────────────────────────────────
+    function renderBirthdays() {
+      const items = data.birthdays || [];
+      const el = document.getElementById('bd-list');
+      if(!items.length){ el.innerHTML = '<div class="empty"><div class="ei">🎂</div>No birthdays saved yet</div>'; return; }
+      
+      const today = items.filter(b => b.daysAway === 0);
+      const upcoming = items.filter(b => b.daysAway > 0 && b.daysAway <= 30);
+      const future = items.filter(b => b.daysAway > 30);
+      
+      function getEventCard(b) {
+        const ic = b.type === 'Birthday' ? '🎂' : '💍';
+        const badgeCls = b.daysAway === 0 ? 'b-red' : b.daysAway <= 7 ? 'b-amber' : 'b-gray';
+        const badgeText = b.daysAway === 0 ? 'Today! 🥳' : b.daysAway === 1 ? 'Tomorrow!' : `In ${b.daysAway} days`;
+        
+        const [mNum, dNum] = b.date.split('-');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const monthStr = months[parseInt(mNum) - 1] || 'Jan';
+        
+        return `
+          <div style="display:flex;align-items:center;background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:12px;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.02);gap:12px;margin-bottom:8px;">
+            <div style="width:46px;height:50px;border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;text-align:center;box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+              <div style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:2px 0;text-transform:uppercase;letter-spacing:0.5px;">${monthStr}</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--text-primary);background:#f8fafc;">${dNum}</div>
+            </div>
+            
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:4px;">
+                <span>${escapeHtml(b.name)}</span>
+                <span>${ic}</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                ${escapeHtml(b.dateLabel)}${b.agePart ? ' · ' + escapeHtml(b.agePart) : ''}${b.notes ? ' · <span style="font-style:italic;">"' + escapeHtml(b.notes) + '"</span>' : ''}
+              </div>
+            </div>
+            
+            <div style="flex-shrink:0;">
+              <span class="badge ${badgeCls}" style="font-size:10px;padding:4px 10px;">${badgeText}</span>
+            </div>
+          </div>
+        `;
+      }
+      
+      let html = '<div style="padding:16px;">';
+      
+      if(today.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">🥳 Today's Celebration</div>
+          <div style="margin-bottom:16px;background:linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);border:1.5px dashed #f472b6;padding:4px;border-radius:14px;">
+            ${today.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      if(upcoming.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px;">⏰ Upcoming (Next 30 days)</div>
+          <div style="margin-bottom:16px;">
+            ${upcoming.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      if(future.length > 0) {
+        html += `
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px;">📅 Future Events</div>
+          <div>
+            ${future.map(b => getEventCard(b)).join('')}
+          </div>
+        `;
+      }
+      
+      html += '</div>';
+      el.innerHTML = html;
+    }
+
+    // ─── KID SCHEDULES ─────────────────────────────────────────
+    function filterSchedules(child) { activeSchedChild=child; savePreference('schedChild', child); document.querySelectorAll('.tab-pill').forEach(p=>p.classList.remove('active')); const pill=document.getElementById('pill-'+child); if(pill) pill.classList.add('active'); renderSchedules(); }
+    function toggleSchedView(view) { schedView=view; savePreference('schedView', view); document.getElementById('sched-view-list').classList.toggle('active', view==='list'); document.getElementById('sched-view-grid').classList.toggle('active', view==='grid'); renderSchedules(); }
+    function prevSchedMonth(){ schedMonth--; if(schedMonth<0){schedMonth=11;schedYear--;} renderSchedules(); }
+    function nextSchedMonth(){ schedMonth++; if(schedMonth>11){schedMonth=0;schedYear++;} renderSchedules(); }
+    function selectGridDay(dayStr){ selectedGridDayStr=dayStr; renderSchedules(); }
+
+    function renderSchedules() {
+      if(schedView==='grid'){ renderSchedulesGrid(); return; }
+      const evs = data.events || [];
+      const container = document.getElementById('sched-container');
+      if(!container) return;
+      const today = todayStr();
+      const now = new Date();
+      const thisMonth = now.getMonth(), thisYear = now.getFullYear();
+      const filteredEvents = evs.filter(e => {
+        if(activeSchedChild==='All') return e.tags.includes('Mikaela') || e.tags.includes('Meaghan');
+        return e.tags.includes(activeSchedChild);
+      });
+      const upcoming = filteredEvents.filter(e => e.dateRaw >= today).sort((a,b)=>a.dateRaw.localeCompare(b.dateRaw));
+      const past = filteredEvents.filter(e => e.dateRaw < today).sort((a,b)=>b.dateRaw.localeCompare(a.dateRaw));
+      let totalHours = 0, activityBreakdown = {};
+      past.forEach(a => {
+        const d = new Date(a.dateRaw);
+        if(!isNaN(d.getTime()) && d.getMonth()===thisMonth && d.getFullYear()===thisYear){
+          const dur = a.duration || 0; totalHours += dur;
+          let actType = 'Class';
+          const titleLower = a.title.toLowerCase();
+          if(titleLower.indexOf('sailing')!==-1) actType='⛵ Sailing';
+          else if(titleLower.indexOf('piano')!==-1 || titleLower.indexOf('music')!==-1) actType='🎹 Piano';
+          else if(titleLower.indexOf('enrichment')!==-1 || titleLower.indexOf('class')!==-1) actType='📚 Class';
+          else actType='🎯 Enrichment';
+          activityBreakdown[actType] = (activityBreakdown[actType]||0) + dur;
+        }
+      });
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      let timetableHtml = '';
+      if(upcoming.length > 0){
+        timetableHtml = upcoming.slice(0,10).map(c => {
+          const dayName = days[new Date(c.dateRaw).getDay()];
+          return `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(c.title)}</div><div class="row-sub">${escapeHtml(dayName)}, ${escapeHtml(c.date)} · ${escapeHtml(c.time)}${c.endTime ? ' - ' + escapeHtml(c.endTime) : ''}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>${c.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}</div><button onclick="delSchedule('${c.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
+        }).join('');
+      } else timetableHtml = '<div class="empty">No upcoming classes/sessions scheduled</div>';
+      let breakdownItems = '';
+      for(const act in activityBreakdown) breakdownItems += `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;"><strong>${escapeHtml(act)}:</strong> ${activityBreakdown[act].toFixed(1)} hrs</div>`;
+      const summaryHtml = `<div class="stat-summary"><div class="stat-num">${totalHours.toFixed(1)}</div><div class="stat-main"><div class="stat-lbl">Hours Completed This Month</div>${breakdownItems || '<div style="font-size:11px;color:var(--text-muted);">No sessions completed yet this month</div>'}</div></div>`;
+      let timelineHtml = past.slice(0,10).map(a => `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">✅</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(a.title)} (${a.duration.toFixed(1)} hrs)</div><div class="row-sub">${escapeHtml(a.date)} · Completed ${a.location ? ' · ' + escapeHtml(a.location) : ''}${a.notes ? ' · ' + escapeHtml(a.notes) : ''}</div></div><button onclick="delSchedule('${a.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`).join('');
+      if(!timelineHtml) timelineHtml = '<div class="empty">No past sessions logged</div>';
+      container.innerHTML = `
+        <div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📅 Timetable / Upcoming</div>
+        ${timetableHtml}
+        <div style="margin-top:20px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📊 Month Progress</div>
+        ${summaryHtml}
+        <div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📝 Completed Logs</div>
+        <div class="card-body" style="padding:0;">${timelineHtml}</div>
+      `;
+    }
+    function renderSchedulesGrid() {
+      const evs = data.events || [];
+      const container = document.getElementById('sched-container');
+      if(!container) return;
+      const filteredEvents = evs.filter(e => {
+        if(activeSchedChild==='All') return e.tags.includes('Mikaela') || e.tags.includes('Meaghan');
+        return e.tags.includes(activeSchedChild);
+      });
+      const firstDayOfMonth = new Date(schedYear, schedMonth, 1);
+      const startDayOfWeek = firstDayOfMonth.getDay();
+      const numDays = new Date(schedYear, schedMonth+1, 0).getDate();
+      const prevMonthDays = new Date(schedYear, schedMonth, 0).getDate();
+      const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      let html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border-color);">
+          <button onclick="prevSchedMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
+          <span style="font-weight:700;font-size:14px;">${monthNames[schedMonth]} ${schedYear}</span>
+          <button onclick="nextSchedMonth()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
+        </div>
+        <div class="cal-grid-hdr"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>
+        <div class="cal-grid">
+      `;
+      for(let i=startDayOfWeek-1; i>=0; i--) { const dVal=prevMonthDays-i; html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${dVal}</span></div>`; }
+      const today = todayStr();
+      for(let day=1; day<=numDays; day++) {
+        const dayStr = `${schedYear}-${String(schedMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const isToday = today === dayStr;
+        const isSelected = selectedGridDayStr === dayStr;
+        const dayEvents = filteredEvents.filter(e => e.dateRaw === dayStr);
+        let dotsHtml = '';
+        if(dayEvents.length > 0) {
+          dotsHtml = '<div class="cal-dots-wrap">';
+          const uniqueTags = new Set();
+          dayEvents.forEach(e => { if(e.tags.includes('Mikaela')) uniqueTags.add('Mikaela'); if(e.tags.includes('Meaghan')) uniqueTags.add('Meaghan'); });
+          uniqueTags.forEach(tag => dotsHtml += `<span class="cal-dot ${tag}"></span>`);
+          dotsHtml += '</div>';
+        }
+        const cellClass = `cal-day-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`;
+        html += `<div class="${cellClass}" onclick="selectGridDay('${dayStr}')"><span class="cal-day-num">${day}</span>${dotsHtml}</div>`;
+      }
+      const totalCellsUsed = startDayOfWeek + numDays;
+      const nextDaysCount = 42 - totalCellsUsed;
+      for(let d=1; d<=nextDaysCount; d++) { html += `<div class="cal-day-cell other-month"><span class="cal-day-num">${d}</span></div>`; }
+      html += `</div>`;
+      const selectedDayEvents = filteredEvents.filter(e => e.dateRaw === selectedGridDayStr);
+      let selectedDayHtml = '';
+      if(selectedDayEvents.length > 0) {
+        selectedDayHtml = selectedDayEvents.map(c => `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(c.title)}</div><div class="row-sub">${escapeHtml(c.time)}${c.endTime ? ' - ' + escapeHtml(c.endTime) : ''}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>${c.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}</div><button onclick="delSchedule('${c.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`).join('');
+      } else { selectedDayHtml = '<div class="empty">No activities scheduled for this day</div>'; }
+      html += `<div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📅 Activities: ${fmtDate(selectedGridDayStr)}</div><div class="card-body" style="padding:0;">${selectedDayHtml}</div>`;
+      container.innerHTML = html;
+    }
+    function delSchedule(id) {
+      const ev = data.events.find(e => e.id === id);
+      if(!ev) return;
+      if(!confirm('Delete this calendar event?')) return;
+      data.events = data.events.filter(e => e.id !== id);
+      pushUndo(() => { data.events.push(ev); renderSchedules(); renderCal(); }, 'Schedule deleted');
+      renderSchedules(); renderCal();
+      gPost({ note:'delete_event', event_id: id });
+      toast('Schedule deleted (undo available)');
+    }
+
+    // ─── SUBMIT FUNCTIONS ──────────────────────────────────────
+    async function submitEvent(btn) {
+      if(!btn) btn = document.getElementById('ev-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const title = v('ev-title'), date = v('ev-date');
+        if(!title||!date){ toast('Please fill in title and date'); return; }
+        const tag = gc('ev-tag');
+        let notes = v('ev-notes');
+        if(tag && tag !== 'Everyone') notes = (notes?notes+'\n':'') + 'Tag: '+tag;
+        await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes});
+        closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added! ✅');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Add Event'; }
+    }
+    async function submitTask(btn) {
+      if(!btn) btn = document.getElementById('tk-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const task = v('tk-title');
+        if(!task){ toast('Please enter a task'); return; }
+        await gPost({note:'add_todo',todo_task:task,todo_assignee:gc('tk-a')||'Everyone',todo_due:v('tk-due')?fmtDate(v('tk-due')):''});
+        closeM('m-task'); clr('tk-title'); toast('Task added! ✅');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Add Task'; }
+    }
+    async function submitMemory(btn) {
+      if(!btn) btn = document.getElementById('mem-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const text = v('mem-text');
+        if(!text && !memImageBase64){ toast('Please write the memory or attach a photo'); return; }
+        
+        let imageUrl = '';
+        
+        // Upload image to Firebase Storage (path: memories/{email}/…)
+        if (memImageBase64) {
+          try {
+            const authUser = firebase.auth().currentUser;
+            const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
+            const blob = dataURItoBlob(memImageBase64);
+            const ref = storage.ref(`memories/${emailKey}/${Date.now()}.jpg`);
+            const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
+            imageUrl = await snapshot.ref.getDownloadURL();
+          } catch (err) {
+            toast('Image upload failed: ' + err.message, true);
+            return;
+          } finally {
+            clearMemoryFilePreview();
+          }
+        }
+        
+        // Save memory metadata in Firestore
+        const authUser = firebase.auth().currentUser;
+        await db.collection('memories').add({
+          loggedBy: user || 'Unknown',
+          loggedByEmail: (authUser && authUser.email) || currentUserEmail || '',
+          date: v('mem-date') || new Date().toISOString().slice(0,10),
+          type: gc('mt') || 'Moment',
+          person: gc('mp') || 'Everyone',
+          memory: text,
+          imageUrl: imageUrl,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        closeM('m-memory');
+        clr('mem-text');
+        toast('Memory saved! 💛');
+      } catch (err) {
+        toast('Failed to save memory: ' + err.message, true);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save';
+      }
+    }
+    async function submitBirthday(btn) {
+      if(!btn) btn = document.getElementById('bd-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const name = v('bd-name'), month = v('bd-month'), day = v('bd-day');
+        if(!name||!month||!day){ toast('Please fill in name, month, and day'); return; }
+        await gPost({note:'add_birthday',name,type:gc('bdt')||'Birthday',date:month+'-'+String(day).padStart(2,'0'),year:v('bd-year'),notes:v('bd-notes')});
+        closeM('m-birthday'); clr('bd-name','bd-day','bd-year','bd-notes'); toast('Saved! 🎂');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+    async function submitBudget(btn) {
+      if(!btn) btn = document.getElementById('bud-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const group = v('bud-grp'), amt = parseFloat(v('bud-amt')), account = document.getElementById('bud-account').value;
+        if(!group||isNaN(amt)||amt<=0){ toast('Please enter a valid amount'); return; }
+        await gPost({note:'set_budget',group,budget:amt,account});
+        closeM('m-budget'); clr('bud-amt'); toast('Budget saved! 📊');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Save Budget'; }
+    }
+    async function submitFert(btn) {
+      if(!btn) btn = document.getElementById('fert-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const date = v('fert-date');
+        if(!date){ toast('Please select a date'); return; }
+        await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')});
+        clr('fert-notes'); toast('Logged! 🌸');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Log Entry'; }
+    }
+    async function submitRecurring(btn) {
+      if(!btn) btn = document.getElementById('rc-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const name = v('rc-name'), amt = parseFloat(v('rc-amt')), day = parseInt(v('rc-day'));
+        if(!name||isNaN(amt)||isNaN(day)||day<1||day>28){ toast('Please fill all fields (day: 1–28)'); return; }
+        await gPost({note:'add_recurring',rec_name:name,rec_amount:amt,rec_day:day,rec_category:v('rc-cat'),rec_account:gc('rca')||'Family'});
+        closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved! 🔄');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+    async function submitExpense(btn) {
+      if(!btn) btn = document.getElementById('ex-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const desc = v('ex-desc'), amt = parseFloat(v('ex-amt')), date = v('ex-date');
+        if(!desc||isNaN(amt)||amt<=0||!date){ toast('Please fill description, amount, and date'); return; }
+        await gPost({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'});
+        closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense logged! 💰');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Save Expense'; }
+    }
+    async function submitTrip(btn) {
+      if(!btn) btn = document.getElementById('tr-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const city = document.getElementById('tr-city').value, country = document.getElementById('tr-country').value;
+        const lat = parseFloat(document.getElementById('tr-lat').value)||0, lng = parseFloat(document.getElementById('tr-lng').value)||0;
+        const dateVal = document.getElementById('tr-date').value, notes = v('tr-notes');
+        if(!city||!country||lat===0||lng===0){ alert('Please select a valid location from the search suggestions dropdown'); return; }
+        if(!dateVal){ alert('Please select a date'); return; }
+        const memberBoxes = document.querySelectorAll('input[name="tr-mem"]:checked');
+        const membersStr = Array.from(memberBoxes).map(cb=>cb.value).join(',');
+        await gPost({note:'add_trip',trip_city:city,trip_country:country,trip_date:fmtDate(dateVal),trip_lat:lat,trip_lng:lng,trip_members:membersStr,trip_notes:notes});
+        closeM('m-trip-add'); document.getElementById('tr-loc-search').value=''; document.getElementById('tr-city').value=''; document.getElementById('tr-country').value=''; document.getElementById('tr-lat').value='0'; document.getElementById('tr-lng').value='0'; clr('tr-notes'); toast('Trip pinned! 📍');
+        await loadData();
+      } finally { btn.disabled = false; btn.textContent = 'Pin Trip 📍'; }
+    }
+    async function submitSchedule(btn) {
+      if(!btn) btn = document.getElementById('sch-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const child = document.getElementById('sch-child').value, activity = document.getElementById('sch-act').value;
+        const dateVal = document.getElementById('sch-date').value, time = document.getElementById('sch-time').value;
+        const endTime = document.getElementById('sch-end-time').value, location = document.getElementById('sch-loc').value;
+        const notes = document.getElementById('sch-notes').value;
+        if(!activity){ alert('Please enter activity name'); return; }
+        if(!dateVal){ alert('Please select a date'); return; }
+        const title = child + ' - ' + activity;
+        await gPost({note:'add_event',event_title:title,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Schedules updated! ⛵');
+        await loadData(); renderSchedules();
+      } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
+    }
+    async function submitAppreciation(btn) {
+      if(!btn) btn = document.getElementById('love-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const msg = v('love-note-msg');
+        if(!msg){ toast('Please enter a note'); return; }
+        closeM('m-love-note');
+        const res = await gPost({note:'add_appreciation',message:msg});
+        if(res && res.status === 'ok'){ toast('Note dropped in the jar! 🍯'); await loadData(); } else toast('Error saving note');
+      } finally { btn.disabled = false; btn.textContent = 'Drop in Jar 🍯'; }
+    }
+    async function submitLoveCheckin(btn) {
+      if(!btn) btn = document.getElementById('checkin-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const selectedMoods = [];
+        document.querySelectorAll('#checkin-moods .checkin-tag.sel').forEach(t => selectedMoods.push(t.textContent.trim()));
+        const notes = v('checkin-notes'), focus = v('checkin-focus');
+        closeM('m-love-checkin');
+        
+        console.log('Sending check-in payload:', {note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
+        const res = await gPost({note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
+        console.log('Check-in server response:', res);
+        
+        if(res && res.status === 'ok'){
+          toast('Check-in saved! 😊');
+          await loadData();
+        } else {
+          const errMsg = (res && res.message) ? res.message : 'Unknown error';
+          showError('Error saving check-in: ' + errMsg);
+        }
+      } catch (err) {
+        console.error('Check-in error:', err);
+        showError('Client error: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save Check-in';
+      }
+    }
+
+    // ─── TRAVEL ─────────────────────────────────────────────────
+    let travelMap = null, travelMarkers = [], travelPaths = [];
+    function renderTravel() {
+      const trips = data.travel || [];
+      const el = document.getElementById('trip-list');
+      if(!el) return;
+      const tripsCount = trips.length;
+      const uniqueCountries = new Set();
+      const travelerCounts = {};
+      trips.forEach(t => {
+        if(t.country) uniqueCountries.add(t.country.trim());
+        if(t.members && t.members.length) { t.members.forEach(m => travelerCounts[m] = (travelerCounts[m]||0)+1); }
+        else travelerCounts['Everyone'] = (travelerCounts['Everyone']||0)+1;
+      });
+      const countriesCount = uniqueCountries.size;
+      let topTraveler='None', maxTrips=0;
+      for(const person in travelerCounts) if(travelerCounts[person] > maxTrips){ maxTrips=travelerCounts[person]; topTraveler=person; }
+      if(topTraveler!=='None' && maxTrips>0) topTraveler = `${topTraveler} (${maxTrips})`;
+      document.getElementById('stat-trips-count').textContent = tripsCount;
+      document.getElementById('stat-countries-count').textContent = countriesCount;
+      document.getElementById('stat-top-traveler').textContent = topTraveler;
+      if(!trips.length){ el.innerHTML = '<div class="empty"><div class="ei">✈️</div>No trips logged yet</div>'; return; }
+      el.innerHTML = trips.map(t => {
+        const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+        return `<div class="row" style="padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="focusTrip('${t.id}', ${t.lat}, ${t.lng})"><div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(t.city)}, ${escapeHtml(t.country)}</div><div class="row-sub">${escapeHtml(t.date)} · Travelers: ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(t.notes)}"</div>` : ''}</div><button onclick="event.stopPropagation(); delTrip('${t.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
+      }).join('');
+      setTimeout(() => {
+        const mapContainer = document.getElementById('travel-map');
+        if(!mapContainer) return;
+        if(!travelMap){
+          travelMap = L.map('travel-map').setView([20,0],2);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', subdomains:'abcd', maxZoom:20 }).addTo(travelMap);
+        }
+        travelMarkers.forEach(m => m.remove()); travelMarkers = [];
+        travelPaths.forEach(p => p.remove()); travelPaths = [];
+        const homeBase = [1.3521, 103.8198];
+        trips.forEach(t => {
+          if(t.lat !==0 || t.lng !==0){
+            let pinColorClass = 'pin-purple';
+            if(t.members && t.members.length ===1){
+              const traveler = t.members[0];
+              if(traveler === 'Mikaela') pinColorClass='pin-blue';
+              else if(traveler === 'Meaghan') pinColorClass='pin-amber';
+              else if(traveler === 'Eleanor') pinColorClass='pin-red';
+              else if(traveler === 'Marcus') pinColorClass='pin-green';
+            }
+            const customIcon = L.divIcon({ html: `<div class="custom-pin ${pinColorClass}"></div>`, className:'custom-pin-container', iconSize:[12,12], iconAnchor:[6,6] });
+            const marker = L.marker([t.lat, t.lng], { icon: customIcon }).addTo(travelMap);
+            const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+            const popupContent = `<div style="font-family:sans-serif;padding:2px;min-width:150px;"><h4 style="margin:0 0 4px;color:#1a1a2e;font-size:13px;font-weight:bold;">📍 ${escapeHtml(t.city)}, ${escapeHtml(t.country)}</h4><div style="font-size:11px;color:#9898aa;margin-bottom:6px;">📅 ${escapeHtml(t.date)}</div><div style="font-size:12px;color:#5a5a72;margin-bottom:4px;"><strong>Who:</strong> ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:#888;font-style:italic;border-top:1px solid #eee;padding-top:4px;margin-top:4px;">"${escapeHtml(t.notes)}"</div>` : ''}</div>`;
+            marker.bindPopup(popupContent);
+            marker.tripId = t.id;
+            travelMarkers.push(marker);
+            const pathCoords = [homeBase, [t.lat, t.lng]];
+            const polyline = L.polyline(pathCoords, { color: pinColorClass==='pin-blue'?'#4f86c6':pinColorClass==='pin-amber'?'#f4a261':pinColorClass==='pin-red'?'#e05252':pinColorClass==='pin-green'?'#3aaa75':'#9b59b6', weight:2, dashArray:'6,8', className:'animated-flight-path', opacity:0.65 }).addTo(travelMap);
+            travelPaths.push(polyline);
+          }
+        });
+        travelMap.invalidateSize();
+      }, 100);
+    }
+    function focusTrip(id, lat, lng){ if(!travelMap) return; travelMap.flyTo([lat,lng],6,{animate:true,duration:1.2}); const marker=travelMarkers.find(m=>m.tripId===id); if(marker) setTimeout(()=>marker.openPopup(),1200); }
+    function playTravelTimeline() {
+      if(!travelMap){ toast('Map not loaded yet'); return; }
+      const trips = data.travel || [];
+      const validTrips = trips.filter(t => t.lat !==0 || t.lng !==0);
+      if(!validTrips.length){ toast('No trip locations to play!'); return; }
+      const sortedTrips = [...validTrips].sort((a,b)=>new Date(a.date)-new Date(b.date));
+      const playBtn = document.getElementById('btn-play-timeline');
+      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Timeline stopped'); return; }
+      if(playBtn) playBtn.innerHTML='<span>⏹</span><span>Stop Play</span>';
+      toast('Starting travel tour! ✈️');
+      let i=0;
+      function nextStep(){
+        if(i>=sortedTrips.length){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Travel tour completed! 🎉'); setTimeout(()=>{ if(travelMap) travelMap.setView([20,0],2); },2000); return; }
+        const t=sortedTrips[i]; focusTrip(t.id,t.lat,t.lng); i++;
+      }
+      nextStep();
+      timelineInterval = setInterval(nextStep, 3800);
+    }
+    function delTrip(id) {
+      const trip = data.travel.find(t => t.id === id);
+      if(!trip) return;
+      if(!confirm('Remove this trip?')) return;
+      data.travel = data.travel.filter(t => t.id !== id);
+      pushUndo(() => { data.travel.push(trip); renderTravel(); }, 'Trip removed', { note:'delete_trip', trip_id: id });
+      renderTravel();
+    }
+
+    // ─── LOCATION AUTOCOMPLETE ────────────────────────────────
+    let locTimeout = null;
+    function handleLocInput(val) {
+      clearTimeout(locTimeout);
+      if(val.trim().length < 3){ document.getElementById('tr-loc-suggestions').style.display='none'; return; }
+      locTimeout = setTimeout(() => fetchLocSuggestions(val.trim()), 400);
+    }
+    let _locResults = [];
+    async function fetchLocSuggestions(q) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
+        const res = await fetch(url);
+        const results = await res.json();
+        const sug = document.getElementById('tr-loc-suggestions');
+        if(!results || results.length===0){ sug.style.display='none'; return; }
+        _locResults = results;
+        sug.innerHTML = results.map((item, i) =>
+          `<div class="autocomplete-suggestion" data-loc-idx="${i}">${escapeHtml(item.display_name)}</div>`
+        ).join('');
+        sug.querySelectorAll('.autocomplete-suggestion').forEach(el => {
+          el.addEventListener('click', () => {
+            const item = _locResults[parseInt(el.dataset.locIdx, 10)];
+            if(!item) return;
+            const addr = item.address || {};
+            const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
+            selectLocSuggestion(city, addr.country || '', item.lat, item.lon, item.display_name);
+          });
+        });
+        sug.style.display = 'block';
+      } catch(e){ console.error('Autocomplete Error:', e); }
+    }
+    function selectLocSuggestion(city, country, lat, lng, displayName) {
+      let parsedCity = city;
+      if(!parsedCity && displayName) parsedCity = displayName.split(',')[0].trim();
+      document.getElementById('tr-loc-search').value = displayName;
+      document.getElementById('tr-city').value = parsedCity || 'Unknown';
+      document.getElementById('tr-country').value = country || 'Unknown';
+      document.getElementById('tr-lat').value = lat;
+      document.getElementById('tr-lng').value = lng;
+      document.getElementById('tr-loc-suggestions').style.display = 'none';
+    }
+    document.addEventListener('click', function(e) {
+      const sug = document.getElementById('tr-loc-suggestions');
+      const searchInput = document.getElementById('tr-loc-search');
+      if(sug && searchInput && !searchInput.contains(e.target) && !sug.contains(e.target)) sug.style.display='none';
+    });
+
+    // ─── US (Connection Sanctuary) ────────────────────────────
+    const DEEP_QUESTIONS = [
+      "What is a memory of us that always makes you smile?",
+      "What is a dream you have for us in the next 5 years?",
+      "What is one thing I did recently that made you feel deeply loved?",
+      "What does a perfect day of quality time look like for us now?",
+      "If we could travel anywhere together next month, money aside, where would we go?",
+      "What is a hobby or activity you've always wanted us to try together?",
+      "What are you most grateful for in our marriage right now?",
+      "In what ways do you think we've grown closest over the past year?",
+      "What is a small, everyday gesture of mine that you appreciate but rarely mention?",
+      "If you could describe our love story in three words, what would they be?",
+      "What is something you feel stressed about right now that I can help support you with?",
+      "What was your very first impression of me, and how has it changed?",
+      "If we could slow down time for a day, how would you want to spend it together?",
+      "What is a song, movie, or book that reminds you of our relationship?",
+      "What is a core strength of our relationship that you think helps us face challenges?",
+      "What is a memory from our dating years that still feels fresh to you?",
+      "How can I better show up for you when you are feeling overwhelmed?",
+      "What is something new you've learned about me recently?",
+      "What area of our family life do you think we are managing best as a team?",
+      "What is one area of our relationship you would love to nurture more this season?"
+    ];
+    const DATE_IDEAS = [
+      "Cook a completely new 3-course recipe together from scratch.",
+      "Recreate our very first date as closely as possible.",
+      "Have a backyard or living room picnic with favorite cheeses and fruits.",
+      "Do a cozy board game tournament or video game night together.",
+      "Take a scenic night drive and park somewhere to stargaze or look at city lights.",
+      "Visit a local art gallery, museum, or botanical garden.",
+      "Plan a 'tourist in our own city' afternoon, visiting spots we've never been to.",
+      "Go for a morning hike or park walk followed by a brunch date.",
+      "Set up a cozy indoor blanket fort and watch a favorite movie from our childhoods.",
+      "Book a couple's spa or do DIY massage night at home with soothing music.",
+      "Go to a bookstore, pick out a book for each other, and read together at a coffee shop.",
+      "Have a themed dinner night (e.g., Italian, Japanese, Mexican) with matching music.",
+      "Take an online or local cooking, pottery, or painting class together.",
+      "Go to a local live comedy show or music performance.",
+      "Write down a bucket list of 10 things we want to do together before the year ends.",
+      "Plan a sunrise breakfast date (wake up early, get coffee, and watch the sun rise).",
+      "Visit a local arcade or bowling alley for a playful, competitive night.",
+      "Do a grocery store scavenger hunt: each partner gets $10 to buy surprise items for the other.",
+      "Have a sunset walk along the beach or a scenic waterfront.",
+      "Do a memory lane date: look through old photo albums or watch wedding/early videos."
+    ];
+    let currentRouletteTab = 'q';
+    let selectedCheckinBattery = 5;
+
+    function renderUs() {
+      const container = document.getElementById('us-container');
+      if(!container) return;
+      if(user !== 'Marcus' && user !== 'Eleanor'){
+        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">💖</div><h2 style="color:#6b2d5c;font-weight:700;">Connection Sanctuary</h2><p class="adults-only" style="margin-top:14px;color:#a85f89;">This is a private sanctuary space for Mom & Dad to share appreciations, plan date nights, and align.</p></div></div>`;
+        return;
+      }
+      const partner = user === 'Marcus' ? 'Eleanor' : 'Marcus';
+      const apps = data.appreciations || [];
+      let lockedCount = 0, unlockedApps = [];
+      apps.forEach(a => {
+        const isToMe = (a.recipient === user);
+        const isLocked = a.revealDate ? (new Date() < new Date(a.revealDate)) : false;
+        if(isLocked) lockedCount++;
+        else if(isToMe) unlockedApps.push(a);
+      });
+      const checkins = data.loveCheckins || [];
+      const marcusCheckin = checkins.filter(c=>c.user==='Marcus').sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0];
+      const eleanorCheckin = checkins.filter(c=>c.user==='Eleanor').sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0];
+      let alignmentHtml = '';
+      if(marcusCheckin || eleanorCheckin){
+        let marcusInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
+        if(marcusCheckin) marcusInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(marcusCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(marcusCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(marcusCheckin.notes)||'No notes'}"</div>`;
+        let eleanorInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
+        if(eleanorCheckin) eleanorInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(eleanorCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(eleanorCheckin.notes)||'No notes'}"</div>`;
+        alignmentHtml = `<div style="display:flex;gap:12px;margin-top:8px;"><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👨 Marcus</div>${marcusInfo}</div><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👩 Eleanor</div>${eleanorInfo}</div></div>`;
+      } else { alignmentHtml = '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:8px;">No check-ins logged yet. Make yours below!</div>'; }
+      const historyCheckins = [...checkins].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
+      let historyHtml = '';
+      if(historyCheckins.length===0) historyHtml = '<div style="text-align:center;font-size:11px;color:var(--text-muted);padding:8px;">No past check-ins logged yet.</div>';
+      else {
+        historyHtml = historyCheckins.slice(0,10).map(c => {
+          const dateStr = fmtDate(c.timestamp.split(' ')[0]);
+          const userEmoji = c.user==='Marcus'?'👨':'👩';
+          return `<div style="padding:6px 0;border-bottom:1px solid var(--border-color);"><div style="font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span><strong>${escapeHtml(dateStr)}</strong> · ${userEmoji} ${escapeHtml(c.user)}</span><span style="color:#ef4444;font-weight:700;">${'❤️'.repeat(c.battery)}</span></div>${c.moods&&c.moods.length?`<div style="font-size:10px;color:#a85f89;margin-left:14px;margin-top:2px;">Moods: ${escapeHtml(c.moods.join(', '))}</div>`:''}${c.notes?`<div style="font-size:10px;color:var(--text-muted);margin-left:14px;margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>`:''}${c.focus?`<div style="font-size:10px;color:#6b2d5c;margin-left:14px;margin-top:2px;font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>`:''}</div>`;
+        }).join('');
+      }
+      let unlockedHtml = '';
+      if(unlockedApps.length===0) {
+        unlockedHtml = '<div style="text-align:center;padding:16px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No notes revealed yet. Write one to encourage partner!</div>';
+      } else {
+        unlockedHtml = unlockedApps.map(a => `<div class="envelope"><div style="font-size:20px;">✉️</div><div style="flex:1;"><div class="envelope-message">"${escapeHtml(a.message)}"</div><div class="envelope-meta">Revealed on ${fmtDate(a.revealDate? a.revealDate.split('T')[0] : '')}</div></div></div>`).join('');
+      }
+
+      // ─── BUCKET LIST ──────────────────────────────────────────
+      const bucketItems = bucketList || [];
+      let bucketHtml = '';
+      if(bucketItems.length===0) {
+        bucketHtml = '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px;">No bucket list items yet. Add one below!</div>';
+      } else {
+        bucketHtml = bucketItems.map(item => `
+          <div class="bucket-item">
+            <span class="text ${item.completed?'done':''}">${escapeHtml(item.item)}</span>
+            <div class="actions">
+              <button onclick="toggleBucketItem('${item.id}')" title="Toggle complete">${item.completed?'✅':'⬜'}</button>
+              <button onclick="deleteBucketItem('${item.id}')" title="Delete">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+      }
+      const bucketSection = `
+        <div class="us-card">
+          <div class="us-card-title">📝 Shared Bucket List</div>
+          <div id="bucket-list-container">${bucketHtml}</div>
+          <div class="bucket-add">
+            <input type="text" id="bucket-input" placeholder="Add a new goal..." onkeypress="if(event.key==='Enter') addBucketItem()">
+            <button onclick="addBucketItem()">Add</button>
+          </div>
+        </div>
+      `;
+
+      const rouletteHtml = `
+        <div class="us-card">
+          <div class="us-card-title">🎡 Spark Roulette</div>
+          <div class="roulette-tabs">
+            <div class="roulette-tab active" id="r-tab-q" onclick="switchRouletteTab('q')">💬 Deep Talk</div>
+            <div class="roulette-tab" id="r-tab-d" onclick="switchRouletteTab('d')">🍕 Date Night</div>
+          </div>
+          <div class="roulette-wrapper">
+            <div class="roulette-card" id="r-card" onclick="spinRoulette()">
+              <div id="r-card-icon" style="font-size:32px;margin-bottom:8px;">✨</div>
+              <div class="roulette-prompt" id="r-result-text">Tap to Spin!</div>
+              <div class="roulette-card-sub" id="r-result-sub">Get a random card</div>
+            </div>
+            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Spin Again 🔄</button>
+          </div>
+        </div>
+      `;
+
+      // ─── INTIMACY LOG ─────────────────────────────────────────
+      const intimacyEntries = data.intimacyLog || [];
+      let intimacyHtml = '';
+      if (intimacyEntries.length === 0) {
+        intimacyHtml = '<div style="text-align:center;padding:12px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No entries yet. Log a private moment below 💕</div>';
+      } else {
+        intimacyHtml = intimacyEntries.slice(0, 12).map(entry => {
+          const hearts = entry.rating > 0 ? '❤️'.repeat(Math.min(5, entry.rating)) : '';
+          return `<div class="intimacy-history-item">
+            <div style="font-size:18px;">💕</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                <strong style="color:#6b2d5c;">${escapeHtml(entry.date || '—')}</strong>
+                <span class="intimacy-hearts" style="font-size:12px;">${hearts}</span>
+              </div>
+              ${entry.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(entry.notes)}</div>` : ''}
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Logged by ${escapeHtml(entry.loggedBy || '')}</div>
+            </div>
+            <button onclick="deleteIntimacy('${escapeHtml(entry.id)}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:0.6;">🗑️</button>
+          </div>`;
+        }).join('');
+      }
+      const thisMonthCount = intimacyEntries.filter(e => {
+        if (!e.dateRaw) return false;
+        const now = new Date();
+        const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        return String(e.dateRaw).startsWith(ym);
+      }).length;
+      const intimacySection = `
+        <div class="us-card">
+          <div class="us-card-title">💕 Intimacy Log</div>
+          <div style="font-size:12px;color:#a85f89;margin-bottom:10px;">Private to you two · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
+          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:#be123c;color:#fff;border:none;width:100%;margin-bottom:12px;">We made love — log it 💕</button>
+          <div id="intimacy-list">${intimacyHtml}</div>
+        </div>
+      `;
+
+      container.innerHTML = `
+        <div class="us-header"><h2>💖 Us Connection Sanctuary</h2><p>A private space for Marcus & Eleanor</p></div>
+        <div class="us-card"><div class="us-card-title">📊 Daily Battery Check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Log Daily Check-in</button>
+          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Timeline of Past Check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
+        </div>
+        ${intimacySection}
+        <div class="us-card"><div class="us-card-title">🍯 Appreciation Jar</div>
+          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Love Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:#6b2d5c;font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:#a85f89;margin-top:2px;">Unlocking Friday at 6:00 PM for Date Night!</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:#6b2d5c;color:#fff;border:none;">Drop a Note in the Jar ✍️</button></div>
+          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;margin-bottom:8px;">📬 Unlocked Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
+        </div>
+        ${bucketSection}
+        ${rouletteHtml}
+      `;
+    }
+
+    // ─── INTIMACY LOG ──────────────────────────────────────────
+    let selectedIntimacyRating = 0;
+    function openIntimacyModal() {
+      const dateEl = document.getElementById('intimacy-date');
+      if (dateEl) {
+        const t = new Date();
+        dateEl.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+      }
+      clr('intimacy-notes');
+      selectedIntimacyRating = 0;
+      chips('intimacy-rating-chips', ['1', '2', '3', '4', '5'], '', 'int-rating');
+      // Map chip selection into selectedIntimacyRating via custom click
+      setTimeout(() => {
+        document.querySelectorAll('#intimacy-rating-chips .chip').forEach(chip => {
+          chip.onclick = function() {
+            document.querySelectorAll('#intimacy-rating-chips .chip').forEach(c => c.classList.remove('sel'));
+            this.classList.add('sel');
+            selectedIntimacyRating = parseInt(this.dataset.v, 10) || 0;
+          };
+          // prettier labels
+          const n = this.dataset.v;
+          this.textContent = '❤️'.repeat(parseInt(n, 10) || 1);
+        });
+      }, 0);
+      openM('m-intimacy');
+    }
+    async function submitIntimacy(btn) {
+      if (!btn) btn = document.getElementById('intimacy-submit');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        const date = v('intimacy-date');
+        if (!date) { toast('Please select a date'); return; }
+        const res = await gPost({
+          note: 'add_intimacy',
+          intimacy_date: fmtDate(date),
+          intimacy_notes: v('intimacy-notes'),
+          intimacy_rating: selectedIntimacyRating || 0
+        });
+        if (res && res.status === 'ok') {
+          closeM('m-intimacy');
+          toast('Logged 💕');
+          await loadData();
+          renderUs();
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save 💕';
+      }
+    }
+    async function deleteIntimacy(id) {
+      if (!id || !confirm('Remove this intimacy log entry?')) return;
+      const res = await gPost({ note: 'delete_intimacy', id: id });
+      if (res && res.status === 'ok') {
+        toast('Entry removed');
+        await loadData();
+        renderUs();
+      }
+    }
+
+    // ─── BUCKET LIST FUNCTIONS ──────────────────────────────
+    async function addBucketItem() {
+      const input = document.getElementById('bucket-input');
+      const text = input.value.trim();
+      if(!text) return;
+      const res = await gPost({ note: 'add_bucket_item', item: text });
+      if(res && res.status === 'ok') {
+        input.value = '';
+        toast('Bucket item added!');
+        await loadData();
+        renderUs();
+      } else {
+        toast('Failed to add item', true);
+      }
+    }
+    async function toggleBucketItem(id) {
+      const res = await gPost({ note: 'toggle_bucket_item', id: id });
+      if(res && res.status === 'ok') {
+        toast('Bucket item updated');
+        await loadData();
+        renderUs();
+      }
+    }
+    async function deleteBucketItem(id) {
+      if(!confirm('Delete this bucket item?')) return;
+      const res = await gPost({ note: 'delete_bucket_item', id: id });
+      if(res && res.status === 'ok') {
+        toast('Bucket item deleted');
+        await loadData();
+        renderUs();
+      }
+    }
+
+    // ─── US ROUlette FUNCTIONS ──────────────────────────────
+    function switchRouletteTab(tab) {
+      currentRouletteTab = tab;
+      document.getElementById('r-tab-q').classList.toggle('active', tab==='q');
+      document.getElementById('r-tab-d').classList.toggle('active', tab==='d');
+      const card = document.getElementById('r-card');
+      if(card) card.classList.remove('spinning');
+      document.getElementById('btn-spin-again').style.display = 'none';
+      
+      const cardIcon = document.getElementById('r-card-icon');
+      const cardText = document.getElementById('r-result-text');
+      const cardSub = document.getElementById('r-result-sub');
+      if(cardIcon && cardText && cardSub) {
+        cardIcon.textContent = '✨';
+        cardText.textContent = 'Tap to Spin!';
+        cardSub.textContent = 'Get a random card';
+      }
+    }
+    function spinRoulette() {
+      const card = document.getElementById('r-card');
+      if(!card) return;
+      card.classList.remove('spinning');
+      void card.offsetWidth;
+      card.classList.add('spinning');
+      let resultText='', categoryText='', icon='✨';
+      if(currentRouletteTab === 'q') {
+        const idx = Math.floor(Math.random() * DEEP_QUESTIONS.length);
+        resultText = DEEP_QUESTIONS[idx];
+        categoryText = '💬 Deep Connection Question';
+        icon = '💬';
+      } else {
+        const idx = Math.floor(Math.random() * DATE_IDEAS.length);
+        resultText = DATE_IDEAS[idx];
+        categoryText = '🍕 Date Night Suggestion';
+        icon = '🍕';
+      }
+      
+      setTimeout(() => {
+        const cardIcon = document.getElementById('r-card-icon');
+        const cardText = document.getElementById('r-result-text');
+        const cardSub = document.getElementById('r-result-sub');
+        if(cardIcon && cardText && cardSub) {
+          cardIcon.textContent = icon;
+          cardText.textContent = resultText;
+          cardSub.textContent = categoryText;
+        }
+      }, 150);
+      
+      setTimeout(() => { document.getElementById('btn-spin-again').style.display = 'inline-block'; }, 600);
+    }
+    function triggerJarFloat() {
+      const jar = document.getElementById('jar-gfx');
+      if(!jar) return;
+      jar.style.transform = 'scale(0.95)';
+      setTimeout(()=>{ jar.style.transform = 'scale(1.05)'; },100);
+      setTimeout(()=>{ jar.style.transform = ''; },250);
+      const heartEmojis = ['❤️','💖','💝','💕','✨'];
+      for(let i=0; i<4; i++) {
+        setTimeout(()=>{
+          const h = document.createElement('div');
+          h.className = 'heart-float';
+          h.textContent = heartEmojis[Math.floor(Math.random()*heartEmojis.length)];
+          h.style.left = (jar.offsetLeft + jar.offsetWidth/2 - 10 + (Math.random()*30-15)) + 'px';
+          h.style.top = (jar.offsetTop + 40) + 'px';
+          h.style.setProperty('--rx', (Math.random()*60-30)+'px');
+          jar.parentNode.appendChild(h);
+          setTimeout(()=>h.remove(), 3000);
+        }, i*150);
+      }
+    }
+    function openAppreciationModal() { clr('love-note-msg'); openM('m-love-note'); }
+    function openLoveCheckinModal() {
+      selectedCheckinBattery = 5;
+      updateCheckinBatteryHearts();
+      document.querySelectorAll('#checkin-moods .checkin-tag').forEach(t=>t.classList.remove('sel'));
+      clr('checkin-notes','checkin-focus');
+      openM('m-love-checkin');
+    }
+    function setCheckinBattery(val) { selectedCheckinBattery=val; updateCheckinBatteryHearts(); }
+    function updateCheckinBatteryHearts() {
+      const hearts = document.querySelectorAll('#checkin-battery-slider .battery-heart');
+      hearts.forEach((h,idx)=>h.classList.toggle('active', idx<selectedCheckinBattery));
+    }
+    function toggleMoodTag(el) { el.classList.toggle('sel'); }
+    function toggleCheckinHistory() {
+      const list = document.getElementById('checkin-history-list');
+      const icon = document.getElementById('history-toggle-icon');
+      if(list) {
+        if(list.style.display === 'none' || !list.style.display) { list.style.display='flex'; if(icon) icon.textContent='Hide ▴'; }
+        else { list.style.display='none'; if(icon) icon.textContent='Show ▾'; }
+      }
+    }
+
+    // ══ NOTIFICATIONS ══
+    let notificationPermissionGranted = false;
+
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'granted') {
+        notificationPermissionGranted = true;
+        document.getElementById('notifBell').classList.add('on');
+        return;
+      }
+      if (Notification.permission === 'denied') return;
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        if (notificationPermissionGranted) {
+          document.getElementById('notifBell').classList.add('on');
+          toast('Notifications enabled 🔔');
+        } else {
+          document.getElementById('notifBell').classList.remove('on');
+        }
+      });
+    }
+
+    function toggleNotifications() {
+      if (!('Notification' in window)) {
+        toast('Notifications not supported in this browser');
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        toast('Notifications blocked by browser. Please allow them in settings.');
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        // Toggle on/off for this session
+        notificationPermissionGranted = !notificationPermissionGranted;
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications ON 🔔' : 'Notifications OFF 🔕');
+        return;
+      }
+      // Request permission
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications enabled 🔔' : 'Notifications blocked');
+      });
+    }
+
+    // Show notification for new messages (when tab is in background but still open)
+    function showChatNotification(message) {
+      if (!notificationPermissionGranted) return;
+      if (!document.hidden) return;
+      const title = '💬 New message from ' + (message.user || 'Someone');
+      const body = message.message || '📷 Image';
+      const opts = {
+        body,
+        icon: 'favicon.png',
+        tag: 'familylog-chat',
+        data: { screen: 'chat' }
+      };
+      // Prefer SW so notificationclick opens Chat (same path as FCM)
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, opts);
+        }).catch(() => {
+          try {
+            const notif = new Notification(title, opts);
+            notif.onclick = () => {
+              window.focus();
+              handleNotificationNavigation('chat');
+              notif.close();
+            };
+          } catch (e) { console.warn('Notification error:', e); }
+        });
+        return;
+      }
+      try {
+        const notif = new Notification(title, opts);
+        notif.onclick = () => {
+          window.focus();
+          handleNotificationNavigation('chat');
+          notif.close();
+        };
+      } catch (e) {
+        console.warn('Notification error:', e);
+      }
+    }
+
+    // ══ CHAT (Firestore) ══
+    function renderChat() {
+      const container = document.getElementById('chat-msg-container');
+      if (!container) return;
+      
+      const messages = data.chat || [];
+      if (messages.length === 0) {
+        container.innerHTML = '<div class="empty"><div class="ei">💬</div>Start the conversation! Send a message below.</div>';
+        return;
+      }
+      
+      container.innerHTML = messages.map(m => {
+        const isMe = m.user === user;
+        const timeStr = m.timestamp ? (m.timestamp instanceof Date ? m.timestamp.toLocaleTimeString('en-SG', {hour:'2-digit', minute:'2-digit'}) : '') : '';
+        const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${escapeHtml(m.user)}</div>`;
+        const imageHtml = mediaImgHtml(m.imageUrl);
+        const bubbleClass = isMe ? 'me' : 'other';
+        const opacityStyle = m.isOptimistic ? 'style="opacity: 0.65;"' : '';
+        
+        return `
+          <div class="chat-bubble-row ${bubbleClass}" ${opacityStyle}>
+            <div class="chat-bubble">
+              ${nameLabel}
+              ${imageHtml}
+              ${m.message ? `<div class="chat-bubble-text">${escapeHtml(m.message)}</div>` : ''}
+              <div class="chat-bubble-time">${escapeHtml(timeStr)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // ─── FIRESTORE CHAT LISTENER ──────────────────────────────
+    function startChatListener() {
+      if (chatUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      chatUnsubscribe = db.collection('chat')
+        .orderBy('timestamp', 'asc')
+        .onSnapshot((snapshot) => {
+          const messages = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            messages.push({
+              id: doc.id,
+              user: data.user || 'Unknown',
+              senderEmail: data.senderEmail || '',
+              message: data.message || '',
+              imageUrl: data.imageUrl || '',
+              timestamp: data.timestamp?.toDate?.() || new Date(),
+            });
+          });
+          // Check for new messages (last one)
+          const oldLen = (data.chat || []).length;
+          data.chat = messages;
+          if (section === 'chat') renderChat();
+          // Notification for new message
+          if (messages.length > oldLen && messages.length > 0) {
+            const newMsg = messages[messages.length - 1];
+            if (newMsg.user !== user) {
+              showChatNotification(newMsg);
+            }
+          }
+        }, (error) => {
+          console.error('Chat listener error:', error);
+          toast('Chat connection error', true);
+        });
+    }
+
+    function stopChatListener() {
+      if (chatUnsubscribe) {
+        chatUnsubscribe();
+        chatUnsubscribe = null;
+      }
+    }
+
+    // ─── FIRESTORE MEMORIES LISTENER ──────────────────────────
+    function startMemoriesListener() {
+      if (memoriesUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      memoriesUnsubscribe = db.collection('memories')
+        .orderBy('timestamp', 'desc')
+        .onSnapshot((snapshot) => {
+          const memories = [];
+          snapshot.forEach((doc) => {
+            const d = doc.data();
+            
+            let formattedDate = '';
+            if (d.date) {
+              const dateObj = new Date(d.date);
+              if (!isNaN(dateObj.getTime())) {
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                formattedDate = String(dateObj.getDate()).padStart(2, '0') + ' ' + months[dateObj.getMonth()] + ' ' + dateObj.getFullYear();
+              }
+            }
+            
+            memories.push({
+              id: doc.id,
+              loggedBy: d.loggedBy || 'Unknown',
+              date: formattedDate,
+              dateRaw: d.date || '',
+              type: d.type || 'Moment',
+              person: d.person || 'Everyone',
+              memory: d.memory || '',
+              imageUrl: d.imageUrl || '',
+              timestamp: d.timestamp?.toDate?.() || new Date()
+            });
+          });
+          data.memories = memories;
+          if (section === 'memories') renderMemories();
+        }, (error) => {
+          console.error('Memories listener error:', error);
+          toast('Memories connection error', true);
+        });
+    }
+
+    function stopMemoriesListener() {
+      if (memoriesUnsubscribe) {
+        memoriesUnsubscribe();
+        memoriesUnsubscribe = null;
+      }
+    }
+
+    // ─── SEND CHAT MESSAGE (Firestore + Storage) ──────────────
+    async function sendChatMessage() {
+      const txtInput = document.getElementById('chat-input-text');
+      const text = txtInput?.value?.trim() || '';
+      if (!text && !chatImageBase64) return;
+      if (txtInput) txtInput.value = '';
+
+      let imageUrl = '';
+
+      // Upload image to Firebase Storage (path: chat/{email}/…) — not Drive
+      if (chatImageBase64) {
+        try {
+          const authUser = firebase.auth().currentUser;
+          const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
+          const blob = dataURItoBlob(chatImageBase64);
+          const ref = storage.ref(`chat/${emailKey}/${Date.now()}.jpg`);
+          const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
+          imageUrl = await snapshot.ref.getDownloadURL();
+        } catch (err) {
+          toast('Image upload failed: ' + err.message, true);
+          return;
+        } finally {
+          clearChatFilePreview();
+        }
+      }
+
+      // Write to Firestore (include senderEmail so FCM can exclude the sender)
+      try {
+        const authUser = firebase.auth().currentUser;
+        await db.collection('chat').add({
+          user: user || 'Unknown',
+          senderEmail: (authUser && authUser.email) || currentUserEmail || '',
+          message: text,
+          imageUrl: imageUrl,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        // Listener updates UI automatically
+      } catch (err) {
+        toast('Failed to send message: ' + err.message, true);
+      }
+    }
+
+    // Helper: convert dataURI to Blob
+    function dataURItoBlob(dataURI) {
+      const byteString = atob(dataURI.split(',')[1]);
+      const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mimeString });
+    }
+
+    // ─── CHAT FILE HANDLING ────────────────────────────────────
+    function handleChatFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          chatImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('chat-img-preview');
+          const thumbnail = document.getElementById('chat-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = chatImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearChatFilePreview() {
+      chatImageBase64 = null;
+      const fileInput = document.getElementById('chat-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('chat-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    function handleMemoryFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          memImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('mem-img-preview');
+          const thumbnail = document.getElementById('mem-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = memImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearMemoryFilePreview() {
+      memImageBase64 = null;
+      const fileInput = document.getElementById('mem-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('mem-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    // ─── OTHER HELPERS ─────────────────────────────────────────
+    function openChatLightbox(url) {
+      if (!isSafeMediaUrl(url)) return;
+      const lightbox = document.getElementById('chat-lightbox');
+      const img = document.getElementById('lightbox-img');
+      if (lightbox && img) {
+        img.src = url;
+        lightbox.classList.add('open');
+      }
+    }
+
+    function closeChatLightbox() {
+      const lightbox = document.getElementById('chat-lightbox');
+      if (lightbox) {
+        lightbox.classList.remove('open');
+      }
+    }
+
+    function toggleMenuDrawer(open) {
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('menu-drawer');
+      if (overlay && drawer) {
+        if (open) {
+          overlay.classList.add('open');
+          drawer.classList.add('open');
+        } else {
+          overlay.classList.remove('open');
+          drawer.classList.remove('open');
+        }
+      }
+    }
+
+    function navigateDrawer(id) {
+      toggleMenuDrawer(false);
+      goTo(id);
+    }
+
+    function getCategoryEmoji(cat) {
+      const c = String(cat).toLowerCase();
+      if (c.includes('eat') || c.includes('food') || c.includes('dinner') || c.includes('lunch') || c.includes('snack') || c.includes('cafe')) return '🍔';
+      if (c.includes('transport') || c.includes('taxi') || c.includes('grab') || c.includes('mrt') || c.includes('bus')) return '🚗';
+      if (c.includes('gas') || c.includes('petrol') || c.includes('sinopec') || c.includes('spc') || c.includes('caltex') || c.includes('shell')) return '⛽';
+      if (c.includes('child') || c.includes('kid') || c.includes('school') || c.includes('nafa') || c.includes('violin') || c.includes('tution')) return '👧';
+      if (c.includes('self') || c.includes('care') || c.includes('spa') || c.includes('hair') || c.includes('facial') || c.includes('massage')) return '💆‍♀️';
+      if (c.includes('shop') || c.includes('clothing') || c.includes('clothes') || c.includes('shein') || c.includes('shopee') || c.includes('lazada')) return '🛍️';
+      if (c.includes('grocery') || c.includes('supermarket') || c.includes('ntuc') || c.includes('fairprice') || c.includes('cold storage') || c.includes('sheng siong')) return '🛒';
+      if (c.includes('finance') || c.includes('bill') || c.includes('insurance') || c.includes('mobile') || c.includes('teleco') || c.includes('singtel') || c.includes('starhub') || c.includes('m1')) return '📱';
+      if (c.includes('travel') || c.includes('flight') || c.includes('hotel') || c.includes('holiday')) return '✈️';
+      return '💰';
+    }
+
+    // ─── APP INIT (already called above) ───────────────────────
+
+    console.log('✅ Wong Family app with Firestore chat and FCM push notifications loaded successfully.');
