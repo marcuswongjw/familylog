@@ -517,7 +517,7 @@
         }
         if (r && r.status === 'error') {
           showError('Server error: ' + (r.message || 'unknown'));
-          return r; // preserve message for callers (e.g. intimacy save)
+          return r; // keep message for callers
         }
         return r;
       } catch (err) {
@@ -533,9 +533,14 @@
       // Preserve Firestore live data — never take chat from Sheets/GAS
       const prevChat = data.chat;
       const prevMems = data.memories;
+      const prevIntimacy = data.intimacyLog;
       data = r || {};
       data.chat = Array.isArray(prevChat) ? prevChat : [];
       if (prevMems) data.memories = prevMems;
+      // If server omits intimacyLog (old GAS), keep what we already have locally
+      if (!Array.isArray(data.intimacyLog) && Array.isArray(prevIntimacy)) {
+        data.intimacyLog = prevIntimacy;
+      }
       if (r.expenseGroups) GROUPS = r.expenseGroups;
       if (r.bucketList) bucketList = r.bucketList;
       // Server isAdult is authoritative; fall back to email allowlist
@@ -1821,7 +1826,7 @@
       try {
         const date = v('fert-date');
         if(!date){ toast('Please select a date'); return; }
-        await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:date,fertility_notes:v('fert-notes')});
+        await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')});
         clr('fert-notes'); toast('Logged! 🌸');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Log Entry'; }
@@ -1876,4 +1881,1023 @@
         if(!dateVal){ alert('Please select a date'); return; }
         const title = child + ' - ' + activity;
         await gPost({note:'add_event',event_title:title,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
-        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-en
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Schedules updated! ⛵');
+        await loadData(); renderSchedules();
+      } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
+    }
+    async function submitAppreciation(btn) {
+      if(!btn) btn = document.getElementById('love-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const msg = v('love-note-msg');
+        if(!msg){ toast('Please enter a note'); return; }
+        closeM('m-love-note');
+        const res = await gPost({note:'add_appreciation',message:msg});
+        if(res && res.status === 'ok'){ toast('Note dropped in the jar! 🍯'); await loadData(); } else toast('Error saving note');
+      } finally { btn.disabled = false; btn.textContent = 'Drop in Jar 🍯'; }
+    }
+    async function submitLoveCheckin(btn) {
+      if(!btn) btn = document.getElementById('checkin-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const selectedMoods = [];
+        document.querySelectorAll('#checkin-moods .checkin-tag.sel').forEach(t => selectedMoods.push(t.textContent.trim()));
+        const notes = v('checkin-notes'), focus = v('checkin-focus');
+        closeM('m-love-checkin');
+        
+        console.log('Sending check-in payload:', {note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
+        const res = await gPost({note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
+        console.log('Check-in server response:', res);
+        
+        if(res && res.status === 'ok'){
+          toast('Check-in saved! 😊');
+          await loadData();
+        } else {
+          const errMsg = (res && res.message) ? res.message : 'Unknown error';
+          showError('Error saving check-in: ' + errMsg);
+        }
+      } catch (err) {
+        console.error('Check-in error:', err);
+        showError('Client error: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save Check-in';
+      }
+    }
+
+    // ─── TRAVEL ─────────────────────────────────────────────────
+    let travelMap = null, travelMarkers = [], travelPaths = [];
+    function renderTravel() {
+      const trips = data.travel || [];
+      const el = document.getElementById('trip-list');
+      if(!el) return;
+      const tripsCount = trips.length;
+      const uniqueCountries = new Set();
+      const travelerCounts = {};
+      trips.forEach(t => {
+        if(t.country) uniqueCountries.add(t.country.trim());
+        if(t.members && t.members.length) { t.members.forEach(m => travelerCounts[m] = (travelerCounts[m]||0)+1); }
+        else travelerCounts['Everyone'] = (travelerCounts['Everyone']||0)+1;
+      });
+      const countriesCount = uniqueCountries.size;
+      let topTraveler='None', maxTrips=0;
+      for(const person in travelerCounts) if(travelerCounts[person] > maxTrips){ maxTrips=travelerCounts[person]; topTraveler=person; }
+      if(topTraveler!=='None' && maxTrips>0) topTraveler = `${topTraveler} (${maxTrips})`;
+      document.getElementById('stat-trips-count').textContent = tripsCount;
+      document.getElementById('stat-countries-count').textContent = countriesCount;
+      document.getElementById('stat-top-traveler').textContent = topTraveler;
+      if(!trips.length){ el.innerHTML = '<div class="empty"><div class="ei">✈️</div>No trips logged yet</div>'; return; }
+      el.innerHTML = trips.map(t => {
+        const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+        return `<div class="row" style="padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="focusTrip('${t.id}', ${t.lat}, ${t.lng})"><div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(t.city)}, ${escapeHtml(t.country)}</div><div class="row-sub">${escapeHtml(t.date)} · Travelers: ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(t.notes)}"</div>` : ''}</div><button onclick="event.stopPropagation(); delTrip('${t.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
+      }).join('');
+      setTimeout(() => {
+        const mapContainer = document.getElementById('travel-map');
+        if(!mapContainer) return;
+        if(!travelMap){
+          travelMap = L.map('travel-map').setView([20,0],2);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', subdomains:'abcd', maxZoom:20 }).addTo(travelMap);
+        }
+        travelMarkers.forEach(m => m.remove()); travelMarkers = [];
+        travelPaths.forEach(p => p.remove()); travelPaths = [];
+        const homeBase = [1.3521, 103.8198];
+        trips.forEach(t => {
+          if(t.lat !==0 || t.lng !==0){
+            let pinColorClass = 'pin-purple';
+            if(t.members && t.members.length ===1){
+              const traveler = t.members[0];
+              if(traveler === 'Mikaela') pinColorClass='pin-blue';
+              else if(traveler === 'Meaghan') pinColorClass='pin-amber';
+              else if(traveler === 'Eleanor') pinColorClass='pin-red';
+              else if(traveler === 'Marcus') pinColorClass='pin-green';
+            }
+            const customIcon = L.divIcon({ html: `<div class="custom-pin ${pinColorClass}"></div>`, className:'custom-pin-container', iconSize:[12,12], iconAnchor:[6,6] });
+            const marker = L.marker([t.lat, t.lng], { icon: customIcon }).addTo(travelMap);
+            const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
+            const popupContent = `<div style="font-family:sans-serif;padding:2px;min-width:150px;"><h4 style="margin:0 0 4px;color:#1a1a2e;font-size:13px;font-weight:bold;">📍 ${escapeHtml(t.city)}, ${escapeHtml(t.country)}</h4><div style="font-size:11px;color:#9898aa;margin-bottom:6px;">📅 ${escapeHtml(t.date)}</div><div style="font-size:12px;color:#5a5a72;margin-bottom:4px;"><strong>Who:</strong> ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:#888;font-style:italic;border-top:1px solid #eee;padding-top:4px;margin-top:4px;">"${escapeHtml(t.notes)}"</div>` : ''}</div>`;
+            marker.bindPopup(popupContent);
+            marker.tripId = t.id;
+            travelMarkers.push(marker);
+            const pathCoords = [homeBase, [t.lat, t.lng]];
+            const polyline = L.polyline(pathCoords, { color: pinColorClass==='pin-blue'?'#4f86c6':pinColorClass==='pin-amber'?'#f4a261':pinColorClass==='pin-red'?'#e05252':pinColorClass==='pin-green'?'#3aaa75':'#9b59b6', weight:2, dashArray:'6,8', className:'animated-flight-path', opacity:0.65 }).addTo(travelMap);
+            travelPaths.push(polyline);
+          }
+        });
+        travelMap.invalidateSize();
+      }, 100);
+    }
+    function focusTrip(id, lat, lng){ if(!travelMap) return; travelMap.flyTo([lat,lng],6,{animate:true,duration:1.2}); const marker=travelMarkers.find(m=>m.tripId===id); if(marker) setTimeout(()=>marker.openPopup(),1200); }
+    function playTravelTimeline() {
+      if(!travelMap){ toast('Map not loaded yet'); return; }
+      const trips = data.travel || [];
+      const validTrips = trips.filter(t => t.lat !==0 || t.lng !==0);
+      if(!validTrips.length){ toast('No trip locations to play!'); return; }
+      const sortedTrips = [...validTrips].sort((a,b)=>new Date(a.date)-new Date(b.date));
+      const playBtn = document.getElementById('btn-play-timeline');
+      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Timeline stopped'); return; }
+      if(playBtn) playBtn.innerHTML='<span>⏹</span><span>Stop Play</span>';
+      toast('Starting travel tour! ✈️');
+      let i=0;
+      function nextStep(){
+        if(i>=sortedTrips.length){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Travel tour completed! 🎉'); setTimeout(()=>{ if(travelMap) travelMap.setView([20,0],2); },2000); return; }
+        const t=sortedTrips[i]; focusTrip(t.id,t.lat,t.lng); i++;
+      }
+      nextStep();
+      timelineInterval = setInterval(nextStep, 3800);
+    }
+    function delTrip(id) {
+      const trip = data.travel.find(t => t.id === id);
+      if(!trip) return;
+      if(!confirm('Remove this trip?')) return;
+      data.travel = data.travel.filter(t => t.id !== id);
+      pushUndo(() => { data.travel.push(trip); renderTravel(); }, 'Trip removed', { note:'delete_trip', trip_id: id });
+      renderTravel();
+    }
+
+    // ─── LOCATION AUTOCOMPLETE ────────────────────────────────
+    let locTimeout = null;
+    function handleLocInput(val) {
+      clearTimeout(locTimeout);
+      if(val.trim().length < 3){ document.getElementById('tr-loc-suggestions').style.display='none'; return; }
+      locTimeout = setTimeout(() => fetchLocSuggestions(val.trim()), 400);
+    }
+    let _locResults = [];
+    async function fetchLocSuggestions(q) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
+        const res = await fetch(url);
+        const results = await res.json();
+        const sug = document.getElementById('tr-loc-suggestions');
+        if(!results || results.length===0){ sug.style.display='none'; return; }
+        _locResults = results;
+        sug.innerHTML = results.map((item, i) =>
+          `<div class="autocomplete-suggestion" data-loc-idx="${i}">${escapeHtml(item.display_name)}</div>`
+        ).join('');
+        sug.querySelectorAll('.autocomplete-suggestion').forEach(el => {
+          el.addEventListener('click', () => {
+            const item = _locResults[parseInt(el.dataset.locIdx, 10)];
+            if(!item) return;
+            const addr = item.address || {};
+            const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
+            selectLocSuggestion(city, addr.country || '', item.lat, item.lon, item.display_name);
+          });
+        });
+        sug.style.display = 'block';
+      } catch(e){ console.error('Autocomplete Error:', e); }
+    }
+    function selectLocSuggestion(city, country, lat, lng, displayName) {
+      let parsedCity = city;
+      if(!parsedCity && displayName) parsedCity = displayName.split(',')[0].trim();
+      document.getElementById('tr-loc-search').value = displayName;
+      document.getElementById('tr-city').value = parsedCity || 'Unknown';
+      document.getElementById('tr-country').value = country || 'Unknown';
+      document.getElementById('tr-lat').value = lat;
+      document.getElementById('tr-lng').value = lng;
+      document.getElementById('tr-loc-suggestions').style.display = 'none';
+    }
+    document.addEventListener('click', function(e) {
+      const sug = document.getElementById('tr-loc-suggestions');
+      const searchInput = document.getElementById('tr-loc-search');
+      if(sug && searchInput && !searchInput.contains(e.target) && !sug.contains(e.target)) sug.style.display='none';
+    });
+
+    // ─── US (Connection Sanctuary) ────────────────────────────
+    const DEEP_QUESTIONS = [
+      "What is a memory of us that always makes you smile?",
+      "What is a dream you have for us in the next 5 years?",
+      "What is one thing I did recently that made you feel deeply loved?",
+      "What does a perfect day of quality time look like for us now?",
+      "If we could travel anywhere together next month, money aside, where would we go?",
+      "What is a hobby or activity you've always wanted us to try together?",
+      "What are you most grateful for in our marriage right now?",
+      "In what ways do you think we've grown closest over the past year?",
+      "What is a small, everyday gesture of mine that you appreciate but rarely mention?",
+      "If you could describe our love story in three words, what would they be?",
+      "What is something you feel stressed about right now that I can help support you with?",
+      "What was your very first impression of me, and how has it changed?",
+      "If we could slow down time for a day, how would you want to spend it together?",
+      "What is a song, movie, or book that reminds you of our relationship?",
+      "What is a core strength of our relationship that you think helps us face challenges?",
+      "What is a memory from our dating years that still feels fresh to you?",
+      "How can I better show up for you when you are feeling overwhelmed?",
+      "What is something new you've learned about me recently?",
+      "What area of our family life do you think we are managing best as a team?",
+      "What is one area of our relationship you would love to nurture more this season?"
+    ];
+    const DATE_IDEAS = [
+      "Cook a completely new 3-course recipe together from scratch.",
+      "Recreate our very first date as closely as possible.",
+      "Have a backyard or living room picnic with favorite cheeses and fruits.",
+      "Do a cozy board game tournament or video game night together.",
+      "Take a scenic night drive and park somewhere to stargaze or look at city lights.",
+      "Visit a local art gallery, museum, or botanical garden.",
+      "Plan a 'tourist in our own city' afternoon, visiting spots we've never been to.",
+      "Go for a morning hike or park walk followed by a brunch date.",
+      "Set up a cozy indoor blanket fort and watch a favorite movie from our childhoods.",
+      "Book a couple's spa or do DIY massage night at home with soothing music.",
+      "Go to a bookstore, pick out a book for each other, and read together at a coffee shop.",
+      "Have a themed dinner night (e.g., Italian, Japanese, Mexican) with matching music.",
+      "Take an online or local cooking, pottery, or painting class together.",
+      "Go to a local live comedy show or music performance.",
+      "Write down a bucket list of 10 things we want to do together before the year ends.",
+      "Plan a sunrise breakfast date (wake up early, get coffee, and watch the sun rise).",
+      "Visit a local arcade or bowling alley for a playful, competitive night.",
+      "Do a grocery store scavenger hunt: each partner gets $10 to buy surprise items for the other.",
+      "Have a sunset walk along the beach or a scenic waterfront.",
+      "Do a memory lane date: look through old photo albums or watch wedding/early videos."
+    ];
+    let currentRouletteTab = 'q';
+    let selectedCheckinBattery = 5;
+
+    function renderUs() {
+      const container = document.getElementById('us-container');
+      if(!container) return;
+      if(user !== 'Marcus' && user !== 'Eleanor'){
+        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">💖</div><h2 style="color:#6b2d5c;font-weight:700;">Connection Sanctuary</h2><p class="adults-only" style="margin-top:14px;color:#a85f89;">This is a private sanctuary space for Mom & Dad to share appreciations, plan date nights, and align.</p></div></div>`;
+        return;
+      }
+      const partner = user === 'Marcus' ? 'Eleanor' : 'Marcus';
+      const apps = data.appreciations || [];
+      let lockedCount = 0, unlockedApps = [];
+      apps.forEach(a => {
+        const isToMe = (a.recipient === user);
+        const isLocked = a.revealDate ? (new Date() < new Date(a.revealDate)) : false;
+        if(isLocked) lockedCount++;
+        else if(isToMe) unlockedApps.push(a);
+      });
+      const checkins = data.loveCheckins || [];
+      const marcusCheckin = checkins.filter(c=>c.user==='Marcus').sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0];
+      const eleanorCheckin = checkins.filter(c=>c.user==='Eleanor').sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0];
+      let alignmentHtml = '';
+      if(marcusCheckin || eleanorCheckin){
+        let marcusInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
+        if(marcusCheckin) marcusInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(marcusCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(marcusCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(marcusCheckin.notes)||'No notes'}"</div>`;
+        let eleanorInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
+        if(eleanorCheckin) eleanorInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(eleanorCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(eleanorCheckin.notes)||'No notes'}"</div>`;
+        alignmentHtml = `<div style="display:flex;gap:12px;margin-top:8px;"><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👨 Marcus</div>${marcusInfo}</div><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👩 Eleanor</div>${eleanorInfo}</div></div>`;
+      } else { alignmentHtml = '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:8px;">No check-ins logged yet. Make yours below!</div>'; }
+      const historyCheckins = [...checkins].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
+      let historyHtml = '';
+      if(historyCheckins.length===0) historyHtml = '<div style="text-align:center;font-size:11px;color:var(--text-muted);padding:8px;">No past check-ins logged yet.</div>';
+      else {
+        historyHtml = historyCheckins.slice(0,10).map(c => {
+          const dateStr = fmtDate(c.timestamp.split(' ')[0]);
+          const userEmoji = c.user==='Marcus'?'👨':'👩';
+          return `<div style="padding:6px 0;border-bottom:1px solid var(--border-color);"><div style="font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span><strong>${escapeHtml(dateStr)}</strong> · ${userEmoji} ${escapeHtml(c.user)}</span><span style="color:#ef4444;font-weight:700;">${'❤️'.repeat(c.battery)}</span></div>${c.moods&&c.moods.length?`<div style="font-size:10px;color:#a85f89;margin-left:14px;margin-top:2px;">Moods: ${escapeHtml(c.moods.join(', '))}</div>`:''}${c.notes?`<div style="font-size:10px;color:var(--text-muted);margin-left:14px;margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>`:''}${c.focus?`<div style="font-size:10px;color:#6b2d5c;margin-left:14px;margin-top:2px;font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>`:''}</div>`;
+        }).join('');
+      }
+      let unlockedHtml = '';
+      if(unlockedApps.length===0) {
+        unlockedHtml = '<div style="text-align:center;padding:16px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No notes revealed yet. Write one to encourage partner!</div>';
+      } else {
+        unlockedHtml = unlockedApps.map(a => `<div class="envelope"><div style="font-size:20px;">✉️</div><div style="flex:1;"><div class="envelope-message">"${escapeHtml(a.message)}"</div><div class="envelope-meta">Revealed on ${fmtDate(a.revealDate? a.revealDate.split('T')[0] : '')}</div></div></div>`).join('');
+      }
+
+      // ─── BUCKET LIST ──────────────────────────────────────────
+      const bucketItems = bucketList || [];
+      let bucketHtml = '';
+      if(bucketItems.length===0) {
+        bucketHtml = '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px;">No bucket list items yet. Add one below!</div>';
+      } else {
+        bucketHtml = bucketItems.map(item => `
+          <div class="bucket-item">
+            <span class="text ${item.completed?'done':''}">${escapeHtml(item.item)}</span>
+            <div class="actions">
+              <button onclick="toggleBucketItem('${item.id}')" title="Toggle complete">${item.completed?'✅':'⬜'}</button>
+              <button onclick="deleteBucketItem('${item.id}')" title="Delete">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+      }
+      const bucketSection = `
+        <div class="us-card">
+          <div class="us-card-title">📝 Shared Bucket List</div>
+          <div id="bucket-list-container">${bucketHtml}</div>
+          <div class="bucket-add">
+            <input type="text" id="bucket-input" placeholder="Add a new goal..." onkeypress="if(event.key==='Enter') addBucketItem()">
+            <button onclick="addBucketItem()">Add</button>
+          </div>
+        </div>
+      `;
+
+      const rouletteHtml = `
+        <div class="us-card">
+          <div class="us-card-title">🎡 Spark Roulette</div>
+          <div class="roulette-tabs">
+            <div class="roulette-tab active" id="r-tab-q" onclick="switchRouletteTab('q')">💬 Deep Talk</div>
+            <div class="roulette-tab" id="r-tab-d" onclick="switchRouletteTab('d')">🍕 Date Night</div>
+          </div>
+          <div class="roulette-wrapper">
+            <div class="roulette-card" id="r-card" onclick="spinRoulette()">
+              <div id="r-card-icon" style="font-size:32px;margin-bottom:8px;">✨</div>
+              <div class="roulette-prompt" id="r-result-text">Tap to Spin!</div>
+              <div class="roulette-card-sub" id="r-result-sub">Get a random card</div>
+            </div>
+            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Spin Again 🔄</button>
+          </div>
+        </div>
+      `;
+
+      // ─── INTIMACY LOG ─────────────────────────────────────────
+      const intimacyEntries = data.intimacyLog || [];
+      let intimacyHtml = '';
+      if (intimacyEntries.length === 0) {
+        intimacyHtml = '<div style="text-align:center;padding:12px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No entries yet. Log a private moment below 💕</div>';
+      } else {
+        intimacyHtml = intimacyEntries.slice(0, 12).map(entry => {
+          const hearts = entry.rating > 0 ? '❤️'.repeat(Math.min(5, entry.rating)) : '';
+          return `<div class="intimacy-history-item">
+            <div style="font-size:18px;">💕</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                <strong style="color:#6b2d5c;">${escapeHtml(entry.date || '—')}</strong>
+                <span class="intimacy-hearts" style="font-size:12px;">${hearts}</span>
+              </div>
+              ${entry.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(entry.notes)}</div>` : ''}
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Logged by ${escapeHtml(entry.loggedBy || '')}</div>
+            </div>
+            <button onclick="deleteIntimacy('${escapeHtml(entry.id)}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:0.6;">🗑️</button>
+          </div>`;
+        }).join('');
+      }
+      const thisMonthCount = intimacyEntries.filter(e => {
+        if (!e.dateRaw) return false;
+        const now = new Date();
+        const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        return String(e.dateRaw).startsWith(ym);
+      }).length;
+      const intimacySection = `
+        <div class="us-card">
+          <div class="us-card-title">💕 Intimacy Log</div>
+          <div style="font-size:12px;color:#a85f89;margin-bottom:10px;">Private to you two · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
+          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:#be123c;color:#fff;border:none;width:100%;margin-bottom:12px;">We made love — log it 💕</button>
+          <div id="intimacy-list">${intimacyHtml}</div>
+        </div>
+      `;
+
+      container.innerHTML = `
+        <div class="us-header"><h2>💖 Us Connection Sanctuary</h2><p>A private space for Marcus & Eleanor</p></div>
+        <div class="us-card"><div class="us-card-title">📊 Daily Battery Check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Log Daily Check-in</button>
+          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Timeline of Past Check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
+        </div>
+        ${intimacySection}
+        <div class="us-card"><div class="us-card-title">🍯 Appreciation Jar</div>
+          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Love Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:#6b2d5c;font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:#a85f89;margin-top:2px;">Unlocking Friday at 6:00 PM for Date Night!</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:#6b2d5c;color:#fff;border:none;">Drop a Note in the Jar ✍️</button></div>
+          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;margin-bottom:8px;">📬 Unlocked Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
+        </div>
+        ${bucketSection}
+        ${rouletteHtml}
+      `;
+    }
+
+    // ─── INTIMACY LOG ──────────────────────────────────────────
+    let selectedIntimacyRating = 0;
+    function openIntimacyModal() {
+      const dateEl = document.getElementById('intimacy-date');
+      if (dateEl) {
+        const t = new Date();
+        dateEl.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+      }
+      clr('intimacy-notes');
+      selectedIntimacyRating = 0;
+      chips('intimacy-rating-chips', ['1', '2', '3', '4', '5'], '', 'int-rating');
+      // Map chip selection into selectedIntimacyRating via custom click
+      setTimeout(() => {
+        document.querySelectorAll('#intimacy-rating-chips .chip').forEach(chip => {
+          chip.onclick = function() {
+            document.querySelectorAll('#intimacy-rating-chips .chip').forEach(c => c.classList.remove('sel'));
+            this.classList.add('sel');
+            selectedIntimacyRating = parseInt(this.dataset.v, 10) || 0;
+          };
+          // prettier labels
+          const n = this.dataset.v;
+          this.textContent = '❤️'.repeat(parseInt(n, 10) || 1);
+        });
+      }, 0);
+      openM('m-intimacy');
+    }
+    async function submitIntimacy(btn) {
+      if (!btn) btn = document.getElementById('intimacy-submit');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        // Use ISO yyyy-MM-dd from the date input — do NOT pass fmtDate() display strings
+        const date = v('intimacy-date');
+        const notes = v('intimacy-notes');
+        const rating = selectedIntimacyRating || 0;
+        if (!date) { toast('Please select a date'); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          toast('Invalid date', true);
+          return;
+        }
+        const res = await gPost({
+          note: 'add_intimacy',
+          intimacy_date: date,
+          intimacy_notes: notes,
+          intimacy_rating: rating
+        });
+        if (res && res.status === 'ok') {
+          if (!Array.isArray(data.intimacyLog)) data.intimacyLog = [];
+          data.intimacyLog.unshift({
+            id: res.id || ('local_' + Date.now()),
+            date: fmtDate(date),
+            dateRaw: date,
+            notes: notes,
+            rating: rating,
+            loggedBy: user || '',
+            timestamp: new Date().toISOString()
+          });
+          closeM('m-intimacy');
+          toast('Logged 💕');
+          renderUs();
+          await loadData();
+          if (section === 'us') renderUs();
+        } else {
+          toast((res && res.message) || 'Could not save. Redeploy Apps Script with latest Code.js if this continues.', true);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save 💕';
+      }
+    }
+    async function deleteIntimacy(id) {
+      if (!id || !confirm('Remove this intimacy log entry?')) return;
+      const res = await gPost({ note: 'delete_intimacy', id: id });
+      if (res && res.status === 'ok') {
+        if (Array.isArray(data.intimacyLog)) {
+          data.intimacyLog = data.intimacyLog.filter(e => e.id !== id);
+        }
+        toast('Entry removed');
+        renderUs();
+        await loadData();
+        if (section === 'us') renderUs();
+      } else {
+        toast((res && res.message) || 'Could not delete entry', true);
+      }
+    }
+
+    // ─── BUCKET LIST FUNCTIONS ──────────────────────────────
+    async function addBucketItem() {
+      const input = document.getElementById('bucket-input');
+      const text = input.value.trim();
+      if(!text) return;
+      const res = await gPost({ note: 'add_bucket_item', item: text });
+      if(res && res.status === 'ok') {
+        input.value = '';
+        toast('Bucket item added!');
+        await loadData();
+        renderUs();
+      } else {
+        toast('Failed to add item', true);
+      }
+    }
+    async function toggleBucketItem(id) {
+      const res = await gPost({ note: 'toggle_bucket_item', id: id });
+      if(res && res.status === 'ok') {
+        toast('Bucket item updated');
+        await loadData();
+        renderUs();
+      }
+    }
+    async function deleteBucketItem(id) {
+      if(!confirm('Delete this bucket item?')) return;
+      const res = await gPost({ note: 'delete_bucket_item', id: id });
+      if(res && res.status === 'ok') {
+        toast('Bucket item deleted');
+        await loadData();
+        renderUs();
+      }
+    }
+
+    // ─── US ROUlette FUNCTIONS ──────────────────────────────
+    function switchRouletteTab(tab) {
+      currentRouletteTab = tab;
+      document.getElementById('r-tab-q').classList.toggle('active', tab==='q');
+      document.getElementById('r-tab-d').classList.toggle('active', tab==='d');
+      const card = document.getElementById('r-card');
+      if(card) card.classList.remove('spinning');
+      document.getElementById('btn-spin-again').style.display = 'none';
+      
+      const cardIcon = document.getElementById('r-card-icon');
+      const cardText = document.getElementById('r-result-text');
+      const cardSub = document.getElementById('r-result-sub');
+      if(cardIcon && cardText && cardSub) {
+        cardIcon.textContent = '✨';
+        cardText.textContent = 'Tap to Spin!';
+        cardSub.textContent = 'Get a random card';
+      }
+    }
+    function spinRoulette() {
+      const card = document.getElementById('r-card');
+      if(!card) return;
+      card.classList.remove('spinning');
+      void card.offsetWidth;
+      card.classList.add('spinning');
+      let resultText='', categoryText='', icon='✨';
+      if(currentRouletteTab === 'q') {
+        const idx = Math.floor(Math.random() * DEEP_QUESTIONS.length);
+        resultText = DEEP_QUESTIONS[idx];
+        categoryText = '💬 Deep Connection Question';
+        icon = '💬';
+      } else {
+        const idx = Math.floor(Math.random() * DATE_IDEAS.length);
+        resultText = DATE_IDEAS[idx];
+        categoryText = '🍕 Date Night Suggestion';
+        icon = '🍕';
+      }
+      
+      setTimeout(() => {
+        const cardIcon = document.getElementById('r-card-icon');
+        const cardText = document.getElementById('r-result-text');
+        const cardSub = document.getElementById('r-result-sub');
+        if(cardIcon && cardText && cardSub) {
+          cardIcon.textContent = icon;
+          cardText.textContent = resultText;
+          cardSub.textContent = categoryText;
+        }
+      }, 150);
+      
+      setTimeout(() => { document.getElementById('btn-spin-again').style.display = 'inline-block'; }, 600);
+    }
+    function triggerJarFloat() {
+      const jar = document.getElementById('jar-gfx');
+      if(!jar) return;
+      jar.style.transform = 'scale(0.95)';
+      setTimeout(()=>{ jar.style.transform = 'scale(1.05)'; },100);
+      setTimeout(()=>{ jar.style.transform = ''; },250);
+      const heartEmojis = ['❤️','💖','💝','💕','✨'];
+      for(let i=0; i<4; i++) {
+        setTimeout(()=>{
+          const h = document.createElement('div');
+          h.className = 'heart-float';
+          h.textContent = heartEmojis[Math.floor(Math.random()*heartEmojis.length)];
+          h.style.left = (jar.offsetLeft + jar.offsetWidth/2 - 10 + (Math.random()*30-15)) + 'px';
+          h.style.top = (jar.offsetTop + 40) + 'px';
+          h.style.setProperty('--rx', (Math.random()*60-30)+'px');
+          jar.parentNode.appendChild(h);
+          setTimeout(()=>h.remove(), 3000);
+        }, i*150);
+      }
+    }
+    function openAppreciationModal() { clr('love-note-msg'); openM('m-love-note'); }
+    function openLoveCheckinModal() {
+      selectedCheckinBattery = 5;
+      updateCheckinBatteryHearts();
+      document.querySelectorAll('#checkin-moods .checkin-tag').forEach(t=>t.classList.remove('sel'));
+      clr('checkin-notes','checkin-focus');
+      openM('m-love-checkin');
+    }
+    function setCheckinBattery(val) { selectedCheckinBattery=val; updateCheckinBatteryHearts(); }
+    function updateCheckinBatteryHearts() {
+      const hearts = document.querySelectorAll('#checkin-battery-slider .battery-heart');
+      hearts.forEach((h,idx)=>h.classList.toggle('active', idx<selectedCheckinBattery));
+    }
+    function toggleMoodTag(el) { el.classList.toggle('sel'); }
+    function toggleCheckinHistory() {
+      const list = document.getElementById('checkin-history-list');
+      const icon = document.getElementById('history-toggle-icon');
+      if(list) {
+        if(list.style.display === 'none' || !list.style.display) { list.style.display='flex'; if(icon) icon.textContent='Hide ▴'; }
+        else { list.style.display='none'; if(icon) icon.textContent='Show ▾'; }
+      }
+    }
+
+    // ══ NOTIFICATIONS ══
+    let notificationPermissionGranted = false;
+
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'granted') {
+        notificationPermissionGranted = true;
+        document.getElementById('notifBell').classList.add('on');
+        return;
+      }
+      if (Notification.permission === 'denied') return;
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        if (notificationPermissionGranted) {
+          document.getElementById('notifBell').classList.add('on');
+          toast('Notifications enabled 🔔');
+        } else {
+          document.getElementById('notifBell').classList.remove('on');
+        }
+      });
+    }
+
+    function toggleNotifications() {
+      if (!('Notification' in window)) {
+        toast('Notifications not supported in this browser');
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        toast('Notifications blocked by browser. Please allow them in settings.');
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        // Toggle on/off for this session
+        notificationPermissionGranted = !notificationPermissionGranted;
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications ON 🔔' : 'Notifications OFF 🔕');
+        return;
+      }
+      // Request permission
+      Notification.requestPermission().then(perm => {
+        notificationPermissionGranted = (perm === 'granted');
+        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
+        toast(notificationPermissionGranted ? 'Notifications enabled 🔔' : 'Notifications blocked');
+      });
+    }
+
+    // Show notification for new messages (when tab is in background but still open)
+    function showChatNotification(message) {
+      if (!notificationPermissionGranted) return;
+      if (!document.hidden) return;
+      const title = '💬 New message from ' + (message.user || 'Someone');
+      const body = message.message || '📷 Image';
+      const opts = {
+        body,
+        icon: 'favicon.png',
+        tag: 'familylog-chat',
+        data: { screen: 'chat' }
+      };
+      // Prefer SW so notificationclick opens Chat (same path as FCM)
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, opts);
+        }).catch(() => {
+          try {
+            const notif = new Notification(title, opts);
+            notif.onclick = () => {
+              window.focus();
+              handleNotificationNavigation('chat');
+              notif.close();
+            };
+          } catch (e) { console.warn('Notification error:', e); }
+        });
+        return;
+      }
+      try {
+        const notif = new Notification(title, opts);
+        notif.onclick = () => {
+          window.focus();
+          handleNotificationNavigation('chat');
+          notif.close();
+        };
+      } catch (e) {
+        console.warn('Notification error:', e);
+      }
+    }
+
+    // ══ CHAT (Firestore) ══
+    function renderChat() {
+      const container = document.getElementById('chat-msg-container');
+      if (!container) return;
+      
+      const messages = data.chat || [];
+      if (messages.length === 0) {
+        container.innerHTML = '<div class="empty"><div class="ei">💬</div>Start the conversation! Send a message below.</div>';
+        return;
+      }
+      
+      container.innerHTML = messages.map(m => {
+        const isMe = m.user === user;
+        const timeStr = m.timestamp ? (m.timestamp instanceof Date ? m.timestamp.toLocaleTimeString('en-SG', {hour:'2-digit', minute:'2-digit'}) : '') : '';
+        const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${escapeHtml(m.user)}</div>`;
+        const imageHtml = mediaImgHtml(m.imageUrl);
+        const bubbleClass = isMe ? 'me' : 'other';
+        const opacityStyle = m.isOptimistic ? 'style="opacity: 0.65;"' : '';
+        
+        return `
+          <div class="chat-bubble-row ${bubbleClass}" ${opacityStyle}>
+            <div class="chat-bubble">
+              ${nameLabel}
+              ${imageHtml}
+              ${m.message ? `<div class="chat-bubble-text">${escapeHtml(m.message)}</div>` : ''}
+              <div class="chat-bubble-time">${escapeHtml(timeStr)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // ─── FIRESTORE CHAT LISTENER ──────────────────────────────
+    function startChatListener() {
+      if (chatUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      chatUnsubscribe = db.collection('chat')
+        .orderBy('timestamp', 'asc')
+        .onSnapshot((snapshot) => {
+          const messages = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            messages.push({
+              id: doc.id,
+              user: data.user || 'Unknown',
+              senderEmail: data.senderEmail || '',
+              message: data.message || '',
+              imageUrl: data.imageUrl || '',
+              timestamp: data.timestamp?.toDate?.() || new Date(),
+            });
+          });
+          // Check for new messages (last one)
+          const oldLen = (data.chat || []).length;
+          data.chat = messages;
+          if (section === 'chat') renderChat();
+          // Notification for new message
+          if (messages.length > oldLen && messages.length > 0) {
+            const newMsg = messages[messages.length - 1];
+            if (newMsg.user !== user) {
+              showChatNotification(newMsg);
+            }
+          }
+        }, (error) => {
+          console.error('Chat listener error:', error);
+          toast('Chat connection error', true);
+        });
+    }
+
+    function stopChatListener() {
+      if (chatUnsubscribe) {
+        chatUnsubscribe();
+        chatUnsubscribe = null;
+      }
+    }
+
+    // ─── FIRESTORE MEMORIES LISTENER ──────────────────────────
+    function startMemoriesListener() {
+      if (memoriesUnsubscribe) return;
+      if (!db) {
+        toast('Firestore not initialized', true);
+        return;
+      }
+      memoriesUnsubscribe = db.collection('memories')
+        .orderBy('timestamp', 'desc')
+        .onSnapshot((snapshot) => {
+          const memories = [];
+          snapshot.forEach((doc) => {
+            const d = doc.data();
+            
+            let formattedDate = '';
+            if (d.date) {
+              const dateObj = new Date(d.date);
+              if (!isNaN(dateObj.getTime())) {
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                formattedDate = String(dateObj.getDate()).padStart(2, '0') + ' ' + months[dateObj.getMonth()] + ' ' + dateObj.getFullYear();
+              }
+            }
+            
+            memories.push({
+              id: doc.id,
+              loggedBy: d.loggedBy || 'Unknown',
+              date: formattedDate,
+              dateRaw: d.date || '',
+              type: d.type || 'Moment',
+              person: d.person || 'Everyone',
+              memory: d.memory || '',
+              imageUrl: d.imageUrl || '',
+              timestamp: d.timestamp?.toDate?.() || new Date()
+            });
+          });
+          data.memories = memories;
+          if (section === 'memories') renderMemories();
+        }, (error) => {
+          console.error('Memories listener error:', error);
+          toast('Memories connection error', true);
+        });
+    }
+
+    function stopMemoriesListener() {
+      if (memoriesUnsubscribe) {
+        memoriesUnsubscribe();
+        memoriesUnsubscribe = null;
+      }
+    }
+
+    // ─── SEND CHAT MESSAGE (Firestore + Storage) ──────────────
+    async function sendChatMessage() {
+      const txtInput = document.getElementById('chat-input-text');
+      const text = txtInput?.value?.trim() || '';
+      if (!text && !chatImageBase64) return;
+      if (txtInput) txtInput.value = '';
+
+      let imageUrl = '';
+
+      // Upload image to Firebase Storage (path: chat/{email}/…) — not Drive
+      if (chatImageBase64) {
+        try {
+          const authUser = firebase.auth().currentUser;
+          const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
+          const blob = dataURItoBlob(chatImageBase64);
+          const ref = storage.ref(`chat/${emailKey}/${Date.now()}.jpg`);
+          const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
+          imageUrl = await snapshot.ref.getDownloadURL();
+        } catch (err) {
+          toast('Image upload failed: ' + err.message, true);
+          return;
+        } finally {
+          clearChatFilePreview();
+        }
+      }
+
+      // Write to Firestore (include senderEmail so FCM can exclude the sender)
+      try {
+        const authUser = firebase.auth().currentUser;
+        await db.collection('chat').add({
+          user: user || 'Unknown',
+          senderEmail: (authUser && authUser.email) || currentUserEmail || '',
+          message: text,
+          imageUrl: imageUrl,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        // Listener updates UI automatically
+      } catch (err) {
+        toast('Failed to send message: ' + err.message, true);
+      }
+    }
+
+    // Helper: convert dataURI to Blob
+    function dataURItoBlob(dataURI) {
+      const byteString = atob(dataURI.split(',')[1]);
+      const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mimeString });
+    }
+
+    // ─── CHAT FILE HANDLING ────────────────────────────────────
+    function handleChatFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          chatImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('chat-img-preview');
+          const thumbnail = document.getElementById('chat-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = chatImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearChatFilePreview() {
+      chatImageBase64 = null;
+      const fileInput = document.getElementById('chat-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('chat-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    function handleMemoryFileSelect(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        toast('Please select an image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          memImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const previewArea = document.getElementById('mem-img-preview');
+          const thumbnail = document.getElementById('mem-preview-thumbnail');
+          if (previewArea && thumbnail) {
+            thumbnail.src = memImageBase64;
+            previewArea.style.display = 'flex';
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearMemoryFilePreview() {
+      memImageBase64 = null;
+      const fileInput = document.getElementById('mem-file-input');
+      if (fileInput) fileInput.value = '';
+      const previewArea = document.getElementById('mem-img-preview');
+      if (previewArea) previewArea.style.display = 'none';
+    }
+
+    // ─── OTHER HELPERS ─────────────────────────────────────────
+    function openChatLightbox(url) {
+      if (!isSafeMediaUrl(url)) return;
+      const lightbox = document.getElementById('chat-lightbox');
+      const img = document.getElementById('lightbox-img');
+      if (lightbox && img) {
+        img.src = url;
+        lightbox.classList.add('open');
+      }
+    }
+
+    function closeChatLightbox() {
+      const lightbox = document.getElementById('chat-lightbox');
+      if (lightbox) {
+        lightbox.classList.remove('open');
+      }
+    }
+
+    function toggleMenuDrawer(open) {
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('menu-drawer');
+      if (overlay && drawer) {
+        if (open) {
+          overlay.classList.add('open');
+          drawer.classList.add('open');
+        } else {
+          overlay.classList.remove('open');
+          drawer.classList.remove('open');
+        }
+      }
+    }
+
+    function navigateDrawer(id) {
+      toggleMenuDrawer(false);
+      goTo(id);
+    }
+
+    function getCategoryEmoji(cat) {
+      const c = String(cat).toLowerCase();
+      if (c.includes('eat') || c.includes('food') || c.includes('dinner') || c.includes('lunch') || c.includes('snack') || c.includes('cafe')) return '🍔';
+      if (c.includes('transport') || c.includes('taxi') || c.includes('grab') || c.includes('mrt') || c.includes('bus')) return '🚗';
+      if (c.includes('gas') || c.includes('petrol') || c.includes('sinopec') || c.includes('spc') || c.includes('caltex') || c.includes('shell')) return '⛽';
+      if (c.includes('child') || c.includes('kid') || c.includes('school') || c.includes('nafa') || c.includes('violin') || c.includes('tution')) return '👧';
+      if (c.includes('self') || c.includes('care') || c.includes('spa') || c.includes('hair') || c.includes('facial') || c.includes('massage')) return '💆‍♀️';
+      if (c.includes('shop') || c.includes('clothing') || c.includes('clothes') || c.includes('shein') || c.includes('shopee') || c.includes('lazada')) return '🛍️';
+      if (c.includes('grocery') || c.includes('supermarket') || c.includes('ntuc') || c.includes('fairprice') || c.includes('cold storage') || c.includes('sheng siong')) return '🛒';
+      if (c.includes('finance') || c.includes('bill') || c.includes('insurance') || c.includes('mobile') || c.includes('teleco') || c.includes('singtel') || c.includes('starhub') || c.includes('m1')) return '📱';
+      if (c.includes('travel') || c.includes('flight') || c.includes('hotel') || c.includes('holiday')) return '✈️';
+      return '💰';
+    }
+
+    // ─── APP INIT (already called above) ───────────────────────
+
+    console.log('✅ Wong Family app with Firestore chat and FCM push notifications loaded successfully.');

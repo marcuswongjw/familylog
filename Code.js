@@ -1306,7 +1306,8 @@ function handleWriteInner_(data) {
     // ── Unknown note ──
     logSheet.appendRow([new Date(), user, 'General', note]);
     console.log('ℹ️ Unknown note type: ' + note);
-    return { status: 'ok' };
+    // Do NOT return ok for unknown notes — that made saves look successful without writing data
+    return { status: 'error', message: 'Unknown action: ' + note + '. Redeploy the latest Code.js if this is a new feature.' };
 
   } catch (err) {
     console.log('❌ handleWrite error: ' + err.stack);
@@ -1845,11 +1846,11 @@ function getIntimacyLogData(ss) {
 // so validation can actually reject bad input.
 function parseEventDateStrict(dateStr, timeStr) {
   dateStr = toStr(dateStr).trim(); timeStr = toStr(timeStr).trim();
-  // Normalize weird Unicode spaces from some locale formatters
+  // Normalize Unicode spaces from some locale formatters
   dateStr = dateStr.replace(/[\u00a0\u202f]/g, ' ');
   if (!dateStr) return null;
   var now = new Date(); var year = now.getFullYear(); var parsed = null;
-  // ISO yyyy-MM-dd (preferred from date inputs)
+  // ISO yyyy-MM-dd (preferred from HTML date inputs)
   var iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     parsed = new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
