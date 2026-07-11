@@ -9,6 +9,8 @@ A private family hub PWA: budgets & expenses, calendar/tasks, travel map, chat, 
 
 ## Architecture
 
+**Full ownership rules:** [ARCHITECTURE.md](ARCHITECTURE.md) (Sheets vs Firebase — what lives where and why).
+
 ```mermaid
 flowchart LR
   PWA[PWA: index.html + css/ + js/] -->|POST JSON + Firebase ID token| GAS[Google Apps Script Code.js]
@@ -23,11 +25,13 @@ flowchart LR
 
 | Layer | Tech | Role |
 |--------|------|------|
-| **Frontend** | `index.html`, `css/styles.css`, `js/app.js` | UI, Firebase Auth login (6-digit PIN), Firestore chat/memories |
-| **API** | `Code.js` (Apps Script web app) | Expenses, budgets, calendar, todos, fertility, Us data — **family allowlist + token verify** |
-| **Realtime** | Firestore + Storage | Chat messages, memory images, FCM tokens |
-| **Push** | `index.js` Cloud Function + `firebase-messaging-sw.js` | Chat notifications |
+| **Frontend** | `index.html`, `css/styles.css`, `js/app.js` | UI; routes each feature to the correct backend |
+| **Firebase** | Auth, Firestore, Storage, FCM | **Owns:** login, chat, memories, photos, push tokens |
+| **GAS + Sheets** | `Code.js` + spreadsheet | **Owns:** money, tasks, calendar, travel, Us/fertility logs; Gmail bank scan |
+| **Push** | `index.js` + `firebase-messaging-sw.js` | Chat notifications |
 | **Hosting** | GitHub Pages | Static frontend |
+
+**Do not dual-write.** Chat and memories never go through Sheets. Expenses and Us data never go through Firestore.
 
 ---
 
@@ -54,15 +58,17 @@ Kids’ accounts cannot open Us/Fertility (UI + server empty payloads / write de
 ## Project layout
 
 ```
+ARCHITECTURE.md         # Sheets vs Firebase ownership (read this first)
 index.html              # Shell markup + third-party CDN scripts
 css/styles.css          # All app styles
-js/app.js               # Client logic (auth, GAS client, screens)
-Code.js                 # Google Apps Script backend (deploy separately)
+js/app.js               # Client: Firebase chat/memories + GAS for Sheets data
+Code.js                 # Apps Script: Sheets/Calendar/Gmail only (deploy separately)
 firebase-messaging-sw.js
 index.js                # Cloud Function (chat → FCM)
 firestore.rules
 storage.rules
 manifest.json
+FIREBASE_SETUP.md
 ```
 
 After editing frontend files, commit and push to `main` for GitHub Pages.  

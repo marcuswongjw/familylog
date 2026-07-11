@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Chat
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wong-family-v6';
+const CACHE_NAME = 'wong-family-v7';
 const ASSETS = [
   './',
   './index.html',

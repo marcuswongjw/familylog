@@ -1,7 +1,9 @@
 # Firebase setup — Wong Family Log
 
-Firebase handles **authentication**, **live chat**, **memories**, **photo storage**, and **push notifications**.  
-Sheet-backed data (expenses, calendar sync, Us check-ins, etc.) still goes through **Google Apps Script** — see [README.md](README.md).
+Firebase is the **sole owner** of authentication, live chat, memories, photo storage, and push notifications.  
+Google Sheets + Apps Script own money, tasks, calendar, travel, and Us/fertility logs — **not** chat or memories.
+
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the full ownership map. Do not dual-write the same feature to both backends.
 
 **Current project id (this repo):** `familylog-86db6`
 

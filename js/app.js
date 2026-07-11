@@ -1,3 +1,16 @@
+    // ─── DATA OWNERSHIP (see ARCHITECTURE.md) ───────────────────
+    // Firebase  → Auth, Chat, Memories, Storage images, FCM tokens
+    // GAS/Sheets → expenses, budgets, todos, calendar, birthdays, travel,
+    //              fertility, Us (check-ins, appreciations, intimacy, bucket list)
+    // Never dual-write the same feature to both backends.
+    const DATA_OWNERS = {
+      firebase: ['auth', 'chat', 'memories', 'storage', 'fcm'],
+      sheets: [
+        'events', 'todos', 'expenses', 'budgets', 'birthdays', 'fertility',
+        'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'
+      ]
+    };
+
     // ─── FIREBASE CONFIG ────────────────────────────────────────
     const firebaseConfig = {
       apiKey: "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",
@@ -47,7 +60,7 @@
     const ADULT_EMAILS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
     let isAdultUser = false;
 
-    // Firestore is the sole source of truth for chat (not Google Sheets)
+    // Firestore listeners — chat + memories never come from GAS/Sheets
     let chatUnsubscribe = null;
     let memoriesUnsubscribe = null;
 
@@ -290,7 +303,9 @@
       const email = (m && m.email) || currentUserEmail || '';
       setAdultAccess(ADULT_EMAILS.includes(String(email).toLowerCase()));
       goTo('home');
+      // Sheets dashboard (GAS) + Firebase realtime (memories; chat on demand)
       loadData();
+      startMemoriesListener();
       // Request FCM token after login
       requestFCMToken();
       setupPullToRefresh();
@@ -369,7 +384,7 @@
         user = null;
         isAdultUser = false;
         document.body.classList.remove('is-child');
-        data = {};
+        data = { chat: [], memories: [] };
         document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');
         document.getElementById('login-password').value = '';
@@ -551,13 +566,13 @@
       if (!r) return;
       // Do not clobber dashboard with a bare error payload
       if (r.status === 'error' && !r.events && !r.intimacyLog) return;
-      // Preserve Firestore live data — never take chat from Sheets/GAS
-      const prevChat = data.chat;
-      const prevMems = data.memories;
+      // Firebase-owned fields: never accept from GAS (even if old deploy sends them)
+      const prevChat = Array.isArray(data.chat) ? data.chat : [];
+      const prevMems = Array.isArray(data.memories) ? data.memories : [];
       const prevIntimacy = data.intimacyLog;
       data = r || {};
-      data.chat = Array.isArray(prevChat) ? prevChat : [];
-      if (prevMems) data.memories = prevMems;
+      data.chat = prevChat;
+      data.memories = prevMems;
       // Merge intimacy: keep just-saved entries if get_all is empty/stale/old GAS
       data.intimacyLog = mergeIntimacyLogs(prevIntimacy, data.intimacyLog);
       if (r.expenseGroups) GROUPS = r.expenseGroups;
@@ -570,14 +585,23 @@
       renderHome();
     }
 
+    /** Sheets-backed dashboard only (not chat/memories). */
     function loadData() {
       return gasRequest({ action: 'get_all' }).then(r => {
         applyDashboardPayload(r);
       });
     }
 
-    /** Writes (and any non-get action) go through POST body with token. */
+    /** GAS write for Sheets-owned features. Do not use for chat/memories. */
     function gPost(payload) {
+      const note = String((payload && payload.note) || '').toLowerCase();
+      if (note === 'add_chat_message' || note === 'add_memory') {
+        console.error('gPost blocked: ' + note + ' is Firebase-owned (see ARCHITECTURE.md)');
+        return Promise.resolve({
+          status: 'error',
+          message: note + ' must use Firebase, not GAS'
+        });
+      }
       return gasRequest(Object.assign({ action: 'write' }, payload || {}));
     }
 
@@ -1795,7 +1819,7 @@
           }
         }
         
-        // Save memory metadata in Firestore
+        // Firebase-only: Firestore metadata (+ Storage image above). No GAS/Sheets.
         const authUser = firebase.auth().currentUser;
         await db.collection('memories').add({
           loggedBy: user || 'Unknown',
@@ -1811,6 +1835,7 @@
         closeM('m-memory');
         clr('mem-text');
         toast('Memory saved! 💛');
+        // Listener updates data.memories; no loadData() needed
       } catch (err) {
         toast('Failed to save memory: ' + err.message, true);
       } finally {

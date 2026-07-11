@@ -2,6 +2,17 @@
 // WONG FAMILY BOT — Google Apps Script (PWA Version)
 // with Firebase ID token verification
 // Google Calendar ID: family09091668338066744284@group.calendar.google.com
+//
+// DATA OWNERSHIP (see ARCHITECTURE.md)
+// ─────────────────────────────────────
+// THIS FILE (Sheets + Calendar + Gmail) owns:
+//   expenses, budgets, recurring, todos, birthdays, travel,
+//   fertility, Us (appreciations, check-ins, intimacy, bucket list),
+//   calendar events, bank-email scan, digests / approval mail.
+//
+// FIREBASE owns (do NOT persist here):
+//   auth, chat, memories, photo storage, FCM tokens.
+// Reject add_chat_message / add_memory. get_all must not return chat/memories.
 // ============================================================
 
 // ─── HARDCODED DEFAULTS (overridden by Script Properties) ───
@@ -672,7 +683,13 @@ function doGet(e) {
       case 'get_expenses':  output = getExpensesData();     break;
       case 'get_budgets':   output = getBudgets();          break;
       case 'get_birthdays': output = getBirthdays();        break;
-      case 'get_memories':  output = getMemories();         break;
+      // Memories live in Firestore only — see ARCHITECTURE.md
+      case 'get_memories':
+        output = {
+          status: 'error',
+          message: 'Memories use Firestore. Open the Memories tab in the app.'
+        };
+        break;
       case 'get_fertility':
         output = isAdultEmail_(verifiedEmail) ? getFertilityData() : [];
         break;
@@ -946,11 +963,11 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
-    // ── CHAT: removed (Firestore is the only chat backend) ──
+    // ── CHAT: Firebase-owned — never write to Sheets ──
     if (noteLower === 'add_chat_message') {
       return {
         status: 'error',
-        message: 'Chat uses Firestore. Send messages from the app Chat tab, not Sheets.'
+        message: 'Chat uses Firestore only. Send messages from the app Chat tab.'
       };
     }
 
@@ -1058,37 +1075,12 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
-    // ── MEMORY: add ──
+    // ── MEMORY: Firebase-owned — never write to Sheets ──
     if (noteLower === 'add_memory') {
-      var memory = toStr(data.memory_text);
-      var memType = toStr(data.memory_type) || 'Moment';
-      var memPerson = toStr(data.memory_person) || 'Everyone';
-      var memDate = toStr(data.memory_date);
-      if (!memory && !data.image) return { status: 'error', message: 'Memory text or photo required' };
-      if (!validateString(memory, 2000)) return { status: 'error', message: 'Memory too long' };
-      if (memDate && !validateDate(memDate)) return { status: 'error', message: 'Invalid date' };
-
-      var imgUrl = '';
-      var imgId = '';
-      
-      // New memory images go through Firebase Storage in the PWA — not Drive.
-      if (data.image && data.image.indexOf('data:image/') === 0) {
-        return {
-          status: 'error',
-          message: 'Memory images must be uploaded via the app (Firebase Storage). Drive uploads are disabled.'
-        };
-      }
-      if (data.imageUrl) imgUrl = toStr(data.imageUrl);
-
-      var memSheet = ss.getSheetByName('Memories');
-      if (!memSheet) {
-        memSheet = ss.insertSheet('Memories');
-        memSheet.appendRow(['Logged By', 'Date', 'Type', 'Person', 'Memory', 'Logged At', 'ImageUrl', 'ImageId']);
-      }
-      var parsed = memDate ? parseEventDate(memDate, '') : new Date();
-      memSheet.appendRow([user, parsed, memType, memPerson, memory, new Date(), imgUrl, imgId]);
-      console.log('✅ Memory added: ' + memory.substring(0, 50) + '...');
-      return { status: 'ok' };
+      return {
+        status: 'error',
+        message: 'Memories use Firestore + Storage only. Save from the app Memories tab.'
+      };
     }
 
     // ── RECURRING: add ──
@@ -1343,13 +1335,13 @@ function handleWriteInner_(data) {
 function getAllDashboardData(verifiedEmail) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
+  // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
     events:    getEvents(),
     todos:     getTodos(ss),
     expenses:  getExpensesData(ss),
     budgets:   getBudgets(ss),
     birthdays: getBirthdays(ss),
-    memories:  getMemories(ss),
     // Adult-only payloads are empty for children's accounts
     fertility:      adult ? getFertilityData(ss) : [],
     recurring:      getRecurring(ss),
@@ -1358,10 +1350,17 @@ function getAllDashboardData(verifiedEmail) {
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
     intimacyLog:    adult ? getIntimacyLogData(ss) : [],
     bucketList:     adult ? getBucketList(ss) : [],
-    // chat is NOT included — live via Firestore only (avoids dual Sheets path)
     expenseGroups:  EXPENSE_GROUPS,
     isAdult:        adult,
-    memberName:     memberNameFromEmail_(verifiedEmail) || ''
+    memberName:     memberNameFromEmail_(verifiedEmail) || '',
+    // Explicit nulls so old clients don't fall back to stale dual-path assumptions
+    chat: null,
+    memories: null,
+    dataSources: {
+      sheets: ['events', 'todos', 'expenses', 'budgets', 'birthdays', 'fertility',
+               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'],
+      firebase: ['chat', 'memories', 'auth', 'fcmTokens']
+    }
   };
 }
 
@@ -1606,7 +1605,13 @@ function getBirthdays(ss) {
   return result;
 }
 
-function getMemories(ss) {
+/**
+ * LEGACY read of the old Memories sheet tab.
+ * Not used by the PWA (Firestore is sole owner). Kept only for a one-off
+ * Apps Script migration if you still have rows to copy into Firestore.
+ * See ARCHITECTURE.md → "Optional: old Sheets Memories tab".
+ */
+function getMemoriesLegacySheet_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var memSheet = ss.getSheetByName('Memories');
   if (!memSheet) return [];
@@ -1616,9 +1621,7 @@ function getMemories(ss) {
   for (var i = 1; i < memVals.length; i++) {
     var row = memVals[i];
     // Sheet columns: 0 LoggedBy, 1 Date, 2 Type, 3 Person, 4 Memory,
-    // 5 LoggedAt, 6 ImageUrl, 7 ImageId. The old code read the image
-    // from columns 5/6 — off by one — so photos never rendered and the
-    // empty-row filter compared against LoggedAt (always populated).
+    // 5 LoggedAt, 6 ImageUrl, 7 ImageId.
     if (!row[4] && !row[6]) continue;
     result.push({
       rowNum: i + 1,
@@ -1632,7 +1635,7 @@ function getMemories(ss) {
     });
   }
   result.reverse();
-  return result.slice(0, 20);
+  return result.slice(0, 200);
 }
 
 function getFertilityData(ss) {
