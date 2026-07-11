@@ -528,8 +528,29 @@
       }
     }
 
+    /** Merge intimacy entries by id so a successful save is never wiped by a lagging get_all. */
+    function mergeIntimacyLogs(prev, next) {
+      const prevList = Array.isArray(prev) ? prev : [];
+      const nextList = Array.isArray(next) ? next : null;
+      if (!nextList) return prevList.slice();
+      const byId = new Map();
+      // Local first, then server overwrites same id (server is source of truth for shared fields)
+      prevList.forEach(e => { if (e && e.id) byId.set(String(e.id), e); });
+      nextList.forEach(e => { if (e && e.id) byId.set(String(e.id), e); });
+      // Also keep local-only optimistic rows (local_*) even if server list is empty
+      const merged = Array.from(byId.values());
+      merged.sort((a, b) => {
+        const dr = String(b.dateRaw || '').localeCompare(String(a.dateRaw || ''));
+        if (dr) return dr;
+        return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
+      });
+      return merged;
+    }
+
     function applyDashboardPayload(r) {
       if (!r) return;
+      // Do not clobber dashboard with a bare error payload
+      if (r.status === 'error' && !r.events && !r.intimacyLog) return;
       // Preserve Firestore live data — never take chat from Sheets/GAS
       const prevChat = data.chat;
       const prevMems = data.memories;
@@ -537,10 +558,8 @@
       data = r || {};
       data.chat = Array.isArray(prevChat) ? prevChat : [];
       if (prevMems) data.memories = prevMems;
-      // If server omits intimacyLog (old GAS), keep what we already have locally
-      if (!Array.isArray(data.intimacyLog) && Array.isArray(prevIntimacy)) {
-        data.intimacyLog = prevIntimacy;
-      }
+      // Merge intimacy: keep just-saved entries if get_all is empty/stale/old GAS
+      data.intimacyLog = mergeIntimacyLogs(prevIntimacy, data.intimacyLog);
       if (r.expenseGroups) GROUPS = r.expenseGroups;
       if (r.bucketList) bucketList = r.bucketList;
       // Server isAdult is authoritative; fall back to email allowlist
@@ -2298,20 +2317,26 @@
         });
         if (res && res.status === 'ok') {
           if (!Array.isArray(data.intimacyLog)) data.intimacyLog = [];
-          data.intimacyLog.unshift({
-            id: res.id || ('local_' + Date.now()),
-            date: fmtDate(date),
-            dateRaw: date,
-            notes: notes,
-            rating: rating,
-            loggedBy: user || '',
-            timestamp: new Date().toISOString()
-          });
+          // Prefer server-returned list/entry so UI matches what was written
+          if (Array.isArray(res.intimacyLog) && res.intimacyLog.length) {
+            data.intimacyLog = mergeIntimacyLogs(data.intimacyLog, res.intimacyLog);
+          } else {
+            const entry = res.entry || {
+              id: res.id || ('local_' + Date.now()),
+              date: fmtDate(date),
+              dateRaw: date,
+              notes: notes,
+              rating: rating,
+              loggedBy: user || '',
+              timestamp: new Date().toISOString()
+            };
+            data.intimacyLog = mergeIntimacyLogs(data.intimacyLog, [entry]);
+          }
           closeM('m-intimacy');
           toast('Logged 💕');
           renderUs();
-          await loadData();
-          if (section === 'us') renderUs();
+          // Background refresh — mergeIntimacyLogs keeps this entry if get_all is stale
+          loadData().then(() => { if (section === 'us') renderUs(); }).catch(() => {});
         } else {
           toast((res && res.message) || 'Could not save. Redeploy Apps Script with latest Code.js if this continues.', true);
         }

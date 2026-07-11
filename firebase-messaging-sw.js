@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Chat
-// v4: network-first for navigations (fresh app after deploy), stronger open/focus for iOS/Android PWAs
-const CACHE_NAME = 'wong-family-v5';
+// v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
+const CACHE_NAME = 'wong-family-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -35,11 +35,19 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
-  // Navigations / HTML: network-first so PWAs pick up new deploys
-  const isNav = event.request.mode === 'navigate'
-    || (sameOrigin && (url.pathname.endsWith('/') || url.pathname.endsWith('.html') || url.pathname.endsWith('/familylog')));
+  const path = url.pathname || '';
+  // App shell: always try network first so deploys are not stuck on stale SW cache
+  const isAppShell = event.request.mode === 'navigate'
+    || (sameOrigin && (
+      path.endsWith('/') ||
+      path.endsWith('.html') ||
+      path.endsWith('/familylog') ||
+      path.endsWith('/app.js') ||
+      path.endsWith('/styles.css') ||
+      path.endsWith('firebase-messaging-sw.js')
+    ));
 
-  if (isNav) {
+  if (isAppShell) {
     event.respondWith(
       fetch(event.request)
         .then(res => {

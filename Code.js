@@ -1211,7 +1211,7 @@ function handleWriteInner_(data) {
 
     // ── INTIMACY: log (couple only) ──
     if (noteLower === 'add_intimacy') {
-      var intimacyDate = toStr(data.intimacy_date);
+      var intimacyDate = toStr(data.intimacy_date).trim();
       var intimacyNotes = toStr(data.intimacy_notes);
       var intimacyRating = parseInt(data.intimacy_rating, 10);
       if (!intimacyDate) return { status: 'error', message: 'Date required' };
@@ -1219,17 +1219,39 @@ function handleWriteInner_(data) {
       if (!validateString(intimacyNotes, 500)) return { status: 'error', message: 'Notes too long' };
       if (isNaN(intimacyRating) || intimacyRating < 1 || intimacyRating > 5) intimacyRating = 0;
 
+      // Normalize to yyyy-MM-dd so the sheet round-trips without timezone shifts
+      var intParsed = parseEventDateStrict(intimacyDate, '');
+      if (!intParsed) return { status: 'error', message: 'Invalid date' };
+      var intTz = Session.getScriptTimeZone();
+      var intimacyDateIso = Utilities.formatDate(intParsed, intTz, 'yyyy-MM-dd');
+
       var intSheet = ss.getSheetByName('IntimacyLog');
       if (!intSheet) {
         intSheet = ss.insertSheet('IntimacyLog');
         intSheet.appendRow(['ID', 'Timestamp', 'LoggedBy', 'Date', 'Notes', 'Rating']);
       }
       var intId = 'int_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-      var intParsed = parseEventDate(intimacyDate, '');
-      if (!intParsed) return { status: 'error', message: 'Invalid date' };
-      intSheet.appendRow([intId, new Date(), user, intParsed, intimacyNotes, intimacyRating || '']);
-      console.log('✅ Intimacy logged by ' + user);
-      return { status: 'ok', id: intId };
+      var intNow = new Date();
+      // Store Date column as ISO string (not Date object) — Sheets Date cells can
+      // shift a day under UTC vs script timezone and disappear from the UI.
+      intSheet.appendRow([intId, intNow, user, intimacyDateIso, intimacyNotes, intimacyRating || '']);
+      SpreadsheetApp.flush();
+      console.log('✅ Intimacy logged by ' + user + ' date=' + intimacyDateIso);
+      var intEntry = {
+        id: intId,
+        timestamp: Utilities.formatDate(intNow, intTz, 'yyyy-MM-dd HH:mm:ss'),
+        loggedBy: user,
+        date: Utilities.formatDate(intParsed, intTz, 'dd MMM yyyy'),
+        dateRaw: intimacyDateIso,
+        notes: intimacyNotes,
+        rating: intimacyRating || 0
+      };
+      return {
+        status: 'ok',
+        id: intId,
+        entry: intEntry,
+        intimacyLog: getIntimacyLogData(ss)
+      };
     }
 
     if (noteLower === 'delete_intimacy') {
@@ -1816,16 +1838,43 @@ function getIntimacyLogData(ss) {
   var result = [];
   for (var i = 1; i < vals.length; i++) {
     var row = vals[i];
-    if (!row[0] && !row[3]) continue;
-    var d = row[3] ? new Date(row[3]) : null;
-    if (d && isNaN(d.getTime())) d = null;
-    var ts = row[1] ? new Date(row[1]) : null;
+    var id = toStr(row[0]);
+    if (!id && (row[3] === '' || row[3] === null || row[3] === undefined)) continue;
+
+    // Date column may be: Date object, yyyy-MM-dd string, or locale string
+    var dateRaw = '';
+    var d = null;
+    var rawDate = row[3];
+    if (Object.prototype.toString.call(rawDate) === '[object Date]' && !isNaN(rawDate.getTime())) {
+      d = rawDate;
+      dateRaw = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    } else {
+      var dateStr = toStr(rawDate).trim();
+      // Prefer leading ISO if present (handles "2026-07-11" and datetime strings)
+      var isoLead = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (isoLead) {
+        dateRaw = isoLead[1];
+        d = parseEventDateStrict(dateRaw, '');
+      } else if (dateStr) {
+        d = parseEventDateStrict(dateStr, '');
+        if (d) dateRaw = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+      }
+    }
+
+    var ts = null;
+    if (Object.prototype.toString.call(row[1]) === '[object Date]' && !isNaN(row[1].getTime())) {
+      ts = row[1];
+    } else if (row[1]) {
+      ts = new Date(row[1]);
+      if (isNaN(ts.getTime())) ts = null;
+    }
+
     result.push({
-      id: toStr(row[0]),
-      timestamp: ts && !isNaN(ts.getTime()) ? Utilities.formatDate(ts, tz, 'yyyy-MM-dd HH:mm:ss') : '',
+      id: id || ('int_row_' + i),
+      timestamp: ts ? Utilities.formatDate(ts, tz, 'yyyy-MM-dd HH:mm:ss') : '',
       loggedBy: toStr(row[2]),
-      date: d ? Utilities.formatDate(d, tz, 'dd MMM yyyy') : '',
-      dateRaw: d ? Utilities.formatDate(d, tz, 'yyyy-MM-dd') : '',
+      date: d ? Utilities.formatDate(d, tz, 'dd MMM yyyy') : (dateRaw || ''),
+      dateRaw: dateRaw,
       notes: toStr(row[4]),
       rating: parseInt(row[5], 10) || 0
     });
