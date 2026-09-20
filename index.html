@@ -19,9 +19,10 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="css/styles.css?v=9">
+  <link rel="stylesheet" href="css/styles.css?v=10">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -75,6 +76,7 @@
       <div class="section active" id="s-home">
         <div class="sec-body">
           <div class="greet" id="greet"></div>
+          <div id="school-home"></div>
           <div id="dash-summary" class="dash-summary"></div>
           <div id="dash-members"></div>
           <div id="today-wrap"></div>
@@ -135,6 +137,15 @@
 
       <!-- EXPENSES -->
       <div class="section" id="s-expenses">
+        <div style="display:flex;background:var(--border-color);padding:3px;border-radius:8px;margin:10px 16px 16px;">
+          <button class="toggle-pill active" id="exp-acc-All" onclick="toggleExpenseAccount('All')" style="flex:1;text-align:center;">All</button>
+          <button class="toggle-pill" id="exp-acc-Family" onclick="toggleExpenseAccount('Family')" style="flex:1;text-align:center;">Family</button>
+          <button class="toggle-pill" id="exp-acc-Personal" onclick="toggleExpenseAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
+        </div>
+        <div class="search-wrap">
+          <input type="text" id="exp-search" placeholder="Search expenses..." oninput="filterExpenses()">
+          <span class="clear-btn" onclick="document.getElementById('exp-search').value='';filterExpenses();">✕</span>
+        </div>
         <div class="sec-body" id="exp-body"><div class="loading"><div class="spin"></div>Loading…</div></div>
       </div>
 
@@ -668,6 +679,21 @@
   <!-- ============================================================ -->
   <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIRESTORE CHAT + FCM)     -->
   <!-- ============================================================ -->
-  <script src="js/app.js?v=9"></script>
+  <dialog id="school-dialog" aria-labelledby="school-dialog-title" oncancel="event.preventDefault();closeSchoolCapture()">
+    <header class="school-dialog-header"><div><span class="school-eyebrow">ANNOUNCEMENT → ACTION</span><h2 id="school-dialog-title">Add a school message</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close school message">Close</button></header>
+    <div id="school-capture">
+      <p>Paste a teacher's message or upload a screenshot. Review the details before adding anything to your family plan.</p>
+      <fieldset id="school-capture-fields">
+        <label class="school-field">Message<textarea id="school-text" maxlength="20000" rows="7" placeholder="Dear parents, students attending the Science Learning Journey…"></textarea></label>
+        <label class="school-field school-upload">Or choose a screenshot<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPEG or WebP · under 5 MB</small></label>
+        <p class="school-muted">“Read with AI” sends this message and screenshot to OpenAI for extraction. Originals stay available to parents. Check names and dates before saving.</p>
+        <div class="school-actions"><button class="btn btn-p" type="button" onclick="extractSchool(false)">Read with AI</button><button class="btn btn-s" type="button" onclick="extractSchool(true)">Enter manually</button></div>
+      </fieldset>
+    </div>
+    <p id="school-feedback" role="status" aria-live="polite"></p>
+    <div id="school-review"></div>
+  </dialog>
+  <script src="js/school.js?v=10"></script>
+  <script src="js/app.js?v=10"></script>
 </body>
 </html>

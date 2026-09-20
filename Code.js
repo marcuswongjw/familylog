@@ -18,7 +18,7 @@
 // ─── HARDCODED DEFAULTS (overridden by Script Properties) ───
 var DEFAULT_CALENDAR_ID    = "family09091668338066744284@group.calendar.google.com";
 var DEFAULT_WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec";
-var DEFAULT_NOTIFY_EMAILS  = ["marcuswongjw@gmail.com", "eleanor.jiamin@gmail.com"];
+var DEFAULT_NOTIFY_EMAILS  = ["marcuswongjw@gmail.com"];
 var DEFAULT_FIREBASE_API_KEY = "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0";
 // Only these accounts may read or write via the API. A valid Firebase
 // token alone is NOT enough — anyone who self-registers on the Firebase
@@ -43,11 +43,16 @@ var DEFAULT_EMAIL_TO_MEMBER = {
 };
 
 // ─── SCRIPT PROPERTIES HELPER ──────────────────────────────
+var CACHED_PROPERTIES_ = null;
+try {
+  CACHED_PROPERTIES_ = PropertiesService.getScriptProperties().getProperties();
+} catch (e) { /* ignore */ }
+
 function getScriptProperty(key, defaultValue) {
-  try {
-    var val = PropertiesService.getScriptProperties().getProperty(key);
-    if (val) return val;
-  } catch (e) { /* ignore */ }
+  if (CACHED_PROPERTIES_ && typeof CACHED_PROPERTIES_ === 'object') {
+    var val = CACHED_PROPERTIES_[key];
+    if (val !== undefined && val !== null) return val;
+  }
   return defaultValue;
 }
 
@@ -79,7 +84,7 @@ var EMAIL_TO_MEMBER = DEFAULT_EMAIL_TO_MEMBER;
 var ADULT_ONLY_NOTES = [
   'add_appreciation', 'add_love_checkin', 'add_fertility',
   'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item',
-  'add_intimacy', 'delete_intimacy'
+  'add_intimacy', 'delete_intimacy', 'add_event', 'delete_event', 'update_event_date'
 ];
 
 var EXPENSE_GROUPS = {
@@ -308,7 +313,7 @@ function sendMorningDigest(now) {
     var tdVals = tdSheet.getDataRange().getValues(); var taskItems = '';
     for (var i = 1; i < tdVals.length; i++) {
       var row = tdVals[i];
-      if (!row || toStr(row[5]).toLowerCase() === 'done') continue;
+      if (!row || ['done', 'deleted'].indexOf(toStr(row[5]).toLowerCase()) !== -1) continue;
       if (!row[3] || row[3] === '') continue;
       var dueDate = new Date(row[3]); if (isNaN(dueDate.getTime())) continue;
       var dueDateDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
@@ -679,7 +684,7 @@ function doGet(e) {
         output = { status: 'error', message: 'Chat is served from Firestore, not Sheets.' };
         break;
       case 'get_events':    output = getEvents();           break;
-      case 'get_todos':     output = getTodos();            break;
+      case 'get_todos':     output = getTodos(null, verifiedEmail);            break;
       case 'get_expenses':  output = getExpensesData();     break;
       case 'get_budgets':   output = getBudgets();          break;
       case 'get_birthdays': output = getBirthdays();        break;
@@ -783,6 +788,8 @@ function handleWriteInner_(data) {
     return { status: 'error', message: 'This feature is only available to parents.' };
   }
 
+  if (noteLower === 'save_school_draft' || noteLower === 'publish_school_draft') return schoolHandleWrite_(data, ss, verifiedEmail, user);
+
   // ---- Helper validation functions ----
   function validateDate(d) {
     if (!d) return true;
@@ -849,6 +856,7 @@ function handleWriteInner_(data) {
       var eventId = toStr(data.event_id);
       if (!eventId) return { status: 'error', message: 'Missing event ID' };
       var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+      if (schoolEventLinks_()[eventId]) return { status: 'error', message: 'School events are linked to a reviewed plan. Edit the event in Google Calendar and adjust its preparation tasks together.' };
       var ev = calendar.getEventById(eventId);
       if (ev) ev.deleteEvent();
       var calSheet = ss.getSheetByName('Calendar');
@@ -870,6 +878,7 @@ function handleWriteInner_(data) {
       if (!validateDate(newDateStr)) return { status: 'error', message: 'Invalid new date' };
 
       var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+      if (schoolEventLinks_()[eventId]) return { status: 'error', message: 'School events are linked to a reviewed plan. Edit the event in Google Calendar and adjust its preparation tasks together.' };
       var ev = calendar.getEventById(eventId);
       if (!ev) return { status: 'error', message: 'Event not found in calendar' };
 
@@ -909,31 +918,26 @@ function handleWriteInner_(data) {
       if (!validateString(task, 200)) return { status: 'error', message: 'Task too long' };
       if (due && !validateDate(due)) return { status: 'error', message: 'Invalid due date' };
 
-      var tdSheet = ss.getSheetByName('ToDo');
-      if (!tdSheet) { tdSheet = ss.insertSheet('ToDo'); tdSheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At']); }
+      if (FAMILY_MEMBERS.indexOf(assignee) === -1 || (!isAdultEmail_(verifiedEmail) && assignee !== user)) return { status: 'error', message: 'You can only create tasks for yourself.' };
+      var tdSheet = ensureTodoIds_(ss);
       var parsedDue = due ? parseEventDate(due, '') : '';
-      tdSheet.appendRow([new Date(), task, assignee, parsedDue, user, 'Open']);
-      console.log('✅ Task added: ' + task);
-      return { status: 'ok' };
+      var taskId = Utilities.getUuid();
+      tdSheet.appendRow([new Date(), schoolCell_(task), assignee, parsedDue, user, 'Open', '', taskId]);
+      return { status: 'ok', id: taskId };
     }
 
-    // ── TODO: complete ──
-    if (noteLower === 'complete_todo') {
-      var rowIndex = parseInt(toStr(data.todo_id));
-      if (isNaN(rowIndex) || rowIndex < 1) return { status: 'error', message: 'Invalid todo ID' };
-      var tdSheet = ss.getSheetByName('ToDo');
-      if (tdSheet) { tdSheet.getRange(rowIndex, 6).setValue('Done'); tdSheet.getRange(rowIndex, 7).setValue(new Date()); }
-      console.log('✅ Todo completed: ' + rowIndex);
-      return { status: 'ok' };
-    }
-
-    // ── TODO: delete ──
-    if (noteLower === 'delete_todo') {
-      var rowIndex = parseInt(toStr(data.todo_id));
-      if (isNaN(rowIndex) || rowIndex < 1) return { status: 'error', message: 'Invalid todo ID' };
-      var tdSheet = ss.getSheetByName('ToDo');
-      if (tdSheet) tdSheet.deleteRow(rowIndex);
-      console.log('✅ Todo deleted: ' + rowIndex);
+    if (['complete_todo', 'delete_todo', 'help_todo'].indexOf(noteLower) !== -1) {
+      var tdSheet = ensureTodoIds_(ss);
+      var taskId = toStr(data.todo_id);
+      var rows = tdSheet.getDataRange().getValues();
+      var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[7] === taskId; });
+      if (rowIndex < 1) return { status: 'error', message: 'Task not found. Refresh the app before trying again.' };
+      var taskRow = rows[rowIndex];
+      var parent = isAdultEmail_(verifiedEmail);
+      if (!parent && (taskRow[2] !== user && taskRow[2] !== 'Everyone' || ['consent', 'payment'].indexOf(taskRow[9]) !== -1 || noteLower === 'delete_todo')) return { status: 'error', message: 'Only a parent can change this task.' };
+      if (taskRow[5] === 'Deleted') return { status: 'error', message: 'This task was deleted.' };
+      var status = noteLower === 'delete_todo' ? 'Deleted' : noteLower === 'help_todo' ? 'Needs help' : 'Done';
+      tdSheet.getRange(rowIndex + 1, 6, 1, 2).setValues([[status, status === 'Done' ? new Date() : '']]);
       return { status: 'ok' };
     }
 
@@ -1335,10 +1339,13 @@ function handleWriteInner_(data) {
 function getAllDashboardData(verifiedEmail) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
+  var allTodos = getTodos(ss, verifiedEmail, true);
   // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
     events:    getEvents(),
-    todos:     getTodos(ss),
+    todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
+    schoolPlans: schoolReadPlans_(ss, adult),
+    schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
     expenses:  getExpensesData(ss),
     budgets:   getBudgets(ss),
     birthdays: getBirthdays(ss),
@@ -1357,7 +1364,7 @@ function getAllDashboardData(verifiedEmail) {
     chat: null,
     memories: null,
     dataSources: {
-      sheets: ['events', 'todos', 'expenses', 'budgets', 'birthdays', 'fertility',
+      sheets: ['events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
                'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'],
       firebase: ['chat', 'memories', 'auth', 'fcmTokens']
     }
@@ -1394,7 +1401,8 @@ function getEvents() {
     var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
     var now             = new Date();
     var thirtyDaysAgo   = new Date(); thirtyDaysAgo.setDate(now.getDate() - 30);
-    var thirtyDaysLater = new Date(); thirtyDaysLater.setDate(now.getDate() + 30);
+    var thirtyDaysLater = new Date(); thirtyDaysLater.setFullYear(now.getFullYear() + 1);
+    var schoolLinks = schoolEventLinks_();
     var events          = calendar.getEvents(thirtyDaysAgo, thirtyDaysLater);
     var tz              = Session.getScriptTimeZone();
     var result          = [];
@@ -1416,7 +1424,8 @@ function getEvents() {
         allDay:  ev.isAllDayEvent(),
         notes:   ev.getDescription() || '',
         location: ev.getLocation() || '',
-        tags:    tags,
+        tags:    schoolLinks[ev.getId()] ? [schoolLinks[ev.getId()].child] : tags,
+        sourceId: schoolLinks[ev.getId()] ? schoolLinks[ev.getId()].sourceId : '',
         duration: duration
       });
     }
@@ -1424,16 +1433,21 @@ function getEvents() {
   } catch (e) { return []; }
 }
 
-function getTodos(ss) {
+function getTodos(ss, verifiedEmail, includeDone) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var tdSheet = ss.getSheetByName('ToDo');
-  if (!tdSheet) return [];
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  var tdSheet;
+  try { tdSheet = ensureTodoIds_(ss); } finally { lock.releaseLock(); }
   var tdVals = tdSheet.getDataRange().getValues();
   var tz     = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < tdVals.length; i++) {
-    var row = tdVals[i]; if (toStr(row[5]).toLowerCase() === 'done') continue;
+    var row = tdVals[i];
+    if (!row[1] || toStr(row[5]).toLowerCase() === 'deleted' || (!includeDone && toStr(row[5]).toLowerCase() === 'done')) continue;
+    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && row[2] !== memberNameFromEmail_(verifiedEmail) && row[2] !== 'Everyone') continue;
     result.push({
+      id: toStr(row[7]), sourceId: toStr(row[8]), kind: toStr(row[9]), child: toStr(row[10]),
       rowNum:   i + 1,
       task:     toStr(row[1]),
       assignee: toStr(row[2]) || 'Everyone',
@@ -2167,6 +2181,35 @@ function parseDbsPayNow(body, msg) {
   return null;
 }
 
+function parseDbsAlert(body, msg) {
+  var toMatch = body.match(/^To:\s*(.+)$/m);
+  var amtMatch = body.match(/Amount:\s*SGD\s*([\d\.,]+)/i);
+  var dateMatch = body.match(/Date & Time:\s*(\d{1,2}\s+[A-Z]{3}\s+\d{2}:\d{2})/i);
+  var refMatch = body.match(/Transaction Ref:\s*([A-Z0-9]+)/i);
+  if (amtMatch) {
+    var amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    var toVal = toMatch ? toMatch[1].trim() : 'DBS Card Transaction';
+    var merchant = toVal;
+    var account = null;
+    var category = null;
+    if (toVal.toUpperCase() === 'NETS VCC') {
+      merchant = 'Top up cash card';
+      account = 'Personal';
+      category = 'Transportation - Auto: Service';
+    }
+    var dateStr = new Date().toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'});
+    if (dateMatch) {
+      var parts = dateMatch[1].trim().split(/\s+/);
+      var day = parts[0];
+      var month = parts[1];
+      dateStr = day + ' ' + month + ' ' + inferYearForPastDate_(day, month);
+    }
+    var txRef = refMatch ? refMatch[1].trim() : null;
+    return { amount: amount, merchant: merchant, dateStr: dateStr, txRef: txRef, account: account, category: category };
+  }
+  return null;
+}
+
 function parseGenericExpense(body, msg) {
   var amount = 0.0;
   var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
@@ -2274,12 +2317,14 @@ function scanInboxForTransactions() {
   var templates = [
     { name: 'paylah', query: 'from:paylah.alert@dbs.com label:inbox', parse: parsePayLah },
     { name: 'dbs_paynow', query: 'from:ibanking.alert@dbs.com label:inbox', parse: parseDbsPayNow },
+    { name: 'dbs_alert', query: 'from:DBSAlert@dbs.com label:inbox', parse: parseDbsAlert },
     { name: 'trust', query: 'from:from_us@trustbank.sg label:inbox', parse: parseTrust },
     { name: 'shopee', query: 'from:info@mail.shopee.sg label:inbox', parse: parseShopee },
     { name: 'expenses_label', query: 'label:inbox (label:expenses OR label:expense)', parse: function(body, msg) {
         var from = msg.getFrom().toLowerCase();
         if (from.indexOf('paylah.alert@dbs.com') !== -1) return parsePayLah(body);
         if (from.indexOf('ibanking.alert@dbs.com') !== -1) return parseDbsPayNow(body, msg);
+        if (from.indexOf('dbsalert@dbs.com') !== -1) return parseDbsAlert(body, msg);
         if (from.indexOf('from_us@trustbank.sg') !== -1) return parseTrust(body);
         if (from.indexOf('info@mail.shopee.sg') !== -1) return parseShopee(body);
         return parseGenericExpense(body, msg);
@@ -2307,8 +2352,8 @@ function scanInboxForTransactions() {
           var details = proposeExpenseDetails(
             tpl.name === 'shopee' || merchant.indexOf('Shopee') === 0 ? 'Shopee' : merchant
           );
-          var category = details.category;
-          var account = details.account;
+          var category = parsed.category || details.category;
+          var account = parsed.account || details.account;
 
           if (findDuplicateInExpenses(expSheet, amount, dateStr, merchant, txRef)) {
             console.log('[' + tpl.name + '] Found in Expenses. Skipping.');
@@ -2403,6 +2448,7 @@ function sendApprovalEmail(id, dateStr, amount, merchant, category, account) {
   var sourceTitle = 'Expense';
   if (id.indexOf('p_paylah_') === 0) sourceTitle = 'DBS PayLah!';
   else if (id.indexOf('p_dbs_paynow_') === 0) sourceTitle = 'DBS PayNow';
+  else if (id.indexOf('p_dbs_alert_') === 0) sourceTitle = 'DBS Alert';
   else if (id.indexOf('p_trust_') === 0) sourceTitle = 'Trust Bank';
   else if (id.indexOf('p_shopee_') === 0) sourceTitle = 'Shopee';
   else if (id.indexOf('p_expenses_label_') === 0) sourceTitle = 'Tagged Expense';
@@ -2621,6 +2667,17 @@ function testAllScanners() {
                    'From:\tPayLah! Wallet (Mobile ending 4128)\n' +
                    'To:\tTOAST BOX COFFEE SHOP\n';
   var mockTrust = "You've spent SGD 1.60 at YHS VENDING MACHINE Singapore SG on 14 Jun 2026 14:14SGT with Trust Cashback card. You'll receive estimated S$0.02 cashback and up to 15% bonus cashback*. Not you? Alert us via the Trust App.";
+  var mockDbsAlert = 'Transaction Ref: EP\n' +
+                     'Dear Sir/Madam,\n\n' +
+                     'We refer to your card transaction dated 01 Aug. We are pleased to confirm that the transaction was completed.\n\n' +
+                     'Date & Time: 01 Aug 13:53 (SGT)\n' +
+                     'Amount: SGD50.00\n' +
+                     'From: DBS/POSB Card ending 3717\n' +
+                     'To: NETS VCC\n\n' +
+                     'If unauthorised, call DBS hotline. To view transaction, please login to digibank.\n\n' +
+                     'Thank you for banking with us.\n\n' +
+                     'Yours faithfully\n' +
+                     'DBS Bank Ltd';
   var mockShopee = "Hi marcuswong789,\n" +
                    "Your payment for order #260609M02BTMY7 has been confirmed. The seller has also been notified.\n\n" +
                    "ORDER DETAILS\n" +
@@ -2667,6 +2724,14 @@ function testAllScanners() {
   } else {
     console.log('Shopee: failed');
   }
+
+  console.log('=== TEST: DBS ALERT ===');
+  var parsed4 = parseDbsAlert(mockDbsAlert);
+  if (parsed4) {
+    console.log('DBS Alert: ' + parsed4.merchant + ' $' + parsed4.amount + (parsed4.txRef ? ' Ref: ' + parsed4.txRef : '') + ' Acc: ' + parsed4.account + ' Cat: ' + parsed4.category);
+  } else {
+    console.log('DBS Alert: failed');
+  }
 }
 
 function testVerifyToken() {
@@ -2707,4 +2772,166 @@ function addApprovedTrips() {
       Utilities.sleep(50);
     }
   }
+}
+// ============================================================
+// SCHOOL COPILOT — Sheets owns drafts/tasks; Calendar owns events.
+// ============================================================
+function schoolHash_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value).map(function(b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+}
+function schoolCell_(s) { return /^[=+@-]/.test(s) ? "'" + s : s; }
+function schoolDate_(value, optional) {
+  if (!value && optional) return '';
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Choose a full date including the year.');
+  var date = new Date(value + 'T00:00:00Z');
+  if (isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error('Invalid date.');
+  return value;
+}
+function schoolText_(value, limit, required) {
+  if (typeof value !== 'string' || value.length > limit || (required && !value.trim())) throw new Error('Missing or overly long text.');
+  return value.trim();
+}
+function schoolSheet_(ss) {
+  var sheet = ss.getSheetByName('SchoolAnnouncements');
+  if (!sheet) { sheet = ss.insertSheet('SchoolAnnouncements'); sheet.appendRow(['ID', 'Status', 'Revision', 'Plan JSON', 'Calendar ID', 'Updated At', 'Updated By']); }
+  return sheet;
+}
+// Call under the script lock, including migration from the original seven columns.
+function ensureTodoIds_(ss) {
+  var sheet = ss.getSheetByName('ToDo');
+  if (!sheet) {
+    sheet = ss.insertSheet('ToDo');
+    sheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At', 'ID', 'Source ID', 'Kind', 'Child', 'Evidence']);
+    return sheet;
+  }
+  var headers = ['ID', 'Source ID', 'Kind', 'Child', 'Evidence'];
+  var rows = sheet.getDataRange().getValues();
+  if (!rows || rows.length === 0 || rows[0].length < 8 || rows[0][7] !== 'ID') {
+    sheet.getRange(1, 8, 1, headers.length).setValues([headers]);
+  }
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][1] && !rows[i][7]) sheet.getRange(i + 1, 8).setValue(Utilities.getUuid());
+  }
+  return sheet;
+}
+function schoolReadPlans_(ss, adult) {
+  if (!adult) return [];
+  var sheet = ss.getSheetByName('SchoolAnnouncements');
+  if (!sheet) return [];
+  return sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }).map(function(r) {
+    var plan = JSON.parse(r[3]);
+    plan.status = r[1]; plan.revision = Number(r[2]); plan.calendarId = toStr(r[4]); return plan;
+  }).reverse();
+}
+function schoolEventLinks_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SchoolAnnouncements');
+  var links = {};
+  if (sheet) sheet.getDataRange().getValues().slice(1).forEach(function(r) {
+    if (r[4]) { var p = JSON.parse(r[3]); links[toStr(r[4])] = { child: p.child, sourceId: p.id }; }
+  });
+  return links;
+}
+function schoolValidatePlan_(raw, email) {
+  if (!raw || ['Mikaela', 'Meaghan'].indexOf(raw.child) === -1) throw new Error('Choose the child this message is for.');
+  var p = {
+    title: schoolText_(raw.title, 200, true), child: raw.child,
+    sourceText: schoolText_(raw.sourceText || '', 20000, false), sourcePath: schoolText_(raw.sourcePath || '', 250, false),
+    event: null, tasks: [], warnings: []
+  };
+  if (p.sourcePath && !/^school\/(marcuswongjw@gmail\.com|eleanor\.jiamin@gmail\.com)\/[a-f0-9]{64}$/.test(p.sourcePath)) throw new Error('Invalid source image.');
+  if (!p.sourceText && !p.sourcePath) throw new Error('Keep the original message or screenshot with this plan.');
+  p.id = 'school_' + schoolHash_(p.child + '\n' + (p.sourcePath ? p.sourcePath.split('/').pop() : p.sourceText.replace(/\s+/g, ' ').trim()));
+  var ev = raw.event || {};
+  p.event = { enabled: ev.enabled === true, title: schoolText_(ev.title || p.title, 200, true), date: schoolText_(ev.date || '', 10, false),
+    time: schoolText_(ev.time || '', 5, false), endTime: schoolText_(ev.endTime || '', 5, false),
+    location: schoolText_(ev.location || '', 200, false), evidence: schoolText_(ev.evidence || '', 1500, false) };
+  if (!Array.isArray(raw.tasks) || raw.tasks.length > 30) throw new Error('Use up to 30 tasks per message.');
+  raw.tasks.forEach(function(t, i) {
+    var kind = t.kind;
+    if (['packing', 'homework', 'consent', 'payment', 'other'].indexOf(kind) === -1) throw new Error('Invalid task type.');
+    if (FAMILY_MEMBERS.indexOf(t.assignee) === -1 || t.assignee === 'Everyone') throw new Error('Choose a task owner.');
+    if ((kind === 'consent' || kind === 'payment') && ['Marcus', 'Eleanor'].indexOf(t.assignee) === -1) throw new Error('Consent and payments need a parent.');
+    p.tasks.push({ id: p.id + '_' + i, title: schoolText_(t.title, 200, true), kind: kind, assignee: t.assignee,
+      due: schoolDate_(t.due || '', true), evidence: schoolText_(t.evidence || '', 1500, false) });
+  });
+  if (Array.isArray(raw.warnings)) p.warnings = raw.warnings.slice(0, 20).map(function(w) { return schoolText_(w, 1000, false); });
+  if (JSON.stringify(p).length > 45000) throw new Error('Split this message into smaller announcements.');
+  return p;
+}
+function schoolValidatePublication_(p) {
+  if (!p.tasks.length && !p.event.enabled) throw new Error('Add an event or at least one task.');
+  var ev = p.event;
+  if (!ev.enabled) return;
+  schoolDate_(ev.date, false);
+  if (ev.time) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(ev.time) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(ev.endTime) || ev.endTime <= ev.time) {
+      throw new Error('Confirm start and end times (same day), or save without the event.');
+    }
+  } else if (ev.endTime) throw new Error('Choose a start time or clear the end time for an all-day event.');
+}
+// A deterministic Calendar REST ID makes retries safe even if the create succeeds
+// but the response or subsequent Sheets write fails. No duplicate event on retry.
+function schoolPublishEvent_(p) {
+  var ev = p.event;
+  var eventId = 'fl' + schoolHash_(p.id);
+  var url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(CALENDAR_ID) + '/events';
+  var event = { id: eventId, summary: ev.title, location: ev.location,
+    description: 'Family Log school plan: ' + p.title,
+    extendedProperties: { private: { familylogSourceId: p.id, child: p.child } }, reminders: { useDefault: false } };
+  if (ev.time) {
+    event.start = { dateTime: ev.date + 'T' + ev.time + ':00+08:00', timeZone: 'Asia/Singapore' };
+    event.end = { dateTime: ev.date + 'T' + ev.endTime + ':00+08:00', timeZone: 'Asia/Singapore' };
+  } else {
+    var next = new Date(ev.date + 'T00:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
+    event.start = { date: ev.date }; event.end = { date: next.toISOString().slice(0, 10) };
+  }
+  var options = { method: 'post', contentType: 'application/json', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, payload: JSON.stringify(event), muteHttpExceptions: true };
+  var response = UrlFetchApp.fetch(url + '?sendUpdates=none', options);
+  if (response.getResponseCode() === 409) response = UrlFetchApp.fetch(url + '/' + eventId, { headers: options.headers, muteHttpExceptions: true });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Calendar could not save the event. The draft is safe; retry publication.');
+  var saved = JSON.parse(response.getContentText());
+  if (saved.status === 'cancelled') throw new Error('This calendar event was deleted. Restore it in Calendar before retrying.');
+  return saved.iCalUID || eventId + '@google.com';
+}
+function schoolHandleWrite_(data, ss, email, user) {
+  try {
+    if (!isAdultEmail_(email)) throw new Error('Only parents can review and publish announcements.');
+    var sheet = schoolSheet_(ss);
+    var rows = sheet.getDataRange().getValues();
+    if (data.note === 'save_school_draft') {
+      var p = schoolValidatePlan_(data.plan, email);
+      var index = rows.findIndex(function(r) { return r[0] === p.id; });
+      if (index > 0) {
+        if (rows[index][1] !== 'draft') return { status: 'ok', id: p.id, state: rows[index][1], revision: Number(rows[index][2]), duplicate: true };
+        if (Number(data.revision) !== Number(rows[index][2])) return { status: 'error', message: 'This message already has a saved draft. Reopen it from Home to review the latest version.' };
+      }
+      var revision = index > 0 ? Number(rows[index][2]) + 1 : 1;
+      var values = [p.id, 'draft', revision, JSON.stringify(p), '', new Date(), user];
+      if (index > 0) sheet.getRange(index + 1, 1, 1, 7).setValues([values]); else sheet.appendRow(values);
+      return { status: 'ok', id: p.id, state: 'draft', revision: revision };
+    }
+    var rowIndex = rows.findIndex(function(r) { return r[0] === data.source_id; });
+    if (rowIndex < 1) throw new Error('Draft not found.');
+    var row = rows[rowIndex]; var plan = JSON.parse(row[3]);
+    if (row[1] === 'published') return { status: 'ok', id: plan.id, state: 'published' };
+    if (Number(data.revision) !== Number(row[2])) throw new Error('Draft changed. Reopen it before publishing.');
+    schoolValidatePublication_(plan);
+    // Freeze the reviewed plan before creating any external records.
+    sheet.getRange(rowIndex + 1, 2).setValue('publishing'); SpreadsheetApp.flush();
+    var calendarId = toStr(row[4]);
+    if (plan.event.enabled && !calendarId) {
+      calendarId = schoolPublishEvent_(plan);
+      sheet.getRange(rowIndex + 1, 5).setValue(calendarId); SpreadsheetApp.flush();
+    }
+    var todos = ensureTodoIds_(ss);
+    var ids = todos.getDataRange().getValues().map(function(r) { return r[7]; });
+    plan.tasks.forEach(function(t) {
+      if (ids.indexOf(t.id) !== -1) return;
+      todos.appendRow([new Date(), schoolCell_(t.title), t.assignee, t.due ? new Date(t.due + 'T12:00:00+08:00') : '', user, 'Open', '', t.id, plan.id, t.kind, plan.child, schoolCell_(t.evidence)]);
+      ids.push(t.id);
+    });
+    sheet.getRange(rowIndex + 1, 2).setValue('published');
+    sheet.getRange(rowIndex + 1, 6, 1, 2).setValues([[new Date(), user]]);
+    return { status: 'ok', id: plan.id, state: 'published' };
+  } catch (e) { return { status: 'error', message: e.message }; }
 }

@@ -4,9 +4,9 @@
     //              fertility, Us (check-ins, appreciations, intimacy, bucket list)
     // Never dual-write the same feature to both backends.
     const DATA_OWNERS = {
-      firebase: ['auth', 'chat', 'memories', 'storage', 'fcm'],
+      firebase: ['auth', 'chat', 'memories', 'storage', 'fcm', 'schoolSourceImages'],
       sheets: [
-        'events', 'todos', 'expenses', 'budgets', 'birthdays', 'fertility',
+        'events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
         'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'
       ]
     };
@@ -378,6 +378,7 @@
       }, { passive: true });
     }
     function logout() {
+      schoolReset(); schoolDay = '';
       stopChatListener();
       stopMemoriesListener();
       firebase.auth().signOut().then(() => {
@@ -464,7 +465,7 @@
       if (!url || typeof url !== 'string') return false;
       try {
         const u = new URL(url, location.href);
-        return u.protocol === 'https:' || u.protocol === 'http:';
+        return u.protocol === 'https:';
       } catch (e) { return false; }
     }
     /** Safe img + lightbox markup; uses this.src so URLs never enter onclick JS strings. */
@@ -805,9 +806,26 @@
 
     // ─── HOME (Dashboard) ────────────────────────────────────
     function renderHome() {
+      renderSchoolHome();
       const h = new Date().getHours();
       const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}! 👋</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+      const childEmoji = user === 'Mikaela' ? '⛵' : user === 'Meaghan' ? '🩰' : '👋';
+      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}! ${childEmoji}</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+
+      const summaryEl = document.getElementById('dash-summary');
+      const membersEl = document.getElementById('dash-members');
+      const todayWrapEl = document.getElementById('today-wrap');
+      if (!isAdultUser) {
+        if (summaryEl) summaryEl.style.display = 'none';
+        if (membersEl) membersEl.style.display = 'none';
+        if (todayWrapEl) todayWrapEl.style.display = 'none';
+        return;
+      } else {
+        if (summaryEl) summaryEl.style.display = '';
+        if (membersEl) membersEl.style.display = '';
+        if (todayWrapEl) todayWrapEl.style.display = '';
+      }
+
       const exp = data.expenses || {};
       const totalSpent = exp.total || 0;
       const tasksOpen = (data.todos||[]).length;
@@ -1156,14 +1174,14 @@
                 }
                 return `
                   <div class="task-row">
-                    <div class="chk" onclick="doneTask(${t.rowNum},this)"></div>
+                    <div class="chk" onclick="doneTask('${t.id}',this)"></div>
                     <div class="task-main">
                       <div class="task-ttl">${escapeHtml(t.task)}</div>
                       <div class="task-meta">
                         <span class="task-meta-badge ${dueClass}">${dueText}</span>
                       </div>
                     </div>
-                    <button onclick="delTask(${t.rowNum})" style="color:#cbd5e1;font-size:16px;padding:8px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
+                    <button class="parent-task-delete" onclick="delTask('${t.id}')" style="color:#cbd5e1;font-size:16px;padding:8px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
                   </div>
                 `;
               }).join('')}
@@ -1172,19 +1190,15 @@
         </div>
       `;
     }
-    function doneTask(n, el) {
-      el.classList.add('done'); el.textContent='✓';
-      gPost({note:'complete_todo',todo_id:n});
-      data.todos = (data.todos||[]).filter(t => t.rowNum !== n);
-      setTimeout(()=>{ renderTasks(); renderHome(); }, 400);
-      toast('Task done! 🎉');
+    async function doneTask(id, el) {
+      await schoolTaskAction(id, 'complete_todo', el);
     }
-    function delTask(n) {
-      const task = data.todos.find(t => t.rowNum === n);
-      if(!task) return;
-      if(!confirm('Delete task?')) return;
-      data.todos = data.todos.filter(t => t.rowNum !== n);
-      pushUndo(() => { data.todos.push(task); renderTasks(); renderHome(); }, 'Task deleted', { note: 'delete_todo', todo_id: n });
+    async function delTask(id) {
+      if (!isAdultUser || !confirm('Delete task?')) return;
+      const result = await gPost({ note: 'delete_todo', todo_id: id });
+      if (!result || result.status !== 'ok') return;
+      data.todos = (data.todos || []).filter(t => t.id !== id);
+      data.schoolTasks = (data.schoolTasks || []).filter(t => t.id !== id);
       renderTasks(); renderHome();
     }
 
@@ -1222,13 +1236,16 @@
         const isCurrent = (i === hist.length-1);
         return `<div class="bar-col"><div class="bar-val">$${h.total.toFixed(0)}</div><div class="bar-fill ${isCurrent?'current':''}" style="height:${Math.max(heightPct,4)}%;"></div><div class="bar-lbl">${escapeHtml(h.label)}</div></div>`;
       }).join('');
+      // Update DOM toggle button active class
+      ['All', 'Family', 'Personal'].forEach(a => {
+        const btn = document.getElementById('exp-acc-' + a);
+        if (btn) {
+          if (a === activeExpenseAccount) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      });
+
       el.innerHTML = `
-        <div style="display:flex;background:var(--border-color);padding:3px;border-radius:8px;margin:10px 16px 16px;">
-          <button class="toggle-pill ${activeExpenseAccount==='All'?'active':''}" onclick="toggleExpenseAccount('All')" style="flex:1;text-align:center;">All</button>
-          <button class="toggle-pill ${activeExpenseAccount==='Family'?'active':''}" onclick="toggleExpenseAccount('Family')" style="flex:1;text-align:center;">Family</button>
-          <button class="toggle-pill ${activeExpenseAccount==='Personal'?'active':''}" onclick="toggleExpenseAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
-        </div>
-        <div class="search-wrap"><input type="text" id="exp-search" placeholder="Search expenses..." oninput="filterExpenses()" value="${escapeHtml(searchExpenseQuery)}"><span class="clear-btn" onclick="document.getElementById('exp-search').value='';filterExpenses();">✕</span></div>
         <div class="card">
           <div class="card-hdr"><span class="card-title">💰 ${month}</span><div style="display:flex;align-items:center;"><span class="badge b-blue">$${(total||0).toFixed(2)}</span>${momHtml}</div></div>
           <div class="donut-container"><div class="donut-wrap"><svg viewBox="0 0 42 42" class="donut">${donutSvgCircles}<g class="chart-text"><text x="50%" y="50%" class="chart-number" style="font-size:5px;font-weight:800;">$${total.toFixed(0)}</text><text x="50%" y="64%" class="chart-label" style="font-size:2px;fill:var(--text-muted);">Total</text></g></svg></div><div class="pie-wrap" style="flex:1;padding:0;gap:6px;">${cats.slice(0,5).map((e,i)=>`<div class="pie-row"><div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-lbl" style="font-size:12px;">${escapeHtml(e[0].split(' - ').pop())}</span><span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span></div>`).join('')||'<div class="empty">No expenses</div>'}</div></div>
@@ -2641,6 +2658,7 @@
       }
       chatUnsubscribe = db.collection('chat')
         .orderBy('timestamp', 'asc')
+        .limitToLast(100)
         .onSnapshot((snapshot) => {
           const messages = [];
           snapshot.forEach((doc) => {
@@ -2687,6 +2705,7 @@
       }
       memoriesUnsubscribe = db.collection('memories')
         .orderBy('timestamp', 'desc')
+        .limit(100)
         .onSnapshot((snapshot) => {
           const memories = [];
           snapshot.forEach((doc) => {

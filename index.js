@@ -113,3 +113,63 @@ exports.sendChatNotification = functions.firestore
       return null;
     }
   });
+
+// Parent-only extraction; no calendar/task side effects. Secrets never reach the PWA.
+const { buildRequest, parseResponse } = require('./school-extraction');
+const SCHOOL_PARENTS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
+exports.extractSchoolAnnouncement = functions.runWith({
+  secrets: ['OPENAI_API_KEY'], timeoutSeconds: 120, memory: '512MB'
+}).https.onCall(async (data, context) => {
+  const email = String(context.auth?.token?.email || '').toLowerCase();
+  if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Only parents can extract school messages.');
+  const text = typeof data?.text === 'string' ? data.text.trim() : '';
+  const path = typeof data?.imagePath === 'string' ? data.imagePath : '';
+  if (text.length > 20000 || (!text && !path)) throw new functions.https.HttpsError('invalid-argument', 'Add a message or screenshot (up to 20,000 characters).');
+  if (!process.env.OPENAI_API_KEY) throw new functions.https.HttpsError('failed-precondition', 'AI extraction is not configured. You can enter the plan manually.');
+  if (path && !new RegExp('^school/' + email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/[a-f0-9]{64}$').test(path)) {
+    throw new functions.https.HttpsError('permission-denied', 'Invalid screenshot owner.');
+  }
+  // Server-owned operational counter, not a second store for school records.
+  const quota = admin.firestore().collection('schoolExtractionLimits').doc(context.auth.uid);
+  await admin.firestore().runTransaction(async tx => {
+    const old = (await tx.get(quota)).data() || {};
+    const day = new Date().toISOString().slice(0, 10);
+    const count = old.day === day ? old.count : 0;
+    if (count >= 30) throw new functions.https.HttpsError('resource-exhausted', 'Daily extraction limit reached. You can still enter a plan manually.');
+    tx.set(quota, { day, count: count + 1 });
+  });
+  try {
+    let image;
+    if (path) {
+      const file = admin.storage().bucket().file(path);
+      const [metadata] = await file.getMetadata();
+      if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG or WebP under 5 MB.');
+      const [bytes] = await file.download();
+      if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== path.split('/').pop()) throw new Error('Screenshot checksum mismatch.');
+      image = 'data:' + metadata.contentType + ';base64,' + bytes.toString('base64');
+    }
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildRequest(text, image, process.env.SCHOOL_AI_MODEL || 'gpt-4.1-mini')),
+      signal: AbortSignal.timeout(90000)
+    });
+    if (!response.ok) throw new Error('Extraction service unavailable. Try again or enter the plan manually.');
+    return parseResponse(await response.json());
+  } catch (err) {
+    // Do not log source messages, screenshots, tokens, or upstream response bodies.
+    throw new functions.https.HttpsError('unavailable', 'Could not read this message. Try a clearer screenshot or enter the plan manually.');
+  }
+});
+
+// Authenticated read avoids creating a public download-token URL for school images.
+exports.getSchoolSourceImage = functions.runWith({ memory: '256MB' }).https.onCall(async (data, context) => {
+  const email = String(context.auth?.token?.email || '').toLowerCase();
+  if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Parents only.');
+  const path = typeof data?.path === 'string' ? data.path : '';
+  if (!/^school\/(marcuswongjw@gmail\.com|eleanor\.jiamin@gmail\.com)\/[a-f0-9]{64}$/.test(path)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image path.');
+  const file = admin.storage().bucket().file(path);
+  const [meta] = await file.getMetadata();
+  if (Number(meta.size) >= 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(meta.contentType)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image.');
+  const [bytes] = await file.download();
+  return { image: 'data:' + meta.contentType + ';base64,' + bytes.toString('base64') };
+});

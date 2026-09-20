@@ -1,11 +1,12 @@
 // PWA cache + FCM background handler + notification click → open Chat
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wong-family-v7';
+const CACHE_NAME = 'wong-family-v10';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
+  './js/school.js',
   './manifest.json',
   './icon.png',
   './favicon.png'
@@ -42,7 +43,7 @@ self.addEventListener('fetch', event => {
       path.endsWith('/') ||
       path.endsWith('.html') ||
       path.endsWith('/familylog') ||
-      path.endsWith('/app.js') ||
+      path.endsWith('/app.js') || path.endsWith('/school.js') ||
       path.endsWith('/styles.css') ||
       path.endsWith('firebase-messaging-sw.js')
     ));

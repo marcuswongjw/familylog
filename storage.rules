@@ -29,6 +29,20 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // School originals are private to parents; immutable content-addressed uploads.
+    function isParent() {
+      return isFamily() && callerEmail() in ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
+    }
+    match /school/{ownerEmail}/{fileName} {
+      allow read: if isParent();
+      allow create: if isParent() && ownerEmail == callerEmail()
+        && fileName.matches('[a-f0-9]{64}')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp'];
+      allow delete: if isParent() && ownerEmail == callerEmail();
+      allow update: if false;
+    }
+
     // chat/{ownerEmail}/{fileName}
     match /chat/{ownerEmail}/{fileName} {
       allow read: if isFamily();
