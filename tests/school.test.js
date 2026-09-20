@@ -115,17 +115,22 @@ test('formula-like source text is stored as text, not a spreadsheet formula', ()
   const h = harness(), p = plan(); p.tasks[0].title = '=IMPORTXML("bad")';
   publish(h, save(h, p)); assert.equal(h.sheets.ToDo.rows[1][1][0], "'");
 });
-test('extraction sends images as data and requests strict non-stored structured output', () => {
-  const req = buildRequest('announcement', 'data:image/png;base64,abc', 'test-model');
-  assert.equal(req.store, false); assert.equal(req.text.format.strict, true);
-  assert.equal(req.input[0].content[1].type, 'input_image'); assert.equal(req.tools, undefined);
+test('extraction formats Gemini request with inlineData and JSON schema', () => {
+  const req = buildRequest('announcement', 'image/png', 'abc', 'gemini-2.0-flash');
+  assert.equal(req.generationConfig.responseMimeType, 'application/json');
+  assert.equal(req.generationConfig.responseSchema.type, 'OBJECT');
+  assert.equal(req.contents[0].parts[1].inlineData.mimeType, 'image/png');
+  assert.equal(req.contents[0].parts[1].inlineData.data, 'abc');
+  assert.ok(req.systemInstruction.parts[0].text.includes('Extract facts'));
 });
-test('extraction rejects refusal, truncated output and unsupported tasks', () => {
-  assert.throws(() => parseResponse({ status: 'incomplete' }));
-  assert.throws(() => parseResponse({ status: 'completed', output: [{ content: [{ type: 'refusal' }] }] }));
+test('extraction rejects safety blocks, truncated finish reasons and invalid outputs', () => {
+  assert.throws(() => parseResponse(null));
+  assert.throws(() => parseResponse({ candidates: [] }));
+  assert.throws(() => parseResponse({ candidates: [{ finishReason: 'SAFETY' }] }));
+  assert.throws(() => parseResponse({ candidates: [{ finishReason: 'MAX_TOKENS' }] }));
   const d = { title: 'Journey', child: '', sourceText: 'Bring water.', warnings: [], event: { title: '', date: '', time: '', endTime: '', location: '', evidence: '' }, tasks: [{ title: 'Consent', kind: 'consent', due: '', evidence: '' }] };
-  const response = () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(d) }] }] });
-  assert.throws(() => parseResponse(response()));
+  const response = (data) => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(data) }] } }] });
+  assert.throws(() => parseResponse(response(d)));
   d.tasks = [{ title: 'Water', kind: 'packing', due: '', evidence: 'Bring water.' }];
-  assert.equal(parseResponse(response()).tasks[0].due, '');
+  assert.equal(parseResponse(response(d)).tasks[0].due, '');
 });

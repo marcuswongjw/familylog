@@ -118,14 +118,15 @@ exports.sendChatNotification = functions.firestore
 const { buildRequest, parseResponse } = require('./school-extraction');
 const SCHOOL_PARENTS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
 exports.extractSchoolAnnouncement = functions.runWith({
-  secrets: ['OPENAI_API_KEY'], timeoutSeconds: 120, memory: '512MB'
+  secrets: ['GEMINI_API_KEY'], timeoutSeconds: 120, memory: '512MB'
 }).https.onCall(async (data, context) => {
   const email = String(context.auth?.token?.email || '').toLowerCase();
   if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Only parents can extract school messages.');
   const text = typeof data?.text === 'string' ? data.text.trim() : '';
   const path = typeof data?.imagePath === 'string' ? data.imagePath : '';
   if (text.length > 20000 || (!text && !path)) throw new functions.https.HttpsError('invalid-argument', 'Add a message or screenshot (up to 20,000 characters).');
-  if (!process.env.OPENAI_API_KEY) throw new functions.https.HttpsError('failed-precondition', 'AI extraction is not configured. You can enter the plan manually.');
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'Gemini AI extraction is not configured. You can enter the plan manually.');
   if (path && !new RegExp('^school/' + email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/[a-f0-9]{64}$').test(path)) {
     throw new functions.https.HttpsError('permission-denied', 'Invalid screenshot owner.');
   }
@@ -139,18 +140,22 @@ exports.extractSchoolAnnouncement = functions.runWith({
     tx.set(quota, { day, count: count + 1 });
   });
   try {
-    let image;
+    let imageMime = '';
+    let imageBase64 = '';
     if (path) {
       const file = admin.storage().bucket().file(path);
       const [metadata] = await file.getMetadata();
       if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG or WebP under 5 MB.');
       const [bytes] = await file.download();
       if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== path.split('/').pop()) throw new Error('Screenshot checksum mismatch.');
-      image = 'data:' + metadata.contentType + ';base64,' + bytes.toString('base64');
+      imageMime = metadata.contentType;
+      imageBase64 = bytes.toString('base64');
     }
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST', headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRequest(text, image, process.env.SCHOOL_AI_MODEL || 'gpt-4.1-mini')),
+    const model = process.env.SCHOOL_AI_MODEL || 'gemini-2.0-flash';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildRequest(text, imageMime, imageBase64, model)),
       signal: AbortSignal.timeout(90000)
     });
     if (!response.ok) throw new Error('Extraction service unavailable. Try again or enter the plan manually.');
