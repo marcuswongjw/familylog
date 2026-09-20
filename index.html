@@ -22,7 +22,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="css/styles.css?v=10">
+  <link rel="stylesheet" href="css/styles.css?v=11">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -83,27 +83,6 @@
         </div>
       </div>
 
-      <!-- CHAT -->
-      <div class="section" id="s-chat">
-        <div class="chat-container">
-          <div class="chat-messages" id="chat-msg-container">
-            <div class="loading"><div class="spin"></div>Loading messages…</div>
-          </div>
-          <div class="chat-preview-area" id="chat-img-preview" style="display:none;">
-            <div style="position:relative;">
-              <img src="" id="chat-preview-thumbnail" style="height:60px;width:60px;object-fit:cover;border-radius:8px;border:1px solid rgba(107, 45, 92, 0.2);">
-              <button class="chat-preview-close" onclick="clearChatFilePreview()" style="position:absolute;top:-8px;right:-8px;background:#ff4d4d;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;">✕</button>
-            </div>
-          </div>
-          <div class="chat-input-area">
-            <input type="text" id="chat-input-text" placeholder="Message..." onkeydown="if(event.key==='Enter')sendChatMessage()">
-            <label for="chat-file-input" class="chat-attach-btn">📎</label>
-            <input type="file" id="chat-file-input" accept="image/*" style="display:none;" onchange="handleChatFileSelect(this)">
-            <button class="chat-send-btn" onclick="sendChatMessage()">Send</button>
-          </div>
-        </div>
-      </div>
-
       <!-- CALENDAR -->
       <div class="section" id="s-calendar">
         <div class="sec-body">
@@ -113,8 +92,8 @@
               <button class="btn btn-sm btn-p" onclick="openM('m-event')">+ Add</button>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 4px;">
-              <button class="toggle-pill active" id="cal-view-list" onclick="toggleCalView('list')">List</button>
-              <button class="toggle-pill" id="cal-view-week" onclick="toggleCalView('week')">Week</button>
+              <button class="toggle-pill" id="cal-view-list" onclick="toggleCalView('list')">List</button>
+              <button class="toggle-pill active" id="cal-view-week" onclick="toggleCalView('week')">Week</button>
               <button class="toggle-pill" id="cal-view-month" onclick="toggleCalView('month')">Month</button>
               <button class="toggle-pill" id="cal-view-year" onclick="toggleCalView('year')">Year</button>
             </div>
@@ -277,9 +256,9 @@
     <!-- Bottom Nav -->
     <div class="bot-nav">
       <div class="nav-it act" id="nav-home" onclick="goTo('home')"><div class="ni">🏠</div><div>Home</div></div>
-      <div class="nav-it" id="nav-chat" onclick="goTo('chat')"><div class="ni">💬</div><div>Chat</div></div>
+      <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
       <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
-      <div class="nav-it" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
+      <div class="nav-it adult-only" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
       <div class="nav-it adult-only" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
     </div>
   </div>
@@ -298,11 +277,7 @@
       <button class="drawer-close" onclick="toggleMenuDrawer(false)">✕</button>
     </div>
     <div class="drawer-body">
-      <div class="drawer-item" onclick="navigateDrawer('tasks')">
-        <span class="di-icon">✅</span>
-        <span class="di-lbl">Tasks</span>
-      </div>
-      <div class="drawer-item" onclick="navigateDrawer('budgets')">
+      <div class="drawer-item adult-only" onclick="navigateDrawer('budgets')">
         <span class="di-icon">📊</span>
         <span class="di-lbl">Budgets</span>
       </div>
@@ -318,7 +293,7 @@
         <span class="di-icon">🌸</span>
         <span class="di-lbl">Fertility Tracker</span>
       </div>
-      <div class="drawer-item" onclick="navigateDrawer('recurring')">
+      <div class="drawer-item adult-only" onclick="navigateDrawer('recurring')">
         <span class="di-icon">🔄</span>
         <span class="di-lbl">Recurring Expenses</span>
       </div>
@@ -337,7 +312,7 @@
     </div>
   </div>
 
-  <!-- Lightbox Modal for Chat Images -->
+  <!-- Lightbox for memory photos -->
   <div class="overlay" id="chat-lightbox" onclick="closeChatLightbox()">
     <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;">
       <img src="" id="lightbox-img" style="max-width:100%;max-height:90vh;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.3);object-fit:contain;">
@@ -677,7 +652,7 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- JAVASCRIPT – COMPLETE APP LOGIC (FIRESTORE CHAT + FCM)     -->
+  <!-- JAVASCRIPT – APP LOGIC (FIRESTORE MEMORIES + FCM)         -->
   <!-- ============================================================ -->
   <dialog id="school-dialog" aria-labelledby="school-dialog-title" oncancel="event.preventDefault();closeSchoolCapture()">
     <header class="school-dialog-header"><div><span class="school-eyebrow">ANNOUNCEMENT → ACTION</span><h2 id="school-dialog-title">Add a school message</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close school message">Close</button></header>
@@ -693,7 +668,7 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=10"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/school.js?v=11"></script>
+  <script src="js/app.js?v=11"></script>
 </body>
 </html>

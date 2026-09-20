@@ -84,7 +84,8 @@ var EMAIL_TO_MEMBER = DEFAULT_EMAIL_TO_MEMBER;
 var ADULT_ONLY_NOTES = [
   'add_appreciation', 'add_love_checkin', 'add_fertility',
   'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item',
-  'add_intimacy', 'delete_intimacy', 'add_event', 'delete_event', 'update_event_date'
+  'add_intimacy', 'delete_intimacy', 'add_event', 'delete_event', 'update_event_date',
+  'add_expense', 'delete_expense', 'set_budget', 'delete_budget', 'add_recurring', 'delete_recurring'
 ];
 
 var EXPENSE_GROUPS = {
@@ -681,12 +682,12 @@ function doGet(e) {
       case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
       // Chat lives in Firestore only — Sheets chat endpoints removed
       case 'get_chat':
-        output = { status: 'error', message: 'Chat is served from Firestore, not Sheets.' };
+        output = { status: 'error', message: 'Chat has been removed from Family Log.' };
         break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos(null, verifiedEmail);            break;
-      case 'get_expenses':  output = getExpensesData();     break;
-      case 'get_budgets':   output = getBudgets();          break;
+      case 'get_expenses':  output = isAdultEmail_(verifiedEmail) ? getExpensesData() : emptyExpensesPayload_(); break;
+      case 'get_budgets':   output = isAdultEmail_(verifiedEmail) ? getBudgets() : [];          break;
       case 'get_birthdays': output = getBirthdays();        break;
       // Memories live in Firestore only — see ARCHITECTURE.md
       case 'get_memories':
@@ -698,7 +699,7 @@ function doGet(e) {
       case 'get_fertility':
         output = isAdultEmail_(verifiedEmail) ? getFertilityData() : [];
         break;
-      case 'get_recurring': output = getRecurring();        break;
+      case 'get_recurring': output = isAdultEmail_(verifiedEmail) ? getRecurring() : [];        break;
       case 'get_travel':    output = getTravelData();       break;
       case 'submit_confirmed_expense':
         output = handleSubmitConfirmedExpense(e.parameter);
@@ -971,7 +972,7 @@ function handleWriteInner_(data) {
     if (noteLower === 'add_chat_message') {
       return {
         status: 'error',
-        message: 'Chat uses Firestore only. Send messages from the app Chat tab.'
+        message: 'Chat has been removed from Family Log.'
       };
     }
 
@@ -1346,18 +1347,18 @@ function getAllDashboardData(verifiedEmail) {
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
-    expenses:  getExpensesData(ss),
-    budgets:   getBudgets(ss),
+    expenses:  adult ? getExpensesData(ss) : emptyExpensesPayload_(),
+    budgets:   adult ? getBudgets(ss) : [],
     birthdays: getBirthdays(ss),
     // Adult-only payloads are empty for children's accounts
     fertility:      adult ? getFertilityData(ss) : [],
-    recurring:      getRecurring(ss),
+    recurring:      adult ? getRecurring(ss) : [],
     travel:         getTravelData(ss),
     appreciations:  adult ? getAppreciationsData(ss) : [],
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
     intimacyLog:    adult ? getIntimacyLogData(ss) : [],
     bucketList:     adult ? getBucketList(ss) : [],
-    expenseGroups:  EXPENSE_GROUPS,
+    expenseGroups:  adult ? EXPENSE_GROUPS : {},
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || '',
     // Explicit nulls so old clients don't fall back to stale dual-path assumptions
@@ -1366,7 +1367,7 @@ function getAllDashboardData(verifiedEmail) {
     dataSources: {
       sheets: ['events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
                'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'],
-      firebase: ['chat', 'memories', 'auth', 'fcmTokens']
+      firebase: ['memories', 'auth', 'fcmTokens']
     }
   };
 }
@@ -1460,10 +1461,18 @@ function getTodos(ss, verifiedEmail, includeDone) {
   return result;
 }
 
+function emptyExpensesPayload_() {
+  return {
+    rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0,
+    familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {},
+    familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0
+  };
+}
+
 function getExpensesData(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
-  if (!expSheet) return { rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0, familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {}, familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0 };
+  if (!expSheet) return emptyExpensesPayload_();
   var eVals      = expSheet.getDataRange().getValues();
   var tz         = Session.getScriptTimeZone();
   var now        = new Date();

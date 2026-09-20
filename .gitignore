@@ -28,6 +28,9 @@ target/
 .DS_Store
 Thumbs.db
 
+# clasp (login tokens stay on the machine; .clasp.json with scriptId is committed)
+.clasprc.json
+
 # Firebase / local
 .firebase/
 firebase-debug.log

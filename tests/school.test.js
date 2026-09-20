@@ -97,6 +97,22 @@ test('child can request help and complete own task, cannot alter others or delet
   assert.equal(h.c.getTodos(h.ss, child).length, 0);
   assert.equal(h.c.getTodos(h.ss, child, true).length, 1);
 });
+test('children cannot read or write money', () => {
+  const h = harness();
+  const added = h.write({ note: 'add_expense', ex_desc: 'Family lunch', ex_amount: 12, ex_date: '20 Sep 2026', ex_category: 'Eating Out - Lunch', ex_account: 'Family' });
+  assert.equal(added.status, 'ok');
+  assert.equal(h.write({ note: 'add_expense', ex_desc: 'Snack', ex_amount: 3, ex_date: '20 Sep 2026' }, child).status, 'error');
+  assert.equal(h.write({ note: 'set_budget', group: 'Eating Out', amount: 100, account: 'Family' }, child).status, 'error');
+  assert.equal(h.write({ note: 'add_recurring', rec_name: 'Netflix', rec_amount: 15, rec_day: 1, rec_category: 'Entertainment - Subscriptions', rec_account: 'Family' }, child).status, 'error');
+  const kidDash = h.c.getAllDashboardData(child);
+  assert.equal(kidDash.expenses.total, 0);
+  assert.equal(kidDash.expenses.rows.length, 0);
+  assert.equal(kidDash.budgets.length, 0);
+  assert.equal(kidDash.recurring.length, 0);
+  assert.equal(Object.keys(kidDash.expenseGroups).length, 0);
+  const parentDash = h.c.getAllDashboardData(parent);
+  assert.ok(parentDash.expenses.rows.length >= 1);
+});
 test('children only read own tasks and cannot create tasks for other people', () => {
   const h = harness(); h.write({ note: 'add_todo', todo_task: 'Parent consent', todo_assignee: 'Marcus' });
   assert.equal(h.c.getTodos(h.ss, child).length, 0);

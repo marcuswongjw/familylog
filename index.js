@@ -11,7 +11,8 @@ function chatDeepLink() {
   return base + '?open=chat#chat';
 }
 
-// Trigger when a new chat message is created
+// Dormant: the Chat UI was removed. Kept so an old Firestore write cannot
+// crash the function deploy; new app versions do not create chat docs.
 exports.sendChatNotification = functions.firestore
   .document('chat/{messageId}')
   .onCreate(async (snap, context) => {

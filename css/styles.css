@@ -140,8 +140,11 @@
     .fab{position:fixed;bottom:88px;right:20px;width:56px;height:56px;border-radius:50%;background:#4f86c6;color:#fff;font-size:28px;box-shadow:0 4px 16px rgba(79,134,198,.4);z-index:50;display:flex;align-items:center;justify-content:center;transition:transform .2s, box-shadow .2s;}
     .fab:active{transform:scale(0.92);}
     .fab.hide{display:none;}
-    /* Kids: hide Us sanctuary + fertility entry points (server also empties data) */
+    /* Kids: hide Us, fertility, and money (server also empties / denies those payloads) */
     body.is-child .adult-only{display:none!important;}
+    body.is-child #s-expenses,
+    body.is-child #s-budgets,
+    body.is-child #s-recurring{display:none!important;}
 
     /* ── MODAL ── */
     .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}

@@ -1,10 +1,10 @@
     // ─── DATA OWNERSHIP (see ARCHITECTURE.md) ───────────────────
-    // Firebase  → Auth, Chat, Memories, Storage images, FCM tokens
+    // Firebase  → Auth, Memories, Storage images, FCM tokens
     // GAS/Sheets → expenses, budgets, todos, calendar, birthdays, travel,
     //              fertility, Us (check-ins, appreciations, intimacy, bucket list)
     // Never dual-write the same feature to both backends.
     const DATA_OWNERS = {
-      firebase: ['auth', 'chat', 'memories', 'storage', 'fcm', 'schoolSourceImages'],
+      firebase: ['auth', 'memories', 'storage', 'fcm', 'schoolSourceImages'],
       sheets: [
         'events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
         'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'
@@ -53,22 +53,20 @@
     let currentUserEmail = '';
     let selectedMember = null;
     let timelineInterval = null;
-    let chatImageBase64 = null;
     let memImageBase64 = null;
     let lastIdToken = '';   // cached Firebase token for beacon-style requests
     // Parents only for Us / fertility (server also enforces). Default conservative until get_all.
     const ADULT_EMAILS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
     let isAdultUser = false;
 
-    // Firestore listeners — chat + memories never come from GAS/Sheets
-    let chatUnsubscribe = null;
+    // Firestore listeners — memories never come from GAS/Sheets
     let memoriesUnsubscribe = null;
 
     // Notifications
     let notificationsEnabled = false;
 
     // Calendar state
-    let calView = loadPreference('calView', 'list');
+    let calView = loadPreference('calView', 'week');
     let calYear = new Date().getFullYear();
     let calMonth = new Date().getMonth();
     let selectedCalDayStr = loadPreference('selectedCalDay', localDateStr());
@@ -137,7 +135,7 @@
       const pill = document.getElementById('pill-'+activeSchedChild);
       if (pill) pill.classList.add('active');
 
-      // Service worker (for FCM + notification click → chat)
+      // Service worker (for FCM + notification click)
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('firebase-messaging-sw.js')
           .then((registration) => {
@@ -151,12 +149,12 @@
         // When user taps a push while the app is already open / focused
         navigator.serviceWorker.addEventListener('message', (event) => {
           if (event.data && event.data.type === 'NOTIFICATION_CLICK') {
-            handleNotificationNavigation(event.data.screen || 'chat');
+            handleNotificationNavigation(event.data.screen || 'home');
           }
         });
       }
 
-      // Deep links: ?open=chat and #chat (notification click / PWA cold start)
+      // Deep links: ?open= and #hash (notification click / PWA cold start)
       window.addEventListener('hashchange', () => {
         const t = screenFromLocation();
         if (t) handleNotificationNavigation(t);
@@ -303,9 +301,10 @@
       const email = (m && m.email) || currentUserEmail || '';
       setAdultAccess(ADULT_EMAILS.includes(String(email).toLowerCase()));
       goTo('home');
-      // Sheets dashboard (GAS) + Firebase realtime (memories; chat on demand)
+      // Sheets dashboard (GAS) + Firebase realtime (memories)
       loadData();
       startMemoriesListener();
+      requestNotificationPermission();
       // Request FCM token after login
       requestFCMToken();
       setupPullToRefresh();
@@ -379,13 +378,12 @@
     }
     function logout() {
       schoolReset(); schoolDay = '';
-      stopChatListener();
       stopMemoriesListener();
       firebase.auth().signOut().then(() => {
         user = null;
         isAdultUser = false;
         document.body.classList.remove('is-child');
-        data = { chat: [], memories: [] };
+        data = { memories: [] };
         document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');
         document.getElementById('login-password').value = '';
@@ -396,12 +394,12 @@
       });
     }
 
-    /** Show/hide Us + Fertility entry points. Kids get body.is-child. */
+    /** Show/hide Us, fertility, and money. Kids get body.is-child. */
     function setAdultAccess(adult) {
       isAdultUser = !!adult;
       document.body.classList.toggle('is-child', !isAdultUser);
       buildMore();
-      if (!isAdultUser && (section === 'us' || section === 'fertility')) {
+      if (!isAdultUser && ['us', 'fertility', 'expenses', 'budgets', 'recurring'].includes(section)) {
         goTo('home');
       }
     }
@@ -568,11 +566,9 @@
       // Do not clobber dashboard with a bare error payload
       if (r.status === 'error' && !r.events && !r.intimacyLog) return;
       // Firebase-owned fields: never accept from GAS (even if old deploy sends them)
-      const prevChat = Array.isArray(data.chat) ? data.chat : [];
       const prevMems = Array.isArray(data.memories) ? data.memories : [];
       const prevIntimacy = data.intimacyLog;
       data = r || {};
-      data.chat = prevChat;
       data.memories = prevMems;
       // Merge intimacy: keep just-saved entries if get_all is empty/stale/old GAS
       data.intimacyLog = mergeIntimacyLogs(prevIntimacy, data.intimacyLog);
@@ -586,21 +582,21 @@
       renderHome();
     }
 
-    /** Sheets-backed dashboard only (not chat/memories). */
+    /** Sheets-backed dashboard only (not memories). */
     function loadData() {
       return gasRequest({ action: 'get_all' }).then(r => {
         applyDashboardPayload(r);
       });
     }
 
-    /** GAS write for Sheets-owned features. Do not use for chat/memories. */
+    /** GAS write for Sheets-owned features. Do not use for memories. */
     function gPost(payload) {
       const note = String((payload && payload.note) || '').toLowerCase();
       if (note === 'add_chat_message' || note === 'add_memory') {
-        console.error('gPost blocked: ' + note + ' is Firebase-owned (see ARCHITECTURE.md)');
+        console.error('gPost blocked: ' + note + ' is not Sheets-owned (see ARCHITECTURE.md)');
         return Promise.resolve({
           status: 'error',
-          message: note + ' must use Firebase, not GAS'
+          message: note + ' is not available'
         });
       }
       return gasRequest(Object.assign({ action: 'write' }, payload || {}));
@@ -632,25 +628,28 @@
     }
 
     // ─── NAVIGATION ───────────────────────────────────────────
-    const NAV_SECONDARY = ['tasks','budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+    const NAV_SECONDARY = ['budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+    const ADULT_SCREENS = ['us', 'fertility', 'expenses', 'budgets', 'recurring'];
+    const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'expenses', 'us'];
 
     /** Read deep-link target from ?open= or #hash (iOS PWAs keep query more reliably). */
     function screenFromLocation() {
       try {
         const q = new URLSearchParams(location.search).get('open');
-        if (q) return q.replace(/^\//, '') || 'chat';
+        if (q) return q.replace(/^\//, '') || 'home';
       } catch (e) { /* ignore */ }
-      if (location.hash === '#chat' || location.hash === '#/chat') return 'chat';
       if (location.hash && location.hash.length > 1) {
         const h = location.hash.replace(/^#\/?/, '');
-        if (['chat', 'home', 'calendar', 'expenses', 'us'].includes(h)) return h;
+        if (h === 'chat') return 'home';
+        if (PRIMARY_SCREENS.includes(h)) return h;
       }
       return null;
     }
 
     /** Navigate from a notification tap (or deep link). Works before/after login. */
     function handleNotificationNavigation(screen) {
-      const target = screen || 'chat';
+      let target = screen || 'home';
+      if (target === 'chat') target = 'home';
       if (user) {
         goTo(target);
         try {
@@ -679,23 +678,15 @@
     }
 
     function goTo(id) {
+      if (id === 'chat') id = 'home';
       // Adults-only destinations (UI + server); kids never enter these sections
-      if ((id === 'us' || id === 'fertility') && !isAdultUser) {
-        toast('That space is for Mom & Dad only 💖', true);
+      if (ADULT_SCREENS.includes(id) && !isAdultUser) {
+        toast(id === 'us' || id === 'fertility' ? 'That space is for Mom & Dad only 💖' : 'Money is for Mom & Dad only', true);
         id = 'home';
       }
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
-      
-      // Handle chat listener (Firestore only)
-      if(id === 'chat') {
-        startChatListener();
-        // Request notification permission
-        requestNotificationPermission();
-      } else {
-        stopChatListener();
-      }
-      
+
       // Handle memories listener
       if(id === 'memories') {
         startMemoriesListener();
@@ -712,7 +703,12 @@
         const nb = document.getElementById('nav-'+navId);
         if(nb) nb.classList.add('act');
       }
-      const FAB_MAP = {calendar:'m-event',tasks:'m-task',expenses:'m-expense',memories:'m-memory',birthdays:'m-birthday',recurring:'m-recurring'};
+      const FAB_MAP = {tasks:'m-task',memories:'m-memory',birthdays:'m-birthday'};
+      if (isAdultUser) {
+        FAB_MAP.calendar = 'm-event';
+        FAB_MAP.expenses = 'm-expense';
+        FAB_MAP.recurring = 'm-recurring';
+      }
       const fab = document.getElementById('fab');
       if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
       
@@ -723,10 +719,11 @@
       const el = document.getElementById('more-grid');
       if (!el) return;
       const tiles = [
-        {id:'budgets',icon:'📊',label:'Budgets'},{id:'memories',icon:'💛',label:'Memories'},
+        ...(isAdultUser ? [{id:'budgets',icon:'📊',label:'Budgets'}] : []),
+        {id:'memories',icon:'💛',label:'Memories'},
         {id:'birthdays',icon:'🎂',label:'Birthdays'},
-        ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'}] : []),
-        {id:'recurring',icon:'🔄',label:'Recurring'},{id:'schedules',icon:'⛵',label:'Schedules'},
+        ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'},{id:'recurring',icon:'🔄',label:'Recurring'}] : []),
+        {id:'schedules',icon:'⛵',label:'Schedules'},
         {id:'travel',icon:'✈️',label:'Travel'}
       ];
       el.innerHTML = tiles.map(t =>
@@ -736,7 +733,6 @@
     function render(id) {
       switch(id) {
         case 'home': renderHome(); break;
-        case 'chat': renderChat(); break;
         case 'calendar': renderCal(); break;
         case 'tasks': renderTasks(); break;
         case 'expenses': renderExpenses(); break;
@@ -784,6 +780,7 @@
     function openM(id) {
       document.getElementById(id).classList.add('open');
       if(id === 'm-event'){ const el=document.getElementById('ev-date'); if(el) el.value=selectedCalDayStr||todayStr(); chips('ev-chips', FAM, 'Everyone', 'ev-tag'); }
+      if(id === 'm-task') chips('tk-chips', isAdultUser ? FAM : [user], user, 'tk-a');
     }
     function closeM(id){ document.getElementById(id).classList.remove('open'); }
 
@@ -826,39 +823,57 @@
         if (todayWrapEl) todayWrapEl.style.display = '';
       }
 
-      const exp = data.expenses || {};
-      const totalSpent = exp.total || 0;
-      const tasksOpen = (data.todos||[]).length;
-      const eventsToday = (data.events||[]).filter(e => e.dateRaw === todayStr()).length;
+      const tod = todayStr();
+      const tomDate = new Date();
+      tomDate.setDate(tomDate.getDate() + 1);
+      const tom = localDateStr(tomDate);
+      const events = data.events || [];
+      const todos = data.todos || [];
+      const evsToday = events.filter(e => e.dateRaw === tod);
+      const evsTomorrow = events.filter(e => e.dateRaw === tom);
+      const needsYou = todos.filter(t => {
+        if (!t || String(t.status).toLowerCase() === 'done') return false;
+        if (t.status === 'Needs help') return true;
+        if (t.dueRaw && t.dueRaw < tod) return true;
+        if (t.assignee === 'Meaghan') return true;
+        if (t.assignee === user) return true;
+        return false;
+      });
       document.getElementById('dash-summary').innerHTML = `
-        <div class="dash-stat"><span class="num">$${totalSpent.toFixed(0)}</span><span class="lbl">Spent This Month</span></div>
-        <div class="dash-stat"><span class="num">${tasksOpen}</span><span class="lbl">Open Tasks</span></div>
-        <div class="dash-stat"><span class="num">${eventsToday}</span><span class="lbl">Today's Events</span></div>
+        <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Need You</span></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsToday.length}</span><span class="lbl">Today</span></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsTomorrow.length}</span><span class="lbl">Tomorrow</span></div>
       `;
+      const memberOrder = ['Mikaela', 'Meaghan', user, user === 'Marcus' ? 'Eleanor' : 'Marcus']
+        .filter((m, i, arr) => m && m !== 'Everyone' && arr.indexOf(m) === i);
       let membersHtml = '';
-      FAM.forEach(m => {
-        if(m === 'Everyone') return;
-        const tasks = (data.todos||[]).filter(t => t.assignee === m && t.dueRaw && t.dueRaw >= todayStr());
-        const events = (data.events||[]).filter(e => e.tags.includes(m) && e.dateRaw >= todayStr()).slice(0,3);
+      memberOrder.forEach(m => {
+        const tasks = todos.filter(t => t.assignee === m);
+        const memberEvents = events.filter(e => (e.tags || []).includes(m) && e.dateRaw >= tod).slice(0, 3);
+        const together = m === 'Meaghan' ? ' · with you' : m === 'Mikaela' ? ' · self-serve' : '';
         membersHtml += `
-          <div class="dash-member" onclick="goToMember('${m}')" title="Click to view tasks and calendar for ${m}">
-            <span class="emoji">${m==='Marcus'?'👨':m==='Eleanor'?'👩':'👧'}</span>
-            <div class="info"><div class="name">${m}</div><div class="detail">${tasks.length} tasks · ${events.length} upcoming events</div></div>
+          <div class="dash-member" onclick="goToMember('${m}')" title="Click to view tasks for ${m}">
+            <span class="emoji">${m==='Marcus'?'👨':m==='Eleanor'?'👩':m==='Mikaela'?'⛵':'🩰'}</span>
+            <div class="info"><div class="name">${m}</div><div class="detail">${tasks.length} open tasks · ${memberEvents.length} upcoming${together}</div></div>
             <span class="count">${tasks.length}</span>
           </div>
         `;
       });
-      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Member Overview (click for details)</div>${membersHtml}`;
-      const tod = todayStr();
-      const evs = (data.events||[]).filter(e => e.dateRaw === tod);
-      const tks = (data.todos||[]).filter(t => t.dueRaw && t.dueRaw <= tod);
+      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Family logistics (click for tasks)</div>${membersHtml}`;
+      const tksToday = todos.filter(t => t.dueRaw && t.dueRaw <= tod);
       document.getElementById('today-wrap').innerHTML = `
         <div class="card">
           <div class="card-hdr"><span class="card-title">Today at a Glance</span></div>
           <div class="card-body">
-            ${!evs.length && !tks.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
-            ${evs.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}</div></div></div>`).join('')}
-            ${tks.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">⚠️</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">Due today · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
+            ${!evsToday.length && !tksToday.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
+            ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
+            ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '✅'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><span class="card-title">Tomorrow</span><button class="btn btn-sm btn-s" onclick="goTo('calendar')">Week</button></div>
+          <div class="card-body">
+            ${!evsTomorrow.length ? '<div class="empty">Nothing on the calendar tomorrow</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
           </div>
         </div>
       `;
@@ -2575,127 +2590,6 @@
       });
     }
 
-    // Show notification for new messages (when tab is in background but still open)
-    function showChatNotification(message) {
-      if (!notificationPermissionGranted) return;
-      if (!document.hidden) return;
-      const title = '💬 New message from ' + (message.user || 'Someone');
-      const body = message.message || '📷 Image';
-      const opts = {
-        body,
-        icon: 'favicon.png',
-        tag: 'familylog-chat',
-        data: { screen: 'chat' }
-      };
-      // Prefer SW so notificationclick opens Chat (same path as FCM)
-      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification(title, opts);
-        }).catch(() => {
-          try {
-            const notif = new Notification(title, opts);
-            notif.onclick = () => {
-              window.focus();
-              handleNotificationNavigation('chat');
-              notif.close();
-            };
-          } catch (e) { console.warn('Notification error:', e); }
-        });
-        return;
-      }
-      try {
-        const notif = new Notification(title, opts);
-        notif.onclick = () => {
-          window.focus();
-          handleNotificationNavigation('chat');
-          notif.close();
-        };
-      } catch (e) {
-        console.warn('Notification error:', e);
-      }
-    }
-
-    // ══ CHAT (Firestore) ══
-    function renderChat() {
-      const container = document.getElementById('chat-msg-container');
-      if (!container) return;
-      
-      const messages = data.chat || [];
-      if (messages.length === 0) {
-        container.innerHTML = '<div class="empty"><div class="ei">💬</div>Start the conversation! Send a message below.</div>';
-        return;
-      }
-      
-      container.innerHTML = messages.map(m => {
-        const isMe = m.user === user;
-        const timeStr = m.timestamp ? (m.timestamp instanceof Date ? m.timestamp.toLocaleTimeString('en-SG', {hour:'2-digit', minute:'2-digit'}) : '') : '';
-        const nameLabel = isMe ? '' : `<div class="chat-sender-name badge ${getMemberBadgeClass(m.user)}" style="margin-bottom:4px;font-size:9px;padding:1px 6px;">${escapeHtml(m.user)}</div>`;
-        const imageHtml = mediaImgHtml(m.imageUrl);
-        const bubbleClass = isMe ? 'me' : 'other';
-        const opacityStyle = m.isOptimistic ? 'style="opacity: 0.65;"' : '';
-        
-        return `
-          <div class="chat-bubble-row ${bubbleClass}" ${opacityStyle}>
-            <div class="chat-bubble">
-              ${nameLabel}
-              ${imageHtml}
-              ${m.message ? `<div class="chat-bubble-text">${escapeHtml(m.message)}</div>` : ''}
-              <div class="chat-bubble-time">${escapeHtml(timeStr)}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      container.scrollTop = container.scrollHeight;
-    }
-
-    // ─── FIRESTORE CHAT LISTENER ──────────────────────────────
-    function startChatListener() {
-      if (chatUnsubscribe) return;
-      if (!db) {
-        toast('Firestore not initialized', true);
-        return;
-      }
-      chatUnsubscribe = db.collection('chat')
-        .orderBy('timestamp', 'asc')
-        .limitToLast(100)
-        .onSnapshot((snapshot) => {
-          const messages = [];
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            messages.push({
-              id: doc.id,
-              user: data.user || 'Unknown',
-              senderEmail: data.senderEmail || '',
-              message: data.message || '',
-              imageUrl: data.imageUrl || '',
-              timestamp: data.timestamp?.toDate?.() || new Date(),
-            });
-          });
-          // Check for new messages (last one)
-          const oldLen = (data.chat || []).length;
-          data.chat = messages;
-          if (section === 'chat') renderChat();
-          // Notification for new message
-          if (messages.length > oldLen && messages.length > 0) {
-            const newMsg = messages[messages.length - 1];
-            if (newMsg.user !== user) {
-              showChatNotification(newMsg);
-            }
-          }
-        }, (error) => {
-          console.error('Chat listener error:', error);
-          toast('Chat connection error', true);
-        });
-    }
-
-    function stopChatListener() {
-      if (chatUnsubscribe) {
-        chatUnsubscribe();
-        chatUnsubscribe = null;
-      }
-    }
-
     // ─── FIRESTORE MEMORIES LISTENER ──────────────────────────
     function startMemoriesListener() {
       if (memoriesUnsubscribe) return;
@@ -2747,48 +2641,6 @@
       }
     }
 
-    // ─── SEND CHAT MESSAGE (Firestore + Storage) ──────────────
-    async function sendChatMessage() {
-      const txtInput = document.getElementById('chat-input-text');
-      const text = txtInput?.value?.trim() || '';
-      if (!text && !chatImageBase64) return;
-      if (txtInput) txtInput.value = '';
-
-      let imageUrl = '';
-
-      // Upload image to Firebase Storage (path: chat/{email}/…) — not Drive
-      if (chatImageBase64) {
-        try {
-          const authUser = firebase.auth().currentUser;
-          const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
-          const blob = dataURItoBlob(chatImageBase64);
-          const ref = storage.ref(`chat/${emailKey}/${Date.now()}.jpg`);
-          const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
-          imageUrl = await snapshot.ref.getDownloadURL();
-        } catch (err) {
-          toast('Image upload failed: ' + err.message, true);
-          return;
-        } finally {
-          clearChatFilePreview();
-        }
-      }
-
-      // Write to Firestore (include senderEmail so FCM can exclude the sender)
-      try {
-        const authUser = firebase.auth().currentUser;
-        await db.collection('chat').add({
-          user: user || 'Unknown',
-          senderEmail: (authUser && authUser.email) || currentUserEmail || '',
-          message: text,
-          imageUrl: imageUrl,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-        // Listener updates UI automatically
-      } catch (err) {
-        toast('Failed to send message: ' + err.message, true);
-      }
-    }
-
     // Helper: convert dataURI to Blob
     function dataURItoBlob(dataURI) {
       const byteString = atob(dataURI.split(',')[1]);
@@ -2797,65 +2649,6 @@
       const ia = new Uint8Array(ab);
       for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
       return new Blob([ab], { type: mimeString });
-    }
-
-    // ─── CHAT FILE HANDLING ────────────────────────────────────
-    function handleChatFileSelect(input) {
-      const file = input.files[0];
-      if (!file) return;
-      
-      if (!file.type.startsWith('image/')) {
-        toast('Please select an image file');
-        return;
-      }
-      
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const MAX_WIDTH = 1024;
-          const MAX_HEIGHT = 1024;
-          
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height *= MAX_WIDTH / width;
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width *= MAX_HEIGHT / height;
-              height = MAX_HEIGHT;
-            }
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          chatImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
-          
-          const previewArea = document.getElementById('chat-img-preview');
-          const thumbnail = document.getElementById('chat-preview-thumbnail');
-          if (previewArea && thumbnail) {
-            thumbnail.src = chatImageBase64;
-            previewArea.style.display = 'flex';
-          }
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function clearChatFilePreview() {
-      chatImageBase64 = null;
-      const fileInput = document.getElementById('chat-file-input');
-      if (fileInput) fileInput.value = '';
-      const previewArea = document.getElementById('chat-img-preview');
-      if (previewArea) previewArea.style.display = 'none';
     }
 
     function handleMemoryFileSelect(input) {
@@ -2969,4 +2762,4 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('✅ Wong Family app with Firestore chat and FCM push notifications loaded successfully.');
+    console.log('✅ Wong Family app loaded.');

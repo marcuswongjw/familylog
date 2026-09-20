@@ -1,6 +1,6 @@
 # 🏡 Wong Family Log
 
-A private family hub PWA: budgets & expenses, calendar/tasks, travel map, chat, memories, and a parents-only **Us** sanctuary.
+A private family hub PWA: school + daily/weekly logistics, budgets & expenses, calendar/tasks, travel map, memories, and a parents-only **Us** sanctuary.
 
 **Live app:** [GitHub Pages](https://marcuswongjw.github.io/familylog/)  
 **Repo:** [marcuswongjw/familylog](https://github.com/marcuswongjw/familylog)
@@ -17,31 +17,29 @@ flowchart LR
   GAS --> Sheets[(Google Sheets)]
   GAS --> GCal[Google Calendar]
   GAS --> Gmail[Gmail bank alerts]
-  PWA -->|Auth / Chat / Memories / FCM| FB[Firebase]
+  PWA -->|Auth / Memories / FCM| FB[Firebase]
   FB --> FS[(Firestore)]
   FB --> ST[(Storage)]
-  FB --> CF[Cloud Function: chat push]
 ```
 
 | Layer | Tech | Role |
 |--------|------|------|
 | **Frontend** | `index.html`, `css/styles.css`, `js/app.js` | UI; routes each feature to the correct backend |
-| **Firebase** | Auth, Firestore, Storage, FCM | **Owns:** login, chat, memories, photos, push tokens |
+| **Firebase** | Auth, Firestore, Storage, FCM | **Owns:** login, memories, photos, push tokens |
 | **GAS + Sheets** | `Code.js` + spreadsheet | **Owns:** money, tasks, calendar, travel, Us/fertility logs; Gmail bank scan |
-| **Push** | `index.js` + `firebase-messaging-sw.js` | Chat notifications |
+| **Push** | `index.js` + `firebase-messaging-sw.js` | PWA cache + optional FCM |
 | **Hosting** | GitHub Pages | Static frontend |
 
-**Do not dual-write.** Chat and memories never go through Sheets. Expenses and Us data never go through Firestore.
+**Do not dual-write.** Memories never go through Sheets. Expenses and Us data never go through Firestore. Kids never receive money payloads.
 
 ---
 
 ## Features
 
 ### Family
-- **Home dashboard** — summary, today events/tasks, member overview  
-- **Chat** — Firestore realtime (with optional images) + FCM push  
-- **Calendar / Tasks / Schedules** — Google Calendar + Sheets todos  
-- **Expenses & budgets** — ledger, categories, gauges; Gmail bank-alert scanner  
+- **Home dashboard** — school copilot, today/tomorrow logistics, member overview  
+- **Calendar / Tasks / Schedules** — Google Calendar + Sheets todos (week view first)  
+- **Expenses & budgets** — ledger, categories, gauges; Gmail bank-alert scanner (parents only)  
 - **Travel map** — Leaflet pins by trip  
 - **Memories** — photos + notes (Firestore + Storage)  
 - **Birthdays / recurring expenses**
@@ -61,10 +59,10 @@ Kids’ accounts cannot open Us/Fertility (UI + server empty payloads / write de
 ARCHITECTURE.md         # Sheets vs Firebase ownership (read this first)
 index.html              # Shell markup + third-party CDN scripts
 css/styles.css          # All app styles
-js/app.js               # Client: Firebase chat/memories + GAS for Sheets data
+js/app.js               # Client: Firebase memories/auth + GAS for Sheets data
 Code.js                 # Apps Script: Sheets/Calendar/Gmail only (deploy separately)
 firebase-messaging-sw.js
-index.js                # Cloud Function (chat → FCM)
+index.js                # Cloud Function (legacy chat push; unused)
 firestore.rules
 storage.rules
 manifest.json
@@ -72,7 +70,7 @@ FIREBASE_SETUP.md
 ```
 
 After editing frontend files, commit and push to `main` for GitHub Pages.  
-After editing `Code.js`, **Deploy → Manage deployments → New version** in Apps Script.
+After editing `Code.js`, run `./scripts/deploy-gas.sh` (clasp push + existing web app deployment). One-time setup: `npx @google/clasp@2.5.0 login` and a `.clasp.json` with the Apps Script project ID.
 
 ---
 
@@ -82,7 +80,7 @@ After editing `Code.js`, **Deploy → Manage deployments → New version** in Ap
 2. **GAS API** — every `POST` must include a Firebase `idToken`; server verifies via Identity Toolkit and checks **ALLOWED_EMAILS**.  
 3. **Identity** — write actions use email→name mapping server-side; client `user` field is not trusted.  
 4. **Adult-only notes** — `add_intimacy`, Us, fertility, bucket list enforced in `ADULT_ONLY_NOTES`.  
-5. **Firestore / Storage rules** — family email allowlist; uploads under `chat/{email}/` and `memories/{email}/`.  
+5. **Firestore / Storage rules** — family email allowlist; uploads under `memories/{email}/`.  
 6. **Expense approval emails** — signed links (`id` + `exp` + HMAC); set Script Property `APPROVAL_SECRET` to a long random string.
 
 ---

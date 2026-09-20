@@ -1,6 +1,6 @@
-// PWA cache + FCM background handler + notification click → open Chat
+// PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wong-family-v10';
+const CACHE_NAME = 'wong-family-v11';
 const ASSETS = [
   './',
   './index.html',
@@ -70,8 +70,8 @@ self.addEventListener('fetch', event => {
 /**
  * Build a deep-link URL. Query param survives iOS PWA quirks better than hash alone.
  */
-function chatDeepLink(screen) {
-  const s = screen || 'chat';
+function appDeepLink(screen) {
+  const s = screen || 'home';
   const scope = self.registration.scope;
   try {
     const u = new URL(scope);
@@ -87,9 +87,9 @@ function chatDeepLink(screen) {
  * Open (or focus) the app and navigate to the requested screen.
  */
 function openAppFromNotification(data) {
-  const screen = (data && (data.screen || data.open)) || 'chat';
+  const screen = (data && (data.screen || data.open)) || 'home';
   const scope = self.registration.scope;
-  const targetUrl = (data && data.url) || chatDeepLink(screen);
+  const targetUrl = (data && data.url) || appDeepLink(screen);
   const msg = { type: 'NOTIFICATION_CLICK', screen: screen };
 
   return clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
@@ -145,16 +145,16 @@ messaging.onBackgroundMessage((payload) => {
   const d = payload.data || {};
   const title = n.title || d.title || 'New Family Log Update';
   const body = n.body || d.body || '';
-  const screen = d.screen || 'chat';
+  const screen = d.screen || 'home';
   const scope = self.registration.scope;
-  const url = d.url || chatDeepLink(screen);
+  const url = d.url || appDeepLink(screen);
 
   const options = {
     body: body,
     icon: scope + 'favicon.png',
     badge: scope + 'favicon.png',
     data: Object.assign({ screen: screen, url: url, open: screen }, d),
-    tag: d.tag || 'familylog-chat',
+    tag: d.tag || 'familylog',
     renotify: true,
     requireInteraction: false
   };

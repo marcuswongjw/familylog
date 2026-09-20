@@ -242,6 +242,32 @@ function renderSchoolHome() {
       </div>
     </div>` : '';
 
+  // Meaghan's open work is always on the parent radar; Mikaela stays self-serve unless she asks or is overdue.
+  const meaghanTogether = isAdultUser ? tasks.filter(t =>
+    t.assignee === 'Meaghan' && t.status !== 'Done' && t.status !== 'Needs help' && (!t.dueRaw || t.dueRaw <= day)
+  ) : [];
+  const meaghanBannerHtml = meaghanTogether.length ? `
+    <div class="school-help-banner">
+      <div class="school-help-banner-hdr">
+        <span style="font-size:18px;">🩰</span>
+        <div>
+          <strong>Meaghan’s day — together with you</strong>
+          <p style="margin:2px 0 0;font-size:12px;color:#8d5800;">${meaghanTogether.length} item${meaghanTogether.length > 1 ? 's' : ''} still open</p>
+        </div>
+      </div>
+      <div class="school-help-banner-list">
+        ${meaghanTogether.map(t => `
+          <div class="school-help-banner-item">
+            <div class="school-help-banner-info">
+              <div style="font-weight:600;">${escapeHtml(t.task)}</div>
+              ${t.dueRaw ? `<small style="color:#a06a12;">Due ${fmtDate(t.dueRaw)}</small>` : ''}
+            </div>
+            <button class="btn btn-s" data-school-done="${escapeHtml(t.id)}" style="background:#fff;border-color:#dec486;color:#77500c;">Mark Done</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : '';
+
   hub.innerHTML = `
     ${isAdultUser ? `
       <div class="school-intro">
@@ -262,12 +288,13 @@ function renderSchoolHome() {
             </button>`).join('')}
         </div>` : ''}
       ${helpBannerHtml}
+      ${meaghanBannerHtml}
     ` : ''}
 
     <div class="school-day-heading">
       <div>
         <h2>${isAdultUser ? 'The children’s day' : (user === 'Mikaela' ? '⛵ Mikaela’s Day' : '🩰 Meaghan’s Day')}</h2>
-        <span class="school-day-sub">${dayLabel} · ${weekday}</span>
+        <span class="school-day-sub">${dayLabel} · ${weekday}${!isAdultUser && user === 'Meaghan' ? ' · together with Mom & Dad' : !isAdultUser && user === 'Mikaela' ? ' · you’ve got this' : ''}</span>
       </div>
       <div class="school-day-pills">
         <button type="button" class="school-pill ${isToday ? 'active' : ''}" onclick="setSchoolDay(0)">Today</button>
@@ -333,8 +360,10 @@ function renderSchoolHome() {
 
     ${isAdultUser ? `
       <div class="school-parent-actions">
-        <h3>For the grown-ups</h3>
-        ${tasks.filter(t => t.sourceId && ['Marcus', 'Eleanor'].includes(t.assignee) && t.status !== 'Done').map(t => schoolTaskCard(t, day)).join('') || '<p class="school-muted">No school actions waiting for a parent.</p>'}
+        <h3>${escapeHtml(user)} — your school actions</h3>
+        ${tasks.filter(t => t.sourceId && ['Marcus', 'Eleanor'].includes(t.assignee) && t.status !== 'Done')
+          .sort((a, b) => (a.assignee === user ? 0 : a.assignee === 'Marcus' ? 1 : 2) - (b.assignee === user ? 0 : b.assignee === 'Marcus' ? 1 : 2))
+          .map(t => schoolTaskCard(t, day)).join('') || '<p class="school-muted">No school actions waiting for a parent.</p>'}
       </div>
       ${plans.some(p => p.status === 'published') ? `
         <details class="school-inbox">

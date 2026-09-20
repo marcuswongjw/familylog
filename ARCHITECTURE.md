@@ -55,14 +55,12 @@ flowchart TB
 | Data | Where | Why |
 |------|--------|-----|
 | Login | Auth | Family accounts, PIN passwords |
-| Chat messages | Firestore `chat/` | Realtime, multi-device |
-| Chat / memory images | Storage `chat/{email}/`, `memories/{email}/` | Large blobs; not Sheets |
 | Memories metadata | Firestore `memories/` | Realtime album; images already in Storage |
+| Memory images | Storage `memories/{email}/` | Large blobs; not Sheets |
 | FCM tokens | Firestore `users/{email}` | Push targeting |
-| Chat push | Cloud Function `index.js` | Triggered by new chat docs |
 
 **Client:** write/read via Firebase SDK + security rules.  
-**GAS:** must **not** create chat or memories. Reject `add_chat_message` / `add_memory`. `get_all` must **not** return chat or memories.
+**GAS:** must **not** create memories. Reject `add_chat_message` / `add_memory`. `get_all` must **not** return chat or memories. Chat has been removed from the app.
 
 ### Google Sheets + Apps Script (sole owner)
 
@@ -85,7 +83,7 @@ flowchart TB
 
 | Feature | Was | Now |
 |---------|-----|-----|
-| Chat | Historically Sheets | **Firestore only** |
+| Chat | Historically Sheets, then Firestore | **Removed from the app** |
 | Memories | Sheets + Drive, then dual Firestore | **Firestore + Storage only** |
 | Expenses / Us / fertility | Sheets | **Sheets only** (no Firestore collection) |
 
