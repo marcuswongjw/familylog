@@ -118,7 +118,7 @@ async function extractSchool(manual) {
       title: extracted.title || '', child: extracted.child || '',
       sourceText: text || extracted.sourceText || '', sourcePath, warnings: extracted.warnings || [],
       event: { enabled: !!extracted.event?.title, title: extracted.event?.title || '', date: extracted.event?.date || '', time: extracted.event?.time || '', endTime: extracted.event?.endTime || '', location: extracted.event?.location || '', evidence: extracted.event?.evidence || '' },
-      tasks: (extracted.tasks || []).map(t => ({ ...t, assignee: ['consent', 'payment'].includes(t.kind) ? user : extracted.child || '' })),
+      tasks: (extracted.tasks || []).map(t => ({ ...t, assignee: extracted.child || '' })),
       status: 'draft', revision: 0
     };
     document.getElementById('school-capture').hidden = true;
@@ -155,7 +155,7 @@ function renderSchoolReview() {
             ${p.event.evidence ? `<blockquote>${escapeHtml(p.event.evidence)}</blockquote>` : ''}
           </div>
           <h3>Who needs to do what?</h3>
-          <p class="school-muted">Consent and payment tasks belong to a parent. Packing dates are yours to choose.</p>
+          <p class="school-muted">Task owners default to the child. You can reassign any task to a parent if needed.</p>
           <div id="school-task-editor">${p.tasks.map((t, i) => `
             <div class="school-edit-task">
               ${schoolField('Task ' + (i + 1), 'school-task-title-' + i, t.title)}
@@ -174,6 +174,19 @@ function renderSchoolReview() {
       </div>
     </div>`;
   document.getElementById('school-source-button')?.addEventListener('click', schoolShowSource);
+  document.getElementById('school-child')?.addEventListener('change', (e) => {
+    const prevChild = p.child;
+    const newChild = e.target.value;
+    schoolCollect();
+    p.child = newChild;
+    p.tasks.forEach((t, i) => {
+      if (!t.assignee || t.assignee === prevChild) {
+        t.assignee = newChild;
+        const ownerEl = document.getElementById('school-task-owner-' + i);
+        if (ownerEl) ownerEl.value = newChild;
+      }
+    });
+  });
   document.getElementById('school-add-task')?.addEventListener('click', () => {
     schoolCollect(); if (p.tasks.length >= 30) return schoolMessage('Use up to 30 tasks per message.', true);
     p.tasks.push({ title: '', kind: 'other', assignee: p.child || '', due: '', evidence: '' }); renderSchoolReview();

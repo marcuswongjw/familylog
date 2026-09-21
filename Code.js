@@ -2859,7 +2859,6 @@ function schoolValidatePlan_(raw, email) {
     var kind = t.kind;
     if (['packing', 'homework', 'consent', 'payment', 'other'].indexOf(kind) === -1) throw new Error('Invalid task type.');
     if (FAMILY_MEMBERS.indexOf(t.assignee) === -1 || t.assignee === 'Everyone') throw new Error('Choose a task owner.');
-    if ((kind === 'consent' || kind === 'payment') && ['Marcus', 'Eleanor'].indexOf(t.assignee) === -1) throw new Error('Consent and payments need a parent.');
     p.tasks.push({ id: p.id + '_' + i, title: schoolText_(t.title, 200, true), kind: kind, assignee: t.assignee,
       due: schoolDate_(t.due || '', true), evidence: schoolText_(t.evidence || '', 1500, false) });
   });

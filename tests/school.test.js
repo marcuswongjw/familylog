@@ -66,10 +66,10 @@ test('tasks-only publication and undated task preserve unknown dates', () => {
   const saved = save(h, p); assert.equal(publish(h, saved).state, 'published');
   assert.equal(h.calendar.size, 0); assert.equal(h.sheets.ToDo.rows[1][3], '');
 });
-test('consent and payment cannot be assigned to a child', () => {
+test('consent and payment can be assigned to the plan child', () => {
   for (const kind of ['consent', 'payment']) {
-    const h = harness(), p = plan(); p.tasks[0].kind = kind;
-    assert.equal(save(h, p).status, 'error');
+    const h = harness(), p = plan(); p.tasks[0].kind = kind; p.tasks[0].assignee = 'Mikaela';
+    assert.equal(save(h, p).status, 'ok');
   }
 });
 test('children cannot save or publish announcements or create calendar events', () => {
