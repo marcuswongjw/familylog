@@ -46,19 +46,58 @@ function closeSchoolCapture() {
   if (schoolDraft && schoolDraft.status === 'draft' && !confirm('Close this review? Unsaved edits will be lost.')) return;
   schoolReset(); schoolReturnFocus?.focus();
 }
+function schoolOptimizeImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('Choose an image screenshot.'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image file.'));
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not parse image.'));
+      img.onload = () => {
+        const MAX_DIM = 1600;
+        let width = img.width, height = img.height;
+        if (width > height) {
+          if (width > MAX_DIM) { height = Math.round((height * MAX_DIM) / width); width = MAX_DIM; }
+        } else {
+          if (height > MAX_DIM) { width = Math.round((width * MAX_DIM) / height); height = MAX_DIM; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Could not compress image.'));
+          resolve(blob);
+        }, 'image/jpeg', 0.85);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 async function schoolUpload() {
   const file = document.getElementById('school-file').files[0];
   if (!file) return '';
-  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size >= 5 * 1024 * 1024) throw new Error('Choose a PNG, JPEG or WebP screenshot under 5 MB.');
-  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('');
-  const path = 'school/' + firebase.auth().currentUser.email.toLowerCase() + '/' + hash;
-  const ref = storage.ref(path);
-  try { await ref.getMetadata(); } catch (err) {
-    if (err.code !== 'storage/object-not-found') throw err;
-    await ref.put(file, { contentType: file.type });
+  schoolMessage('Optimizing screenshot…');
+  const blob = await schoolOptimizeImage(file);
+  if (blob.size >= 5 * 1024 * 1024) throw new Error('Screenshot too large even after optimization.');
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const email = (firebase.auth().currentUser?.email || '').toLowerCase();
+  if (!email) throw new Error('Sign in as a parent to upload school messages.');
+  const path = 'school/' + email + '/' + hash;
+  const storageInstance = window.storage || firebase.storage();
+  const ref = storageInstance.ref(path);
+  schoolMessage('Uploading screenshot…');
+  try {
+    await ref.getMetadata();
+  } catch (err) {
+    const uploadPromise = ref.put(blob, { contentType: 'image/jpeg' });
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timed out. Check connection or enter manually.')), 25000));
+    await Promise.race([uploadPromise, timeoutPromise]);
   }
   if (schoolImageUrl.startsWith('blob:')) URL.revokeObjectURL(schoolImageUrl);
-  schoolImageUrl = URL.createObjectURL(file);
+  schoolImageUrl = URL.createObjectURL(blob);
   return path;
 }
 async function extractSchool(manual) {
@@ -71,7 +110,10 @@ async function extractSchool(manual) {
     if (!text && !document.getElementById('school-file').files.length) throw new Error('Paste a message or choose a screenshot first.');
     const sourcePath = await schoolUpload();
     let extracted = { title: '', child: '', event: {}, tasks: [], warnings: [] };
-    if (!manual) extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 120000 })({ text, imagePath: sourcePath })).data;
+    if (!manual) {
+      schoolMessage('Reading announcement with Gemini AI…');
+      extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
+    }
     schoolDraft = {
       title: extracted.title || '', child: extracted.child || '',
       sourceText: text || extracted.sourceText || '', sourcePath, warnings: extracted.warnings || [],

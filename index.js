@@ -1,6 +1,9 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-admin.initializeApp();
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'familylog-86db6.firebasestorage.app';
+admin.initializeApp({
+  storageBucket: STORAGE_BUCKET
+});
 
 // Public PWA URL (GitHub Pages). Used as the notification click target.
 const APP_URL = process.env.FAMILYLOG_APP_URL || 'https://marcuswongjw.github.io/familylog/';
@@ -119,7 +122,7 @@ exports.sendChatNotification = functions.firestore
 const { buildRequest, parseResponse } = require('./school-extraction');
 const SCHOOL_PARENTS = ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'];
 exports.extractSchoolAnnouncement = functions.runWith({
-  secrets: ['GEMINI_API_KEY'], timeoutSeconds: 120, memory: '512MB'
+  secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'
 }).https.onCall(async (data, context) => {
   const email = String(context.auth?.token?.email || '').toLowerCase();
   if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Only parents can extract school messages.');
@@ -144,7 +147,7 @@ exports.extractSchoolAnnouncement = functions.runWith({
     let imageMime = '';
     let imageBase64 = '';
     if (path) {
-      const file = admin.storage().bucket().file(path);
+      const file = admin.storage().bucket(STORAGE_BUCKET).file(path);
       const [metadata] = await file.getMetadata();
       if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG or WebP under 5 MB.');
       const [bytes] = await file.download();
@@ -157,12 +160,17 @@ exports.extractSchoolAnnouncement = functions.runWith({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildRequest(text, imageMime, imageBase64, model)),
-      signal: AbortSignal.timeout(90000)
+      signal: AbortSignal.timeout(35000)
     });
-    if (!response.ok) throw new Error('Extraction service unavailable. Try again or enter the plan manually.');
+    if (!response.ok) {
+      const errSnippet = await response.text().catch(() => '');
+      console.error('Gemini API HTTP error:', response.status, response.statusText, errSnippet.slice(0, 200));
+      throw new Error('Extraction service error (' + response.status + '). Try again or enter the plan manually.');
+    }
     return parseResponse(await response.json());
   } catch (err) {
-    // Do not log source messages, screenshots, tokens, or upstream response bodies.
+    // Diagnostic log without leaking private announcement text, images or tokens.
+    console.error('extractSchoolAnnouncement failed:', err.name || 'Error', err.message || String(err));
     throw new functions.https.HttpsError('unavailable', 'Could not read this message. Try a clearer screenshot or enter the plan manually.');
   }
 });
@@ -173,7 +181,7 @@ exports.getSchoolSourceImage = functions.runWith({ memory: '256MB' }).https.onCa
   if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Parents only.');
   const path = typeof data?.path === 'string' ? data.path : '';
   if (!/^school\/(marcuswongjw@gmail\.com|eleanor\.jiamin@gmail\.com)\/[a-f0-9]{64}$/.test(path)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image path.');
-  const file = admin.storage().bucket().file(path);
+  const file = admin.storage().bucket(STORAGE_BUCKET).file(path);
   const [meta] = await file.getMetadata();
   if (Number(meta.size) >= 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(meta.contentType)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image.');
   const [bytes] = await file.download();
