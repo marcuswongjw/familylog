@@ -163,16 +163,25 @@ exports.extractSchoolAnnouncement = functions.runWith({
       imageMime = metadata.contentType;
       imageBase64 = bytes.toString('base64');
     }
-    const model = process.env.SCHOOL_AI_MODEL || 'gemini-3.6-flash';
-    const endpoint = apiKey.startsWith('AQ.')
-      ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(buildRequest(text, imageMime, imageBase64, model)),
-      signal: AbortSignal.timeout(35000)
-    });
+    const modelsToTry = [
+      process.env.SCHOOL_AI_MODEL || 'gemini-2.5-flash',
+      'gemini-3.5-flash'
+    ];
+    let response;
+    for (const model of modelsToTry) {
+      const endpoint = apiKey.startsWith('AQ.')
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(buildRequest(text, imageMime, imageBase64, model)),
+        signal: AbortSignal.timeout(35000)
+      });
+      if (response.ok) break;
+      if (response.status !== 503 && response.status !== 429) break;
+      console.warn(`Gemini model ${model} returned HTTP ${response.status}, trying fallback model...`);
+    }
     if (!response.ok) {
       const errSnippet = await response.text().catch(() => '');
       console.error('Gemini API HTTP error:', response.status, response.statusText, errSnippet.slice(0, 200));
