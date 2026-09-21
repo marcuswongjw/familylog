@@ -357,11 +357,15 @@ function sendNightBeforeDigest(now) {
       var explicitTag = '';
       try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
       if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
+      var title = ev.getTitle();
+      if (title.indexOf('EYE') !== -1) title += ' (End Year Exams)';
       tomorrowEvents.push({
-        title: ev.getTitle(),
+        id: ev.getId(),
+        title: title,
         time: timeStr,
         location: ev.getLocation() || '',
-        member: explicitTag
+        member: explicitTag,
+        dateRaw: tomorrowStr
       });
     });
   } catch (e) { console.log('Night digest calendar error: ' + e); }
@@ -376,6 +380,7 @@ function sendNightBeforeDigest(now) {
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try { syncCalendarEventTasks_(ss, tomorrowEvents); } catch (se) { console.log('syncCalendarEventTasks_ in nightly error: ' + se); }
   var tdSheet = ss.getSheetByName('ToDo');
   var openTasks = [];
   if (tdSheet) {
@@ -1029,6 +1034,34 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
+    // ── TODO: edit ──
+    if (noteLower === 'edit_todo') {
+      var taskId = toStr(data.todo_id);
+      var task = toStr(data.todo_task);
+      var assignee = toStr(data.todo_assignee) || 'Everyone';
+      var due = toStr(data.todo_due);
+      if (!taskId) return { status: 'error', message: 'Task ID required' };
+      if (!task) return { status: 'error', message: 'Task cannot be empty' };
+      if (!validateString(task, 200)) return { status: 'error', message: 'Task too long' };
+      if (due && !validateDate(due)) return { status: 'error', message: 'Invalid due date' };
+      if (FAMILY_MEMBERS.indexOf(assignee) === -1) return { status: 'error', message: 'Invalid assignee' };
+
+      var tdSheet = ensureTodoIds_(ss);
+      var rows = tdSheet.getDataRange().getValues();
+      var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[7] === taskId; });
+      if (rowIndex < 1) return { status: 'error', message: 'Task not found. Refresh the app before trying again.' };
+      var taskRow = rows[rowIndex];
+      var parent = isAdultEmail_(verifiedEmail);
+      if (!parent && (taskRow[2] !== user || assignee !== user)) {
+        return { status: 'error', message: 'You can only edit tasks assigned to yourself.' };
+      }
+      if (taskRow[5] === 'Deleted') return { status: 'error', message: 'This task was deleted.' };
+
+      var parsedDue = due ? parseEventDate(due, '') : '';
+      tdSheet.getRange(rowIndex + 1, 2, 1, 3).setValues([[schoolCell_(task), assignee, parsedDue]]);
+      return { status: 'ok' };
+    }
+
     // ── EXPENSE: add ──
     if (noteLower === 'add_expense') {
       var desc = toStr(data.ex_desc);
@@ -1409,6 +1442,99 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
+    // ── HABIT: log completion ──
+    if (noteLower === 'log_habit') {
+      var member = toStr(data.member) || user;
+      var habit = toStr(data.habit);
+      var habitId = toStr(data.habit_id);
+      var date = toStr(data.date);
+      var notes = toStr(data.notes);
+      var sheets = ensureHabitSheets_(ss);
+      if (!habit && habitId) {
+        var hRows = sheets.habits.getDataRange().getValues();
+        for (var hr = 1; hr < hRows.length; hr++) {
+          if (toStr(hRows[hr][0]) === habitId) {
+            habit = toStr(hRows[hr][2]);
+            if (!data.member) member = toStr(hRows[hr][1]);
+            break;
+          }
+        }
+      }
+      if (!habit) return { status: 'error', message: 'Habit name required' };
+      if (!isAdultEmail_(verifiedEmail) && member !== user) {
+        return { status: 'error', message: 'You can only log habits for yourself.' };
+      }
+      var tz = Session.getScriptTimeZone();
+      var dateStr = (date && validateDate(date)) ? date : Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+      var logId = Utilities.getUuid();
+      sheets.logs.appendRow([logId, habitId, member, habit, dateStr, notes, user, new Date()]);
+      console.log('✅ Habit logged: ' + habit + ' for ' + member);
+      return {
+        status: 'ok',
+        id: logId,
+        date: dateStr,
+        log: {
+          id: logId,
+          habitId: habitId,
+          member: member,
+          habit: habit,
+          date: dateStr,
+          notes: notes,
+          loggedBy: user
+        }
+      };
+    }
+
+    // ── HABIT: delete completion log ──
+    if (noteLower === 'delete_habit_log') {
+      var logId = toStr(data.id || data.log_id);
+      if (!logId) return { status: 'error', message: 'Log ID required' };
+      var sheets = ensureHabitSheets_(ss);
+      var rows = sheets.logs.getDataRange().getValues();
+      var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[0] === logId; });
+      if (rowIndex < 1) return { status: 'error', message: 'Log entry not found' };
+      var parent = isAdultEmail_(verifiedEmail);
+      if (!parent && rows[rowIndex][2] !== user && rows[rowIndex][6] !== user) {
+        return { status: 'error', message: 'You can only delete your own habit logs.' };
+      }
+      sheets.logs.deleteRow(rowIndex + 1);
+      console.log('✅ Habit log deleted: ' + logId);
+      return { status: 'ok' };
+    }
+
+    // ── HABIT: add definition ──
+    if (noteLower === 'add_habit') {
+      var member = toStr(data.member) || user;
+      var habit = toStr(data.habit);
+      var emoji = toStr(data.emoji) || '⭐';
+      if (!habit) return { status: 'error', message: 'Habit name required' };
+      if (!isAdultEmail_(verifiedEmail) && member !== user) {
+        return { status: 'error', message: 'You can only add habits for yourself.' };
+      }
+      var sheets = ensureHabitSheets_(ss);
+      var habitId = Utilities.getUuid();
+      sheets.habits.appendRow([habitId, member, habit, emoji, user, new Date()]);
+      console.log('✅ Habit added: ' + habit + ' for ' + member);
+      return { status: 'ok', id: habitId };
+    }
+
+    // ── HABIT: delete definition ──
+    if (noteLower === 'delete_habit') {
+      var habitId = toStr(data.id || data.habit_id);
+      if (!habitId) return { status: 'error', message: 'Habit ID required' };
+      var sheets = ensureHabitSheets_(ss);
+      var rows = sheets.habits.getDataRange().getValues();
+      var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[0] === habitId; });
+      if (rowIndex < 1) return { status: 'error', message: 'Habit not found' };
+      var parent = isAdultEmail_(verifiedEmail);
+      if (!parent) {
+        return { status: 'error', message: 'Only a parent can delete a habit.' };
+      }
+      sheets.habits.deleteRow(rowIndex + 1);
+      console.log('✅ Habit deleted: ' + habitId);
+      return { status: 'ok' };
+    }
+
     // ── Unknown note ──
     logSheet.appendRow([new Date(), user, 'General', note]);
     console.log('ℹ️ Unknown note type: ' + note);
@@ -1427,10 +1553,14 @@ function handleWriteInner_(data) {
 function getAllDashboardData(verifiedEmail) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
+  var events = getEvents();
+  try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
   var allTodos = getTodos(ss, verifiedEmail, true);
+  var habits = getHabits(ss);
+  var habitLogs = getHabitLogs(ss);
   // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
-    events:    getEvents(),
+    events:    events,
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
@@ -1445,6 +1575,8 @@ function getAllDashboardData(verifiedEmail) {
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
     intimacyLog:    adult ? getIntimacyLogData(ss) : [],
     bucketList:     adult ? getBucketList(ss) : [],
+    habits:         habits,
+    habitLogs:      habitLogs,
     expenseGroups:  adult ? EXPENSE_GROUPS : {},
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || '',
@@ -1453,7 +1585,7 @@ function getAllDashboardData(verifiedEmail) {
     memories: null,
     dataSources: {
       sheets: ['events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
-               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'],
+               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs'],
       firebase: ['memories', 'auth', 'fcmTokens']
     }
   };
@@ -1484,6 +1616,124 @@ function getBucketList(ss) {
   return result;
 }
 
+function ensureHabitSheets_(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var hSheet = ss.getSheetByName('Habits');
+  if (!hSheet) {
+    hSheet = ss.insertSheet('Habits');
+    hSheet.appendRow(['ID', 'Member', 'Habit', 'Emoji', 'CreatedBy', 'CreatedAt']);
+    hSheet.appendRow(['default_meaghan_violin', 'Meaghan', 'Violin practice', '🎻', 'System', new Date()]);
+  }
+  var hlSheet = ss.getSheetByName('HabitLogs');
+  if (!hlSheet) {
+    hlSheet = ss.insertSheet('HabitLogs');
+    hlSheet.appendRow(['ID', 'HabitID', 'Member', 'Habit', 'Date', 'Notes', 'LoggedBy', 'Timestamp']);
+  }
+  return { habits: hSheet, logs: hlSheet };
+}
+
+function getHabits(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ensureHabitSheets_(ss);
+  var rows = sheets.habits.getDataRange().getValues();
+  var result = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r[0] || !r[2]) continue;
+    result.push({
+      id: toStr(r[0]),
+      member: toStr(r[1]),
+      habit: toStr(r[2]),
+      emoji: toStr(r[3]) || '⭐',
+      createdBy: toStr(r[4])
+    });
+  }
+  return result;
+}
+
+function getHabitLogs(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ensureHabitSheets_(ss);
+  var rows = sheets.logs.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var result = [];
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 45);
+  var cutoffStr = Utilities.formatDate(cutoff, tz, 'yyyy-MM-dd');
+
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r[0] || !r[4]) continue;
+    var dStr = r[4] instanceof Date ? Utilities.formatDate(r[4], tz, 'yyyy-MM-dd') : toStr(r[4]);
+    if (dStr < cutoffStr) continue;
+    result.push({
+      id: toStr(r[0]),
+      habitId: toStr(r[1]),
+      member: toStr(r[2]),
+      habit: toStr(r[3]),
+      date: dStr,
+      notes: toStr(r[5]),
+      loggedBy: toStr(r[6]),
+      timestamp: r[7] instanceof Date ? Utilities.formatDate(r[7], tz, "yyyy-MM-dd'T'HH:mm:ss'Z'") : toStr(r[7])
+    });
+  }
+  return result.reverse();
+}
+
+function syncCalendarEventTasks_(ss, events) {
+  if (!events || !events.length) return;
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var tz = Session.getScriptTimeZone();
+  var now = new Date();
+  var todayStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  var oneWeekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  var oneWeekLaterStr = Utilities.formatDate(oneWeekLater, tz, 'yyyy-MM-dd');
+
+  var tdSheet = ensureTodoIds_(ss);
+  var tdVals = tdSheet.getDataRange().getValues();
+  var existingSourceMap = {};
+  for (var i = 1; i < tdVals.length; i++) {
+    var src = toStr(tdVals[i][8]); // Source ID column (index 8)
+    if (src) existingSourceMap[src] = { row: i + 1, due: tdVals[i][3] };
+  }
+
+  for (var j = 0; j < events.length; j++) {
+    var ev = events[j];
+    var title = (ev.title || '').toLowerCase();
+    if (title.indexOf('nat b training') === -1) continue;
+
+    var evDateStr = ev.dateRaw;
+    if (!evDateStr) continue;
+
+    // Must be within 1 week in advance: today <= evDateStr <= oneWeekLaterStr
+    if (evDateStr < todayStr || evDateStr > oneWeekLaterStr) continue;
+
+    // Previous day calculation
+    var evParts = evDateStr.split('-').map(Number);
+    var prevDate = new Date(Date.UTC(evParts[0], evParts[1] - 1, evParts[2] - 1));
+    var prevDateStr = prevDate.toISOString().slice(0, 10);
+    var parsedDue = parseEventDate(prevDateStr, '');
+
+    var evIdClean = toStr(ev.id).replace(/[^a-zA-Z0-9]/g, '_');
+    var srcBag = 'cal_natb_' + evIdClean + '_bag';
+    var srcBox = 'cal_natb_' + evIdClean + '_box';
+
+    var taskBag = 'Pack sailing bag (life jacket, watch, clothes, rashguard, towel)';
+    var taskBox = 'Pack sailing box (shoes, slippers)';
+
+    if (!existingSourceMap[srcBag]) {
+      var idBag = Utilities.getUuid();
+      tdSheet.appendRow([new Date(), schoolCell_(taskBag), 'Mikaela', parsedDue, 'System', 'Open', '', idBag, srcBag, 'packing', 'Mikaela', 'Calendar: ' + (ev.title || 'Nat B Training')]);
+      existingSourceMap[srcBag] = { row: tdSheet.getLastRow(), due: parsedDue };
+    }
+    if (!existingSourceMap[srcBox]) {
+      var idBox = Utilities.getUuid();
+      tdSheet.appendRow([new Date(), schoolCell_(taskBox), 'Mikaela', parsedDue, 'System', 'Open', '', idBox, srcBox, 'packing', 'Mikaela', 'Calendar: ' + (ev.title || 'Nat B Training')]);
+      existingSourceMap[srcBox] = { row: tdSheet.getLastRow(), due: parsedDue };
+    }
+  }
+}
+
 function getEvents() {
   try {
     var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
@@ -1496,7 +1746,9 @@ function getEvents() {
     var result          = [];
     for (var i = 0; i < events.length; i++) {
       var ev        = events[i];
-      var titleDesc = ev.getTitle() + ' ' + (ev.getDescription() || '');
+      var rawTitle  = ev.getTitle();
+      var desc      = ev.getDescription() || '';
+      var titleDesc = rawTitle + ' ' + desc;
       var explicitTag = '';
       try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
       if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
@@ -1505,15 +1757,20 @@ function getEvents() {
       try {
         duration = (ev.getEndTime().getTime() - ev.getStartTime().getTime()) / (1000 * 60 * 60);
       } catch (de) {}
+
+      var isEYE = (rawTitle.indexOf('EYE') !== -1 || desc.indexOf('EYE') !== -1);
+      var examNote = isEYE ? 'End Year Exams' : '';
+
       result.push({
         id:      ev.getId(),
-        title:   ev.getTitle(),
+        title:   rawTitle,
+        examNote: examNote,
         date:    Utilities.formatDate(ev.getStartTime(), tz, 'dd MMM yyyy'),
         dateRaw: Utilities.formatDate(ev.getStartTime(), tz, 'yyyy-MM-dd'),
         time:    ev.isAllDayEvent() ? 'All day' : Utilities.formatDate(ev.getStartTime(), tz, 'h:mm a'),
         endTime: ev.isAllDayEvent() ? '' : Utilities.formatDate(ev.getEndTime(), tz, 'h:mm a'),
         allDay:  ev.isAllDayEvent(),
-        notes:   ev.getDescription() || '',
+        notes:   desc,
         location: ev.getLocation() || '',
         tags:    tags,
         sourceId: schoolLinks[ev.getId()] ? schoolLinks[ev.getId()].sourceId : '',

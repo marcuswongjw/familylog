@@ -280,6 +280,18 @@
       <div class="section" id="s-us">
         <div class="sec-body" id="us-container"></div>
       </div>
+
+      <!-- HABITS -->
+      <div class="section" id="s-habits">
+        <div class="sec-hdr">
+          <div>
+            <div class="sec-title">Habits</div>
+            <div class="sec-sub">Track daily practices and routines</div>
+          </div>
+          <button class="btn btn-s btn-sm" onclick="openAddHabitModal()">+ New habit</button>
+        </div>
+        <div class="sec-body" id="habits-container"></div>
+      </div>
     </div>
 
     <!-- Bottom Nav -->
@@ -328,6 +340,10 @@
       <div class="drawer-item" onclick="navigateDrawer('memories')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
         <span class="di-lbl">Memories</span>
+      </div>
+      <div class="drawer-item" onclick="navigateDrawer('habits')">
+        <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+        <span class="di-lbl">Habits</span>
       </div>
       <div class="drawer-item" onclick="navigateDrawer('birthdays')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16h16"/><path d="M12 7V4"/><circle cx="12" cy="3" r="1"/></svg></span>
@@ -393,8 +409,9 @@
   <div class="overlay" id="m-task">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add task</span><button class="modal-close" onclick="closeM('m-task')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title" id="m-task-title">Add task</span><button class="modal-close" onclick="closeM('m-task')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
+        <input type="hidden" id="tk-id">
         <div class="field"><label>Task</label><input type="text" id="tk-title" placeholder="What needs to be done?"></div>
         <div class="field"><label>Assign to</label><div class="chips" id="tk-chips"></div></div>
         <div class="field"><label>Due Date (opt)</label><input type="date" id="tk-due"></div>
@@ -708,6 +725,41 @@
     </div>
   </div>
 
+  <!-- Add Habit Modal -->
+  <div class="overlay" id="m-habit">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-hdr"><span class="modal-title">Add habit</span><button class="modal-close" onclick="closeM('m-habit')" aria-label="Close modal">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Habit</label><input type="text" id="hab-name" placeholder="e.g. Violin practice, Reading, Swimming"></div>
+        <div class="field"><label>Family member</label><div class="chips" id="hab-member-chips"></div></div>
+        <div class="field"><label>Emoji icon</label><input type="text" id="hab-emoji" value="✨" placeholder="e.g. 🎻, 📚, ⛵"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-s" onclick="closeM('m-habit')">Cancel</button>
+        <button class="btn btn-p" style="flex:1" id="hab-submit" onclick="submitNewHabit(this)">Add habit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log Habit Modal -->
+  <div class="overlay" id="m-habit-log">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-hdr"><span class="modal-title">Log habit</span><button class="modal-close" onclick="closeM('m-habit-log')" aria-label="Close modal">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="hl-habit-id">
+        <div class="field"><label>Habit</label><div id="hl-title" style="font-size:15px;font-weight:600;padding:6px 0;"></div></div>
+        <div class="field"><label>Date</label><input type="date" id="hl-date"></div>
+        <div class="field"><label>Notes (opt)</label><textarea id="hl-notes" placeholder="e.g. Suzuki Book 2 pieces, 30 mins practice…"></textarea></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-s" onclick="closeM('m-habit-log')">Cancel</button>
+        <button class="btn btn-p" style="flex:1" id="hl-submit" onclick="submitHabitLog(this)">Save entry</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================================================ -->
   <!-- JAVASCRIPT – APP LOGIC (FIRESTORE MEMORIES + FCM)         -->
   <!-- ============================================================ -->
@@ -725,7 +777,7 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=19"></script>
-  <script src="js/app.js?v=19"></script>
+  <script src="js/school.js?v=20"></script>
+  <script src="js/app.js?v=20"></script>
 </body>
 </html>

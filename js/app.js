@@ -644,7 +644,7 @@
     }
 
     // ─── NAVIGATION ───────────────────────────────────────────
-    const NAV_SECONDARY = ['budgets','memories','fertility','recurring','birthdays','schedules','travel'];
+    const NAV_SECONDARY = ['budgets','memories','habits','fertility','recurring','birthdays','schedules','travel'];
     const ADULT_SCREENS = ['us', 'fertility', 'expenses', 'budgets', 'recurring'];
     const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'expenses', 'us'];
 
@@ -742,6 +742,7 @@
       const tiles = [
         ...(isAdultUser ? [{id:'budgets',icon:'📊',label:'Budgets'}] : []),
         {id:'memories',icon:'💛',label:'Memories'},
+        {id:'habits',icon:'🌱',label:'Habits'},
         {id:'birthdays',icon:'🎂',label:'Birthdays'},
         ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'},{id:'recurring',icon:'🔄',label:'Recurring'}] : []),
         {id:'calendar',icon:'⛵',label:'Week'},
@@ -756,6 +757,7 @@
         case 'home': renderHome(); break;
         case 'calendar': renderCal(); break;
         case 'tasks': renderTasks(); break;
+        case 'habits': renderHabits(); break;
         case 'expenses': renderExpenses(); break;
         case 'budgets': renderBudgets(); break;
         case 'memories': renderMemories(); break;
@@ -801,9 +803,31 @@
     function openM(id) {
       document.getElementById(id).classList.add('open');
       if(id === 'm-event'){ const el=document.getElementById('ev-date'); if(el) el.value=selectedCalDayStr||todayStr(); chips('ev-chips', FAM, gc('ev-tag') || 'Everyone', 'ev-tag'); }
-      if(id === 'm-task') chips('tk-chips', isAdultUser ? FAM : [user], user, 'tk-a');
+      if(id === 'm-task') {
+        const idEl = document.getElementById('tk-id'); if (idEl) idEl.value = '';
+        const titleEl = document.getElementById('m-task-title'); if (titleEl) titleEl.textContent = 'Add task';
+        const submitBtn = document.getElementById('tk-submit'); if (submitBtn) submitBtn.textContent = 'Save task';
+        clr('tk-title', 'tk-due');
+        chips('tk-chips', isAdultUser ? FAM : [user], user, 'tk-a');
+      }
       if(id === 'm-timetable-add'){ const el=document.getElementById('sch-date'); if(el) el.value=selectedCalDayStr||todayStr(); }
     }
+    function openEditTask(id) {
+      const t = (data.todos || []).find(x => x.id === id) || (data.schoolTasks || []).find(x => x.id === id);
+      if (!t) return;
+      if (!isAdultUser && t.assignee && t.assignee !== user) {
+        toast('You can only edit tasks assigned to you.');
+        return;
+      }
+      const idEl = document.getElementById('tk-id'); if (idEl) idEl.value = t.id;
+      const titleInput = document.getElementById('tk-title'); if (titleInput) titleInput.value = t.task || '';
+      const dueInput = document.getElementById('tk-due'); if (dueInput) dueInput.value = t.dueRaw || '';
+      const titleEl = document.getElementById('m-task-title'); if (titleEl) titleEl.textContent = 'Edit task';
+      const submitBtn = document.getElementById('tk-submit'); if (submitBtn) submitBtn.textContent = 'Save changes';
+      chips('tk-chips', isAdultUser ? FAM : [user], t.assignee || user, 'tk-a');
+      document.getElementById('m-task').classList.add('open');
+    }
+    window.openEditTask = openEditTask;
     function closeM(id){ document.getElementById(id).classList.remove('open'); }
 
     // ─── SEARCH / FILTER ──────────────────────────────────────
@@ -887,14 +911,14 @@
           <div class="card-hdr"><span class="card-title">Today at a glance</span></div>
           <div class="card-body">
             ${!evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
-            ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
+            ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
             ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '✅'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
         </div>
         <div class="card">
           <div class="card-hdr"><span class="card-title">Tomorrow</span><button class="btn btn-sm btn-s" onclick="goTo('calendar')">Week</button></div>
           <div class="card-body">
-            ${!evsTomorrow.length ? '<div class="empty">Nothing scheduled for tomorrow.</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
+            ${!evsTomorrow.length ? '<div class="empty">Nothing scheduled for tomorrow.</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
           </div>
         </div>
       `;
@@ -947,6 +971,9 @@
       let t = e.title || '';
       if (person && person !== 'Family' && t.toLowerCase().startsWith(person.toLowerCase() + ' - ')) {
         t = t.slice(person.length + 3);
+      }
+      if ((/\bEYE\b/.test(t) || t.includes('[Mikaela] EYE')) && !t.includes('End Year Exams')) {
+        t += ' (End Year Exams)';
       }
       return t;
     }
@@ -1014,7 +1041,7 @@
         <div class="row">
           <div style="font-size:22px;flex-shrink:0;">📅</div>
           <div class="row-main">
-            <div class="row-title">${escapeHtml(e.title)}</div>
+            <div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div>
             <div class="row-sub">${escapeHtml(e.date)} · ${escapeHtml(e.time)}${e.notes?' · '+escapeHtml(e.notes):''}</div>
             ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${escapeHtml(t)}</span>`).join('')}
           </div>
@@ -1355,12 +1382,13 @@
                 return `
                   <div class="task-row">
                     <div class="chk" onclick="doneTask('${t.id}',this)"></div>
-                    <div class="task-main">
+                    <div class="task-main" onclick="openEditTask('${t.id}')" style="cursor:pointer;" title="Click to edit task">
                       <div class="task-ttl">${escapeHtml(t.task)}</div>
                       <div class="task-meta">
                         <span class="task-meta-badge ${dueClass}">${dueText}</span>
                       </div>
                     </div>
+                    <button class="parent-task-edit" onclick="openEditTask('${t.id}')" title="Edit task" style="color:#94a3b8;font-size:14px;padding:8px;border:none;background:transparent;cursor:pointer;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#94a3b8'">✎</button>
                     <button class="parent-task-delete" onclick="delTask('${t.id}')" style="color:#cbd5e1;font-size:16px;padding:8px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
                   </div>
                 `;
@@ -1983,14 +2011,51 @@
     }
     async function submitTask(btn) {
       if(!btn) btn = document.getElementById('tk-submit');
+      const taskId = v('tk-id');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const task = v('tk-title');
         if(!task){ toast('Please enter a task.'); return; }
-        await gPost({note:'add_todo',todo_task:task,todo_assignee:gc('tk-a')||'Everyone',todo_due:v('tk-due')?fmtDate(v('tk-due')):''});
-        closeM('m-task'); clr('tk-title'); toast('Task added.');
-        await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Add task'; }
+        const assignee = gc('tk-a') || user || 'Everyone';
+        const due = v('tk-due') ? fmtDate(v('tk-due')) : '';
+        const dueRaw = v('tk-due') || '';
+
+        if (taskId) {
+          const res = await gPost({
+            note: 'edit_todo',
+            todo_id: taskId,
+            todo_task: task,
+            todo_assignee: assignee,
+            todo_due: due
+          });
+          if (res && res.status === 'ok') {
+            const updateItem = item => {
+              if (item.id === taskId) {
+                item.task = task;
+                item.assignee = assignee;
+                item.due = due;
+                item.dueRaw = dueRaw;
+              }
+            };
+            (data.todos || []).forEach(updateItem);
+            (data.schoolTasks || []).forEach(updateItem);
+            closeM('m-task');
+            clr('tk-title', 'tk-due', 'tk-id');
+            toast('Task updated.');
+            renderTasks();
+            renderHome();
+          } else {
+            toast((res && res.message) || 'Failed to update task.', true);
+          }
+        } else {
+          await gPost({note:'add_todo',todo_task:task,todo_assignee:assignee,todo_due:due});
+          closeM('m-task'); clr('tk-title', 'tk-due', 'tk-id'); toast('Task added.');
+          await loadData();
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = taskId ? 'Save changes' : 'Save task';
+      }
     }
     async function submitMemory(btn) {
       if(!btn) btn = document.getElementById('mem-submit');
@@ -2969,6 +3034,262 @@
       if (c.includes('travel') || c.includes('flight') || c.includes('hotel') || c.includes('holiday')) return '✈️';
       return '💰';
     }
+
+    // ─── HABITS ────────────────────────────────────────────────
+    function renderHabits() {
+      const el = document.getElementById('habits-container');
+      if (!el) return;
+      const habits = data.habits || [];
+      const habitLogs = data.habitLogs || [];
+      const today = todayStr();
+
+      if (!habits.length) {
+        el.innerHTML = `
+          <div class="empty" style="padding:40px 16px;text-align:center;">
+            <div class="ei" style="font-size:36px;margin-bottom:8px;">🌱</div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:4px;">No habits set up yet</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">Track practices, routines, and daily activities for the family.</div>
+            <button class="btn btn-p btn-sm" onclick="openAddHabitModal()">+ Add first habit</button>
+          </div>
+        `;
+        return;
+      }
+
+      // Group habits by member
+      const byMember = {};
+      FAM.forEach(m => { byMember[m] = []; });
+      habits.forEach(h => {
+        const m = h.member || 'Everyone';
+        if (!byMember[m]) byMember[m] = [];
+        byMember[m].push(h);
+      });
+
+      // Past 7 days
+      const last7Days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7Days.push({
+          dateStr: localDateStr(d),
+          dayName: d.toLocaleDateString('en-SG', { weekday: 'narrow' }),
+          isToday: i === 0
+        });
+      }
+
+      const activeMembers = FAM.filter(m => byMember[m] && byMember[m].length);
+
+      el.innerHTML = `
+        <div style="padding:16px;">
+          ${activeMembers.map(m => `
+            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid #a85f89;">
+              ${escapeHtml(m)}’s habits
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              ${byMember[m].map(h => {
+                const logsForHabit = habitLogs.filter(l => l.habitId === h.id);
+                const isLoggedToday = logsForHabit.some(l => l.date === today);
+
+                const daysDots = last7Days.map(day => {
+                  const done = logsForHabit.some(l => l.date === day.dateStr);
+                  return `
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                      <span style="font-size:10px;color:var(--text-muted);font-weight:${day.isToday ? '700' : '400'};">${escapeHtml(day.dayName)}</span>
+                      <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;${done ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac;' : day.isToday ? 'background:#fef3c7;color:#b45309;border:1px dashed #f59e0b;' : 'background:var(--bg-subtle, #f1f5f9);color:#94a3b8;'}">
+                        ${done ? '✓' : '·'}
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+
+                const recentLogs = logsForHabit.slice(0, 3);
+
+                return `
+                  <div class="card" style="padding:14px;border-radius:12px;border:1px solid var(--border-color);background:var(--card-bg, #fff);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                      <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="font-size:24px;">${escapeHtml(h.emoji || '✨')}</span>
+                        <div>
+                          <div style="font-size:15px;font-weight:600;">${escapeHtml(h.habit)}</div>
+                          <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(h.member)}</div>
+                        </div>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        ${isLoggedToday ? `
+                          <span style="font-size:12px;font-weight:600;color:#16a34a;background:#dcfce7;padding:4px 10px;border-radius:999px;">
+                            ✓ Done today
+                          </span>
+                        ` : `
+                          <button class="btn btn-p btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${today}')" style="font-size:12px;padding:4px 12px;">
+                            Log practice
+                          </button>
+                        `}
+                        <button class="btn btn-s btn-sm" onclick="openHabitLogModal('${escapeHtml(h.id)}')" title="Log with notes" style="padding:4px 8px;">
+                          📝
+                        </button>
+                        ${isAdultUser ? `
+                          <button onclick="delHabit('${escapeHtml(h.id)}')" title="Delete habit" style="background:none;border:none;color:#cbd5e1;font-size:15px;cursor:pointer;padding:4px 6px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
+                        ` : ''}
+                      </div>
+                    </div>
+
+                    <!-- Past 7 days tracker -->
+                    <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-subtle, #f8fafc);border-radius:8px;margin-bottom:10px;">
+                      ${daysDots}
+                    </div>
+
+                    <!-- Recent logs -->
+                    ${recentLogs.length ? `
+                      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Recent entries</div>
+                      <div style="display:flex;flex-direction:column;gap:4px;">
+                        ${recentLogs.map(l => `
+                          <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:4px 0;border-top:1px solid var(--border-color);">
+                            <span>📅 <strong>${fmtDate(l.date)}</strong>${l.notes ? ' · ' + escapeHtml(l.notes) : ''} <small style="color:var(--text-muted);">(${escapeHtml(l.loggedBy || '')})</small></span>
+                            <button onclick="delHabitLog('${escapeHtml(l.id)}')" title="Delete log" style="background:none;border:none;color:#cbd5e1;cursor:pointer;font-size:12px;padding:2px 6px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
+                          </div>
+                        `).join('')}
+                      </div>
+                    ` : '<div style="font-size:12px;color:var(--text-muted);font-style:italic;">No logs yet. Tap “Log practice” above!</div>'}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    async function logHabitQuick(habitId, dateStr, notes) {
+      dateStr = dateStr || todayStr();
+      notes = notes || '';
+      const h = (data.habits || []).find(x => x.id === habitId);
+      const habitName = h ? h.habit : 'Habit';
+      const member = h ? h.member : user;
+      
+      const tempId = 'hl_' + Date.now();
+      const newLog = {
+        id: tempId,
+        habitId: habitId,
+        member: member,
+        habit: habitName,
+        date: dateStr,
+        notes: notes,
+        loggedBy: user || 'Unknown',
+        timestamp: new Date().toISOString()
+      };
+      data.habitLogs = data.habitLogs || [];
+      data.habitLogs.unshift(newLog);
+      renderHabits();
+      renderHome();
+
+      try {
+        const res = await gPost({
+          note: 'log_habit',
+          habit_id: habitId,
+          date: dateStr,
+          notes: notes
+        });
+        if (res && res.status === 'ok' && res.log) {
+          const idx = data.habitLogs.findIndex(l => l.id === tempId);
+          if (idx >= 0) data.habitLogs[idx] = res.log;
+          toast(`${habitName} logged! ${(h && h.emoji) || '✨'}`);
+        } else if (res && res.status === 'ok') {
+          toast(`${habitName} logged! ${(h && h.emoji) || '✨'}`);
+        } else {
+          toast((res && res.message) || 'Failed to save habit log', true);
+        }
+      } catch (e) {
+        toast('Error logging habit: ' + e.message, true);
+      }
+    }
+    window.logHabitQuick = logHabitQuick;
+
+    async function delHabitLog(logId) {
+      if (!confirm('Remove this habit entry?')) return;
+      data.habitLogs = (data.habitLogs || []).filter(l => l.id !== logId);
+      renderHabits();
+      renderHome();
+      const res = await gPost({ note: 'delete_habit_log', log_id: logId });
+      if (res && res.status === 'ok') toast('Habit entry removed.');
+    }
+    window.delHabitLog = delHabitLog;
+
+    function openHabitLogModal(habitId, dateStr) {
+      const h = (data.habits || []).find(x => x.id === habitId);
+      if (!h) return;
+      document.getElementById('hl-habit-id').value = habitId;
+      document.getElementById('hl-title').textContent = (h.emoji ? h.emoji + ' ' : '') + h.habit + ' (' + h.member + ')';
+      document.getElementById('hl-date').value = dateStr || todayStr();
+      document.getElementById('hl-notes').value = '';
+      document.getElementById('m-habit-log').classList.add('open');
+    }
+    window.openHabitLogModal = openHabitLogModal;
+
+    async function submitHabitLog(btn) {
+      if (!btn) btn = document.getElementById('hl-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const habitId = document.getElementById('hl-habit-id').value;
+        const dateStr = document.getElementById('hl-date').value || todayStr();
+        const notes = document.getElementById('hl-notes').value.trim();
+        await logHabitQuick(habitId, dateStr, notes);
+        closeM('m-habit-log');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save entry';
+      }
+    }
+    window.submitHabitLog = submitHabitLog;
+
+    function openAddHabitModal() {
+      clr('hab-name');
+      document.getElementById('hab-emoji').value = '✨';
+      chips('hab-member-chips', FAM, user, 'hab-member');
+      document.getElementById('m-habit').classList.add('open');
+    }
+    window.openAddHabitModal = openAddHabitModal;
+
+    async function submitNewHabit(btn) {
+      if (!btn) btn = document.getElementById('hab-submit');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const name = document.getElementById('hab-name').value.trim();
+        if (!name) { toast('Please enter a habit name.'); return; }
+        const member = gc('hab-member') || user || 'Everyone';
+        const emoji = document.getElementById('hab-emoji').value.trim() || '✨';
+        const res = await gPost({
+          note: 'add_habit',
+          habit: name,
+          member: member,
+          emoji: emoji
+        });
+        if (res && res.status === 'ok') {
+          closeM('m-habit');
+          toast(`Habit added for ${member}!`);
+          await loadData();
+        } else {
+          toast((res && res.message) || 'Failed to add habit', true);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add habit';
+      }
+    }
+    window.submitNewHabit = submitNewHabit;
+
+    async function delHabit(habitId) {
+      if (!isAdultUser) {
+        toast('Only parents can delete habits.');
+        return;
+      }
+      if (!confirm('Delete this habit and all its logged history?')) return;
+      data.habits = (data.habits || []).filter(h => h.id !== habitId);
+      data.habitLogs = (data.habitLogs || []).filter(l => l.habitId !== habitId);
+      renderHabits();
+      renderHome();
+      const res = await gPost({ note: 'delete_habit', habit_id: habitId });
+      if (res && res.status === 'ok') toast('Habit deleted.');
+    }
+    window.delHabit = delHabit;
 
     // ─── APP INIT (already called above) ───────────────────────
 

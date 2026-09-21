@@ -158,3 +158,145 @@ test('night-before preparation digest runs cleanly without error', () => {
   const h = harness();
   assert.doesNotThrow(() => h.c.nightlyNotifications());
 });
+
+test('edit_todo allows editing task details, respects child ownership', () => {
+  const h = harness();
+  const added = h.write({ note: 'add_todo', todo_task: 'Original task', todo_assignee: 'Mikaela', todo_due: '2026-09-25' });
+  assert.equal(added.status, 'ok');
+
+  // Mikaela (child) can edit her own task
+  const childEdit = h.write({ note: 'edit_todo', todo_id: added.id, todo_task: 'Updated by Mikaela', todo_assignee: 'Mikaela', todo_due: '2026-09-26' }, child);
+  assert.equal(childEdit.status, 'ok');
+  let tasks = h.c.getTodos(h.ss, child);
+  assert.equal(tasks[0].task, 'Updated by Mikaela');
+  assert.equal(tasks[0].dueRaw, '2026-09-26');
+
+  // Meaghan (another child) cannot edit Mikaela's task
+  const otherChildEdit = h.write({ note: 'edit_todo', todo_id: added.id, todo_task: 'Hacked by sibling' }, 'meaghanwongzx@gmail.com');
+  assert.equal(otherChildEdit.status, 'error');
+
+  // Adult can edit any task
+  const adultEdit = h.write({ note: 'edit_todo', todo_id: added.id, todo_task: 'Parent modified', todo_assignee: 'Marcus' }, parent);
+  assert.equal(adultEdit.status, 'ok');
+  tasks = h.c.getTodos(h.ss, parent);
+  const found = tasks.find(t => t.id === added.id);
+  assert.equal(found.task, 'Parent modified');
+  assert.equal(found.assignee, 'Marcus');
+});
+
+test('Nat B Training generates packing checklist strictly 1 week in advance for previous day', () => {
+  const h = harness();
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // Event 4 days in future: should generate tasks for 3 days in future
+  const fourDays = new Date(now.getTime() + 4 * 24 * 3600 * 1000);
+  const fourDaysStr = fmt(fourDays);
+  const threeDaysStr = fmt(new Date(now.getTime() + 3 * 24 * 3600 * 1000));
+
+  // Event 14 days in future: should NOT generate tasks yet (> 7 days)
+  const fourteenDays = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
+  const fourteenDaysStr = fmt(fourteenDays);
+
+  const mockEvents = [
+    { id: 'ev_natb_soon', title: '[Mikaela] Nat B Training', dateRaw: fourDaysStr, time: '14:00' },
+    { id: 'ev_natb_far', title: '[Mikaela] Nat B Training', dateRaw: fourteenDaysStr, time: '14:00' }
+  ];
+
+  h.c.syncCalendarEventTasks_(h.ss, mockEvents);
+
+  const tasks = h.c.getTodos(h.ss, parent);
+  const soonTasks = tasks.filter(t => t.sourceId.startsWith('cal_natb_ev_natb_soon'));
+  const farTasks = tasks.filter(t => t.sourceId.startsWith('cal_natb_ev_natb_far'));
+
+  assert.equal(soonTasks.length, 2);
+  assert.equal(farTasks.length, 0); // Not created too far ahead of time
+
+  const bagTask = soonTasks.find(t => t.task.includes('sailing bag'));
+  const boxTask = soonTasks.find(t => t.task.includes('sailing box'));
+  assert.ok(bagTask);
+  assert.ok(boxTask);
+  assert.equal(bagTask.dueRaw, threeDaysStr); // Scheduled for previous day
+  assert.equal(boxTask.dueRaw, threeDaysStr);
+  assert.equal(bagTask.assignee, 'Mikaela');
+
+  // Idempotency: re-running sync does not duplicate
+  h.c.syncCalendarEventTasks_(h.ss, mockEvents);
+  const tasksAfter = h.c.getTodos(h.ss, parent);
+  assert.equal(tasksAfter.filter(t => t.sourceId.startsWith('cal_natb_ev_natb_soon')).length, 2);
+});
+
+test('EYE calendar entries and extraction mention End Year Exams', () => {
+  const req = buildRequest('exam notice');
+  assert.ok(req.systemInstruction.parts[0].text.includes("Note that 'EYE' refers to End Year Exams."));
+
+  const h = harness();
+  // Mock calendar event with EYE in title
+  const eventDate = new Date();
+  eventDate.setDate(eventDate.getDate() + 10);
+  h.calendarEvents.push({
+    id: 'cal_eye_1',
+    title: '[Mikaela] EYE - Math Paper',
+    start: eventDate,
+    end: eventDate,
+    description: 'Bring calculator'
+  });
+
+  const events = h.c.getEvents(h.ss);
+  const eyeEv = events.find(e => e.id === 'cal_eye_1');
+  assert.ok(eyeEv);
+  assert.equal(eyeEv.examNote, 'End Year Exams');
+});
+
+test('Habits management: seed, log habit, retrieve logs, and delete log', () => {
+  const h = harness();
+  const meaghanEmail = 'meaghanwongzx@gmail.com';
+
+  // Habits sheet initializes with Meaghan's violin practice
+  const habits = h.c.getHabits(h.ss);
+  assert.ok(habits.length >= 1);
+  const violin = habits.find(hb => hb.habit === 'Violin practice');
+  assert.ok(violin);
+  assert.equal(violin.member, 'Meaghan');
+  assert.equal(violin.emoji, '🎻');
+
+  // Meaghan logs her violin practice
+  const logRes = h.write({
+    note: 'log_habit',
+    habit_id: violin.id,
+    date: '2026-09-21',
+    notes: 'Practiced Suzuki Book 2 pieces for 30 mins'
+  }, meaghanEmail);
+  assert.equal(logRes.status, 'ok');
+  assert.ok(logRes.log);
+  assert.equal(logRes.log.habit, 'Violin practice');
+  assert.equal(logRes.log.notes, 'Practiced Suzuki Book 2 pieces for 30 mins');
+
+  // Retrieve logs
+  const logs = h.c.getHabitLogs(h.ss);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].habitId, violin.id);
+  assert.equal(logs[0].date, '2026-09-21');
+
+  // Delete habit log
+  const delRes = h.write({ note: 'delete_habit_log', log_id: logs[0].id }, meaghanEmail);
+  assert.equal(delRes.status, 'ok');
+  assert.equal(h.c.getHabitLogs(h.ss).length, 0);
+
+  // Adult can add a habit
+  const addHabitRes = h.write({ note: 'add_habit', habit: 'Daily reading', member: 'Mikaela', emoji: '📚' }, parent);
+  assert.equal(addHabitRes.status, 'ok');
+  const updatedHabits = h.c.getHabits(h.ss);
+  assert.ok(updatedHabits.some(hb => hb.habit === 'Daily reading'));
+
+  // Child cannot delete a habit
+  const readingHabit = updatedHabits.find(hb => hb.habit === 'Daily reading');
+  const kidDel = h.write({ note: 'delete_habit', habit_id: readingHabit.id }, child);
+  assert.equal(kidDel.status, 'error');
+
+  // Adult can delete a habit
+  const adultDel = h.write({ note: 'delete_habit', habit_id: readingHabit.id }, parent);
+  assert.equal(adultDel.status, 'ok');
+});
+

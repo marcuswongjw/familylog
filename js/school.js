@@ -17,6 +17,13 @@ function schoolDayOffset(dateStr, offset = -1) {
   return d.toISOString().slice(0, 10);
 }
 const ACTIVITY_TEMPLATES = {
+  natB: {
+    child: 'Mikaela',
+    tasks: [
+      { title: 'Pack sailing bag (life jacket, watch, clothes, rashguard, towel)', kind: 'packing' },
+      { title: 'Pack sailing box (shoes, slippers)', kind: 'packing' }
+    ]
+  },
   sailing: {
     child: 'Mikaela',
     tasks: [
@@ -215,6 +222,7 @@ function renderSchoolReview() {
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
             <button type="button" class="btn btn-s" id="school-add-task">Add task</button>
             <span class="school-muted" style="font-size:12px;">Presets:</span>
+            <button type="button" class="btn btn-xs" data-school-tpl="natB">+ ⛵ Nat B Sailing</button>
             <button type="button" class="btn btn-xs" data-school-tpl="sailing">+ ⛵ Sailing kit</button>
             <button type="button" class="btn btn-xs" data-school-tpl="ballet">+ 🩰 Ballet kit</button>
             <button type="button" class="btn btn-xs" data-school-tpl="swim">+ 🏊 Swim kit</button>
@@ -488,9 +496,35 @@ function renderSchoolHome() {
             <div class="school-section-hdr">⏰ Schedule</div>
             ${events.map(e => `
               <div class="school-day-event">
-                <strong>${escapeHtml(e.time)} · ${escapeHtml(e.title)}</strong>
+                <strong>${escapeHtml(e.time)} · ${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-weight:600;">End Year Exams</span>' : ''}</strong>
                 ${e.location ? `<small>📍 ${escapeHtml(e.location)}</small>` : ''}
               </div>`).join('')}
+          ` : ''}
+
+          ${(data.habits || []).filter(h => h.member === child).length ? `
+            <div class="school-section-hdr">🌱 Daily habits</div>
+            <div class="school-habits-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+              ${(data.habits || []).filter(h => h.member === child).map(h => {
+                const logged = (data.habitLogs || []).some(l => l.habitId === h.id && l.date === day);
+                return `
+                  <div class="school-habit-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--card-bg, #fff);border:1px solid var(--border-color, #e2e8f0);border-radius:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span style="font-size:18px;">${escapeHtml(h.emoji || '✨')}</span>
+                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}</span>
+                    </div>
+                    ${logged ? `
+                      <span style="font-size:12px;color:#16a34a;font-weight:600;display:flex;align-items:center;gap:4px;">
+                        ✓ Practiced
+                      </span>
+                    ` : `
+                      <button class="btn btn-s btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${escapeHtml(day)}')" style="font-size:12px;padding:4px 10px;">
+                        Log practice
+                      </button>
+                    `}
+                  </div>
+                `;
+              }).join('')}
+            </div>
           ` : ''}
 
           ${packingTasks.length ? `
@@ -503,7 +537,7 @@ function renderSchoolHome() {
             ${otherTasks.map(t => schoolTaskCard(t, day)).join('')}
           ` : ''}
 
-          ${!events.length && !childTasks.length ? `
+          ${!events.length && !childTasks.length && !(data.habits || []).filter(h => h.member === child).length ? `
             <p class="school-empty">Clear day ahead! Enjoy the breathing room 🎉</p>
           ` : ''}
         </section>`;
@@ -540,7 +574,7 @@ function schoolTaskCard(t, day) {
   const due = t.dueRaw ? (t.dueRaw < schoolToday() ? 'Overdue · ' : '') + fmtDate(t.dueRaw) : '';
   return `
     <div class="school-task ${done ? 'school-task-done' : ''} ${needsHelp ? 'school-task-needs-help' : ''}">
-      <div class="school-task-main">
+      <div class="school-task-main" onclick="if(window.openEditTask)openEditTask('${escapeHtml(t.id)}')" style="cursor:pointer;" title="Click to edit task">
         <strong>${escapeHtml(t.task)}</strong>
         <div class="school-task-meta">
           <span class="school-task-owner">${escapeHtml(t.assignee)}</span>
@@ -558,6 +592,7 @@ function schoolTaskCard(t, day) {
           ${!isAdultUser && !needsHelp ? `
             <button class="school-help-button" data-school-help="${escapeHtml(t.id)}">Need help?</button>
           ` : ''}
+          <button class="school-edit-btn" onclick="if(window.openEditTask)openEditTask('${escapeHtml(t.id)}')" title="Edit task" style="background:none;border:none;color:#94a3b8;font-size:14px;cursor:pointer;padding:4px 6px;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#94a3b8'">✎</button>
         </div>
       `}
     </div>`;
