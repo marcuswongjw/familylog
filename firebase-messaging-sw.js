@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'hearth-v17';
+const CACHE_NAME = 'hearth-v18';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,9 @@ const ASSETS = [
   './js/school.js',
   './manifest.json',
   './icon.png',
+  './icon-192.png',
+  './apple-touch-icon.png',
+  './apple-touch-icon-precomposed.png',
   './favicon.png',
   './favicon.svg',
   './assets/h-arch.svg'
@@ -39,7 +42,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
   const path = url.pathname || '';
-  // App shell: always try network first so deploys are not stuck on stale SW cache
+  // App shell & identity assets: always try network first so deploys are not stuck on stale SW cache
   const isAppShell = event.request.mode === 'navigate'
     || (sameOrigin && (
       path.endsWith('/') ||
@@ -47,6 +50,8 @@ self.addEventListener('fetch', event => {
       path.endsWith('/familylog') ||
       path.endsWith('/app.js') || path.endsWith('/school.js') ||
       path.endsWith('/styles.css') ||
+      path.includes('manifest.json') ||
+      path.endsWith('.png') || path.endsWith('.svg') ||
       path.endsWith('firebase-messaging-sw.js')
     ));
 
