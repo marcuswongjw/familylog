@@ -10,6 +10,40 @@ function schoolToday(offset = 0) {
   date.setDate(date.getDate() + offset);
   return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 }
+function schoolDayOffset(dateStr, offset = -1) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return '';
+  const parts = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + offset));
+  return d.toISOString().slice(0, 10);
+}
+const ACTIVITY_TEMPLATES = {
+  sailing: {
+    child: 'Mikaela',
+    tasks: [
+      { title: 'Pack booties & lifejacket', kind: 'packing' },
+      { title: 'Pack rashguard & cap', kind: 'packing' },
+      { title: 'Pack towel & dry change of clothes', kind: 'packing' },
+      { title: 'Pack sunscreen & water bottle', kind: 'packing' }
+    ]
+  },
+  ballet: {
+    child: 'Meaghan',
+    tasks: [
+      { title: 'Pack leotard & tights', kind: 'packing' },
+      { title: 'Pack ballet shoes', kind: 'packing' },
+      { title: 'Pack hairpins & hairnet', kind: 'packing' },
+      { title: 'Pack water bottle & cardigan', kind: 'packing' }
+    ]
+  },
+  swim: {
+    child: '',
+    tasks: [
+      { title: 'Pack swimsuit & goggles', kind: 'packing' },
+      { title: 'Pack towel & dry clothes', kind: 'packing' },
+      { title: 'Pack swim cap & kickboard', kind: 'packing' }
+    ]
+  }
+};
 function schoolOptions(values, selected) {
   return values.map(value => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value || 'Choose child')}</option>`).join('');
 }
@@ -48,7 +82,11 @@ function closeSchoolCapture() {
 }
 function schoolOptimizeImage(file) {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) return reject(new Error('Choose an image screenshot.'));
+    if (file.type === 'application/pdf') {
+      if (file.size > 5 * 1024 * 1024) return reject(new Error('PDF must be under 5 MB.'));
+      return resolve(file);
+    }
+    if (!file.type.startsWith('image/')) return reject(new Error('Choose an image screenshot or PDF.'));
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read image file.'));
     reader.onload = e => {
@@ -79,25 +117,28 @@ function schoolOptimizeImage(file) {
 async function schoolUpload() {
   const file = document.getElementById('school-file').files[0];
   if (!file) return '';
-  schoolMessage('Optimizing screenshot…');
+  const isPdf = file.type === 'application/pdf';
+  schoolMessage(isPdf ? 'Preparing PDF announcement…' : 'Optimizing screenshot…');
   const blob = await schoolOptimizeImage(file);
-  if (blob.size >= 5 * 1024 * 1024) throw new Error('Screenshot too large even after optimization.');
+  if (blob.size >= 5 * 1024 * 1024) throw new Error('File too large (max 5 MB).');
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('');
   const email = (firebase.auth().currentUser?.email || '').toLowerCase();
   if (!email) throw new Error('Sign in as a parent to upload school messages.');
   const path = 'school/' + email + '/' + hash;
   const storageInstance = window.storage || firebase.storage();
   const ref = storageInstance.ref(path);
-  schoolMessage('Uploading screenshot…');
+  schoolMessage(isPdf ? 'Uploading PDF announcement…' : 'Uploading screenshot…');
   try {
     await ref.getMetadata();
   } catch (err) {
-    const uploadPromise = ref.put(blob, { contentType: 'image/jpeg' });
+    const uploadPromise = ref.put(blob, { contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timed out. Check connection or enter manually.')), 25000));
     await Promise.race([uploadPromise, timeoutPromise]);
   }
-  if (schoolImageUrl.startsWith('blob:')) URL.revokeObjectURL(schoolImageUrl);
-  schoolImageUrl = URL.createObjectURL(blob);
+  if (!isPdf) {
+    if (schoolImageUrl.startsWith('blob:')) URL.revokeObjectURL(schoolImageUrl);
+    schoolImageUrl = URL.createObjectURL(blob);
+  }
   return path;
 }
 async function extractSchool(manual) {
@@ -114,11 +155,17 @@ async function extractSchool(manual) {
       schoolMessage('Reading announcement with Gemini AI…');
       extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
     }
+    const eventDate = extracted.event?.date || '';
+    const prepDate = schoolDayOffset(eventDate, -1);
     schoolDraft = {
       title: extracted.title || '', child: extracted.child || '',
       sourceText: text || extracted.sourceText || '', sourcePath, warnings: extracted.warnings || [],
       event: { enabled: !!extracted.event?.title, title: extracted.event?.title || '', date: extracted.event?.date || '', time: extracted.event?.time || '', endTime: extracted.event?.endTime || '', location: extracted.event?.location || '', evidence: extracted.event?.evidence || '' },
-      tasks: (extracted.tasks || []).map(t => ({ ...t, assignee: extracted.child || '' })),
+      tasks: (extracted.tasks || []).map(t => ({
+        ...t,
+        assignee: extracted.child || '',
+        due: (eventDate && (!t.due || t.due === eventDate)) ? prepDate : (t.due || '')
+      })),
       status: 'draft', revision: 0
     };
     document.getElementById('school-capture').hidden = true;
@@ -155,7 +202,7 @@ function renderSchoolReview() {
             ${p.event.evidence ? `<blockquote>${escapeHtml(p.event.evidence)}</blockquote>` : ''}
           </div>
           <h3>Who needs to do what?</h3>
-          <p class="school-muted">Task owners default to the child. You can reassign any task to a parent if needed.</p>
+          <p class="school-muted">Task owners default to the child. Preparation and packing tasks default to the day before the event.</p>
           <div id="school-task-editor">${p.tasks.map((t, i) => `
             <div class="school-edit-task">
               ${schoolField('Task ' + (i + 1), 'school-task-title-' + i, t.title)}
@@ -165,7 +212,13 @@ function renderSchoolReview() {
               ${t.evidence ? `<blockquote>${escapeHtml(t.evidence)}</blockquote>` : '<small>Added by parent</small>'}
               <button class="btn btn-s" type="button" data-remove-task="${i}">Remove task</button>
             </div>`).join('')}</div>
-          <button type="button" class="btn btn-s" id="school-add-task">+ Add task</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+            <button type="button" class="btn btn-s" id="school-add-task">+ Add task</button>
+            <span class="school-muted" style="font-size:12px;">Presets:</span>
+            <button type="button" class="btn btn-xs" data-school-tpl="sailing">+ ⛵ Sailing kit</button>
+            <button type="button" class="btn btn-xs" data-school-tpl="ballet">+ 🩰 Ballet kit</button>
+            <button type="button" class="btn btn-xs" data-school-tpl="swim">+ 🏊 Swim kit</button>
+          </div>
         </fieldset>
         ${!locked ? '<label class="school-check school-confirm"><input type="checkbox" id="school-confirm">I checked the source, dates and owners.</label>' : ''}
         <div class="school-actions">
@@ -187,10 +240,42 @@ function renderSchoolReview() {
       }
     });
   });
+  document.getElementById('school-event-date')?.addEventListener('change', (e) => {
+    const prevEventDate = p.event.date;
+    const prevPrepDate = schoolDayOffset(prevEventDate, -1);
+    const newEventDate = e.target.value;
+    const newPrepDate = schoolDayOffset(newEventDate, -1);
+    schoolCollect();
+    p.event.date = newEventDate;
+    if (newPrepDate) {
+      p.tasks.forEach((t, i) => {
+        if (!t.due || t.due === prevEventDate || t.due === prevPrepDate) {
+          t.due = newPrepDate;
+          const dueEl = document.getElementById('school-task-due-' + i);
+          if (dueEl) dueEl.value = newPrepDate;
+        }
+      });
+    }
+  });
   document.getElementById('school-add-task')?.addEventListener('click', () => {
     schoolCollect(); if (p.tasks.length >= 30) return schoolMessage('Use up to 30 tasks per message.', true);
-    p.tasks.push({ title: '', kind: 'other', assignee: p.child || '', due: '', evidence: '' }); renderSchoolReview();
+    const defaultDue = p.event?.date ? schoolDayOffset(p.event.date, -1) : '';
+    p.tasks.push({ title: '', kind: 'other', assignee: p.child || '', due: defaultDue, evidence: '' }); renderSchoolReview();
   });
+  document.querySelectorAll('[data-school-tpl]').forEach(btn => btn.addEventListener('click', () => {
+    const tplKey = btn.dataset.schoolTpl;
+    const tpl = ACTIVITY_TEMPLATES[tplKey];
+    if (!tpl) return;
+    schoolCollect();
+    if (tpl.child && !p.child) p.child = tpl.child;
+    const defaultDue = p.event?.date ? schoolDayOffset(p.event.date, -1) : '';
+    tpl.tasks.forEach(item => {
+      if (p.tasks.length < 30) {
+        p.tasks.push({ title: item.title, kind: item.kind, assignee: p.child || tpl.child || '', due: defaultDue, evidence: 'Activity template' });
+      }
+    });
+    renderSchoolReview();
+  }));
   document.querySelectorAll('[data-remove-task]').forEach(button => button.addEventListener('click', () => {
     schoolCollect(); p.tasks.splice(Number(button.dataset.removeTask), 1); renderSchoolReview();
   }));

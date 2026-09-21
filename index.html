@@ -529,7 +529,16 @@
             <option value="Meaghan">Meaghan</option>
           </select>
         </div>
-        <div class="field"><label>Activity</label><input type="text" id="sch-act" placeholder="e.g. Sailing Practice, Piano Class"></div>
+        <div class="field">
+          <label>Activity</label>
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-xs" onclick="applyActivityPreset('Sailing')">⛵ Sailing</button>
+            <button type="button" class="btn btn-xs" onclick="applyActivityPreset('Ballet')">🩰 Ballet</button>
+            <button type="button" class="btn btn-xs" onclick="applyActivityPreset('Piano')">🎹 Piano</button>
+            <button type="button" class="btn btn-xs" onclick="applyActivityPreset('Swim')">🏊 Swim</button>
+          </div>
+          <input type="text" id="sch-act" placeholder="e.g. Sailing Practice, Piano Class">
+        </div>
         <div class="frow">
           <div class="field"><label>Date</label><input type="date" id="sch-date"></div>
           <div class="field"><label>Start Time</label><input type="time" id="sch-time"></div>
@@ -539,6 +548,10 @@
           <div class="field"><label>Location</label><input type="text" id="sch-loc" placeholder="e.g. SAF Yacht Club"></div>
         </div>
         <div class="field"><label>Notes / Feedback</label><input type="text" id="sch-notes" placeholder="e.g. Bring sailing gear, laser practice notes"></div>
+        <label class="school-check" style="margin-top:10px;font-size:13px;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="sch-add-checklist" checked>
+          <span>Add packing checklist for the night before</span>
+        </label>
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-timetable-add')">Cancel</button>
@@ -663,7 +676,7 @@
       <p>Paste a teacher's message or upload a screenshot. Review the details before adding anything to your family plan.</p>
       <fieldset id="school-capture-fields">
         <label class="school-field">Message<textarea id="school-text" maxlength="20000" rows="7" placeholder="Dear parents, students attending the Science Learning Journey…"></textarea></label>
-        <label class="school-field school-upload">Or choose a screenshot<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPEG or WebP · under 5 MB</small></label>
+        <label class="school-field school-upload">Or choose a screenshot or PDF<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><small>PNG, JPEG, WebP or PDF · under 5 MB</small></label>
         <p class="school-muted">“Read with AI” extracts the event and checklist items using Google Gemini. Originals stay available to parents. Check names and dates before saving.</p>
         <div class="school-actions"><button class="btn btn-p" type="button" onclick="extractSchool(false)">Read with AI</button><button class="btn btn-s" type="button" onclick="extractSchool(true)">Enter manually</button></div>
       </fieldset>
@@ -671,7 +684,7 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=15"></script>
-  <script src="js/app.js?v=15"></script>
+  <script src="js/school.js?v=16"></script>
+  <script src="js/app.js?v=16"></script>
 </body>
 </html>

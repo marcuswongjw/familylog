@@ -180,6 +180,20 @@
           else loginAs(user.email.split('@')[0]);
           // After login, honor pending notification / hash / query target
           applyPendingNotificationScreen();
+
+          // Web Share Target: open School Copilot if shared text/title present
+          const urlParams = new URLSearchParams(window.location.search);
+          const sharedText = urlParams.get('text') || urlParams.get('title') || urlParams.get('url');
+          if (sharedText) {
+            setTimeout(() => {
+              if (typeof openSchoolCapture === 'function' && isAdultUser) {
+                openSchoolCapture();
+                const txtArea = document.getElementById('school-text');
+                if (txtArea) txtArea.value = sharedText;
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }
+            }, 600);
+          }
         } else {
           document.getElementById('login-screen').classList.add('active');
           document.getElementById('app-screen').classList.remove('active');
@@ -2099,6 +2113,31 @@
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Pin Trip 📍'; }
     }
+    function applyActivityPreset(act) {
+      const actInput = document.getElementById('sch-act');
+      const childSelect = document.getElementById('sch-child');
+      const locInput = document.getElementById('sch-loc');
+      const notesInput = document.getElementById('sch-notes');
+      if (act === 'Sailing') {
+        if (childSelect) childSelect.value = 'Mikaela';
+        if (actInput) actInput.value = 'Sailing Practice';
+        if (locInput && !locInput.value) locInput.value = 'SAF Yacht Club';
+        if (notesInput && !notesInput.value) notesInput.value = 'Laser / Optimist session';
+      } else if (act === 'Ballet') {
+        if (childSelect) childSelect.value = 'Meaghan';
+        if (actInput) actInput.value = 'Ballet Class';
+        if (locInput && !locInput.value) locInput.value = 'Ballet Studio';
+        if (notesInput && !notesInput.value) notesInput.value = 'RAD syllabus class';
+      } else if (act === 'Piano') {
+        if (actInput) actInput.value = 'Piano Lesson';
+        if (notesInput && !notesInput.value) notesInput.value = 'Scales & exam pieces';
+      } else if (act === 'Swim') {
+        if (actInput) actInput.value = 'Swimming Training';
+        if (locInput && !locInput.value) locInput.value = 'Swimming Complex';
+      }
+    }
+    window.applyActivityPreset = applyActivityPreset;
+
     async function submitSchedule(btn) {
       if(!btn) btn = document.getElementById('sch-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
@@ -2107,11 +2146,29 @@
         const dateVal = document.getElementById('sch-date').value, time = document.getElementById('sch-time').value;
         const endTime = document.getElementById('sch-end-time').value, location = document.getElementById('sch-loc').value;
         const notes = document.getElementById('sch-notes').value;
+        const addChecklist = document.getElementById('sch-add-checklist')?.checked;
         if(!activity){ alert('Please enter activity name'); return; }
         if(!dateVal){ alert('Please select a date'); return; }
         const title = child + ' - ' + activity;
         await gPost({note:'add_event',event_title:title,event_child:child,event_member:child,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
-        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Added to the week ⛵');
+
+        if (addChecklist) {
+          const actLower = activity.toLowerCase();
+          const tplKey = actLower.includes('sail') ? 'sailing' : actLower.includes('ballet') || actLower.includes('dance') ? 'ballet' : actLower.includes('swim') ? 'swim' : '';
+          if (tplKey && typeof ACTIVITY_TEMPLATES !== 'undefined' && ACTIVITY_TEMPLATES[tplKey]) {
+            const prepDay = typeof schoolDayOffset === 'function' ? schoolDayOffset(dateVal, -1) : dateVal;
+            for (const item of ACTIVITY_TEMPLATES[tplKey].tasks) {
+              await gPost({
+                note: 'add_todo',
+                todo_task: item.title,
+                todo_assignee: child,
+                todo_due: prepDay ? fmtDate(prepDay) : ''
+              });
+            }
+          }
+        }
+
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Added to the week with prep checklist ⛵');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
     }

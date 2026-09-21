@@ -329,6 +329,88 @@ function sendMorningDigest(now) {
   sendFamilyEmail('🌅 Wong Family Morning Digest — ' + dateStr, body);
 }
 
+function nightlyNotifications() {
+  var now = new Date();
+  sendNightBeforeDigest(now);
+}
+
+function sendNightBeforeDigest(now) {
+  now = (now instanceof Date && !isNaN(now.getTime())) ? now : new Date();
+  var tz = Session.getScriptTimeZone();
+  var tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  var tomorrowStr = Utilities.formatDate(tomorrow, tz, 'yyyy-MM-dd');
+  var tomorrowDisplay = Utilities.formatDate(tomorrow, tz, 'EEEE, d MMMM yyyy');
+
+  var body = '';
+  body += _h('h2', '🎒 Night-Before Prep — Wong Family', 'color:#6b2d5c;font-family:sans-serif;');
+  body += _h('p', 'Tomorrow: ' + tomorrowDisplay, 'color:#666;font-family:sans-serif;font-size:14px;');
+
+  var tomorrowEvents = [];
+  try {
+    var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    var tomorrowStart = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+    var tomorrowEnd = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate() + 1);
+    var events = calendar.getEvents(tomorrowStart, tomorrowEnd);
+    var schoolLinks = schoolEventLinks_();
+    events.forEach(function(ev) {
+      var timeStr = ev.isAllDayEvent() ? 'All day' : Utilities.formatDate(ev.getStartTime(), tz, 'h:mm a');
+      var explicitTag = '';
+      try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
+      if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
+      tomorrowEvents.push({
+        title: ev.getTitle(),
+        time: timeStr,
+        location: ev.getLocation() || '',
+        member: explicitTag
+      });
+    });
+  } catch (e) { console.log('Night digest calendar error: ' + e); }
+
+  if (tomorrowEvents.length > 0) {
+    var evHtml = '';
+    tomorrowEvents.forEach(function(ev) {
+      evHtml += _li('<strong>' + ev.title + '</strong> · ' + ev.time + (ev.member ? ' (' + ev.member + ')' : '') + (ev.location ? ' · ' + ev.location : ''));
+    });
+    body += _h('h3', '📅 Tomorrow’s Schedule', 'font-family:sans-serif;color:#333;margin-bottom:4px;');
+    body += '<ul style="margin:0;padding-left:20px;font-family:sans-serif;color:#333;">' + evHtml + '</ul>';
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tdSheet = ss.getSheetByName('ToDo');
+  var openTasks = [];
+  if (tdSheet) {
+    var tdVals = tdSheet.getDataRange().getValues();
+    for (var i = 1; i < tdVals.length; i++) {
+      var row = tdVals[i];
+      if (!row || ['done', 'deleted'].indexOf(toStr(row[5]).toLowerCase()) !== -1) continue;
+      var due = row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'yyyy-MM-dd') : '';
+      if (!due || due <= tomorrowStr) {
+        openTasks.push({
+          task: toStr(row[1]),
+          assignee: toStr(row[2]) || 'Everyone',
+          kind: toStr(row[9]),
+          due: due
+        });
+      }
+    }
+  }
+
+  if (openTasks.length > 0) {
+    var taskHtml = '';
+    openTasks.forEach(function(t) {
+      var icon = t.kind === 'packing' ? '🎒 ' : '✅ ';
+      taskHtml += _li(icon + '<strong>' + t.task + '</strong> <span style="color:#888;">→ ' + t.assignee + (t.due ? ' (Due ' + t.due + ')' : '') + '</span>');
+    });
+    body += _h('h3', '🎒 Open Prep & Packing Items', 'font-family:sans-serif;color:#333;margin-bottom:4px;margin-top:20px;');
+    body += '<ul style="margin:0;padding-left:20px;font-family:sans-serif;color:#333;">' + taskHtml + '</ul>';
+  } else {
+    body += _h('p', '🌟 Everything is all packed and ready for tomorrow!', 'background:#f0fdf4;border-left:4px solid #22c55e;padding:12px;border-radius:4px;font-family:sans-serif;color:#15803d;margin-top:20px;');
+  }
+
+  body += _h('p', 'Rest well! 🌙', 'font-family:sans-serif;color:#888;margin-top:24px;font-size:13px;');
+  sendFamilyEmail('🎒 Wong Family Night-Before Prep — ' + tomorrowDisplay, body);
+}
+
 function getDailyVerse() {
   try {
     var url      = 'https://beta.ourmanna.com/api/v1/get/?format=json&order=daily';

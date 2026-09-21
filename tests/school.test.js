@@ -141,6 +141,7 @@ test('extraction formats Gemini request with inlineData and JSON schema', () => 
   assert.equal(req.contents[0].parts[1].inlineData.mimeType, 'image/png');
   assert.equal(req.contents[0].parts[1].inlineData.data, 'abc');
   assert.ok(req.systemInstruction.parts[0].text.includes('Extract facts'));
+  assert.ok(req.systemInstruction.parts[0].text.includes('day before the event date'));
 });
 test('extraction rejects safety blocks, truncated finish reasons and invalid outputs', () => {
   assert.throws(() => parseResponse(null));
@@ -152,4 +153,8 @@ test('extraction rejects safety blocks, truncated finish reasons and invalid out
   assert.throws(() => parseResponse(response(d)));
   d.tasks = [{ title: 'Water', kind: 'packing', due: '', evidence: 'Bring water.' }];
   assert.equal(parseResponse(response(d)).tasks[0].due, '');
+});
+test('night-before preparation digest runs cleanly without error', () => {
+  const h = harness();
+  assert.doesNotThrow(() => h.c.nightlyNotifications());
 });

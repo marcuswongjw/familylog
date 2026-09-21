@@ -157,7 +157,7 @@ exports.extractSchoolAnnouncement = functions.runWith({
     if (path) {
       const file = storage.bucket(STORAGE_BUCKET).file(path);
       const [metadata] = await file.getMetadata();
-      if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG or WebP under 5 MB.');
+      if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'application/pdf'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG, WebP or PDF under 5 MB.');
       const [bytes] = await file.download();
       if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== path.split('/').pop()) throw new Error('Screenshot checksum mismatch.');
       imageMime = metadata.contentType;
