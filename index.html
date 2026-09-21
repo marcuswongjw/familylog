@@ -22,7 +22,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="css/styles.css?v=11">
+  <link rel="stylesheet" href="css/styles.css?v=12">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -88,12 +88,15 @@
         <div class="sec-body">
           <div class="card">
             <div class="card-hdr">
-              <span class="card-title">📅 Family Calendar</span>
-              <button class="btn btn-sm btn-p" onclick="openM('m-event')">+ Add</button>
+              <span class="card-title">📅 Family Week</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm adult-only" onclick="openM('m-timetable-add')">+ Activity</button>
+                <button class="btn btn-sm btn-p adult-only" onclick="openM('m-event')">+ Add</button>
+              </div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 4px;">
-              <button class="toggle-pill" id="cal-view-list" onclick="toggleCalView('list')">List</button>
               <button class="toggle-pill active" id="cal-view-week" onclick="toggleCalView('week')">Week</button>
+              <button class="toggle-pill" id="cal-view-list" onclick="toggleCalView('list')">List</button>
               <button class="toggle-pill" id="cal-view-month" onclick="toggleCalView('month')">Month</button>
               <button class="toggle-pill" id="cal-view-year" onclick="toggleCalView('year')">Year</button>
             </div>
@@ -257,7 +260,7 @@
     <div class="bot-nav">
       <div class="nav-it act" id="nav-home" onclick="goTo('home')"><div class="ni">🏠</div><div>Home</div></div>
       <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')"><div class="ni">✅</div><div>Tasks</div></div>
-      <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Calendar</div></div>
+      <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')"><div class="ni">📅</div><div>Week</div></div>
       <div class="nav-it adult-only" id="nav-expenses" onclick="goTo('expenses')"><div class="ni">💰</div><div>Expenses</div></div>
       <div class="nav-it adult-only" id="nav-us" onclick="goTo('us')"><div class="ni">💖</div><div>Us</div></div>
     </div>
@@ -297,9 +300,9 @@
         <span class="di-icon">🔄</span>
         <span class="di-lbl">Recurring Expenses</span>
       </div>
-      <div class="drawer-item" onclick="navigateDrawer('schedules')">
+      <div class="drawer-item" onclick="navigateDrawer('calendar')">
         <span class="di-icon">⛵</span>
-        <span class="di-lbl">Kid Schedules</span>
+        <span class="di-lbl">Family Week</span>
       </div>
       <div class="drawer-item" onclick="navigateDrawer('travel')">
         <span class="di-icon">✈️</span>
@@ -668,7 +671,7 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=11"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="js/school.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
 </body>
 </html>

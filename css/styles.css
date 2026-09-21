@@ -262,6 +262,48 @@
     .cal-dot.Everyone{background:#9b59b6;}
     .cal-day-cell.selected{background:#edf4fc;}
 
+    /* ── WEEK BOARD ── */
+    .week-toolbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border-color);gap:8px;}
+    .week-toolbar-title{font-weight:700;font-size:14px;text-align:center;flex:1;}
+    .week-people{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 4px;}
+    .week-conflict-banner{margin:8px 16px 0;padding:10px 12px;border-radius:10px;background:#fff8e7;border:1px solid #dec486;color:#77500c;font-size:12px;line-height:1.5;}
+    .week-hours-note{padding:8px 16px 12px;font-size:11px;color:var(--text-muted);}
+    .week-board-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 0 12px;}
+    .week-board{border-collapse:separate;border-spacing:0;min-width:720px;width:100%;}
+    .week-board th,.week-board td{border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:top;}
+    .week-board thead th{font-size:11px;font-weight:700;text-align:center;padding:8px 4px;color:var(--text-muted);background:var(--bg-body);position:sticky;top:0;z-index:1;}
+    .week-board thead th.week-day-today{color:#4f86c6;background:#edf4fc;}
+    .week-board .week-name{position:sticky;left:0;z-index:2;min-width:92px;max-width:110px;background:var(--bg-card);padding:10px 8px;text-align:left;border-right:1px solid var(--border-color);}
+    .week-board thead .week-name{z-index:3;background:var(--bg-body);}
+    .week-name-label{display:block;font-size:12px;font-weight:700;color:var(--text-primary);}
+    .week-name-sub{display:block;font-size:10px;color:var(--text-muted);margin-top:2px;font-weight:500;}
+    .week-day-cell{min-width:96px;padding:6px;background:var(--bg-card);cursor:pointer;}
+    .week-day-cell.today{background:#edf4fc;}
+    .week-day-cell.conflict{background:#fff8e7;}
+    .week-chip{display:block;width:100%;text-align:left;border:none;border-radius:8px;padding:6px 7px;margin:0 0 6px;cursor:pointer;line-height:1.25;}
+    .week-chip-time{display:block;font-size:9px;font-weight:700;letter-spacing:0.02em;opacity:0.85;}
+    .week-chip-title{display:block;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .week-chip-loc{display:block;font-size:9px;opacity:0.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .week-chip-Family{background:#f3e8fa;color:#7e3aa8;}
+    .week-chip-Mikaela{background:#e8f0fb;color:#3a6fa8;}
+    .week-chip-Meaghan{background:#fdf3e3;color:#a3600a;}
+    .week-chip-Eleanor{background:#fdeaea;color:#b83232;}
+    .week-chip-Marcus{background:#e6f7ee;color:#1e7a50;}
+    .week-chip-del{float:right;font-size:11px;opacity:0.55;margin-left:4px;border:none;background:none;color:inherit;padding:0;line-height:1;}
+    body.dark-mode .week-conflict-banner{background:#3a3220;border-color:#6b5a30;color:#f0d9a0;}
+    body.dark-mode .week-chip-Family{background:#3a2a48;color:#d4b3ef;}
+    body.dark-mode .week-chip-Mikaela{background:#24344a;color:#9ec0e8;}
+    body.dark-mode .week-chip-Meaghan{background:#3a2e1e;color:#e0b57a;}
+    body.dark-mode .week-chip-Eleanor{background:#3a2224;color:#e8a0a0;}
+    body.dark-mode .week-chip-Marcus{background:#1e3328;color:#8fd4ae;}
+    body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day-today{background:#1e2a3a;}
+    body.dark-mode .week-day-cell.conflict{background:#3a3220;}
+    @media (max-width:420px){
+      .week-board{min-width:640px;}
+      .week-board .week-name{min-width:78px;padding:8px 6px;}
+      .week-day-cell{min-width:84px;padding:4px;}
+    }
+
     /* ── US ── */
     #s-us{background:var(--us-bg);transition:background 0.3s;}
     .us-header{text-align:center;padding:20px 8px;background:var(--us-card-bg);backdrop-filter:blur(12px);border-radius:var(--radius);border:1px solid rgba(253,235,238,0.6);margin-bottom:8px;}

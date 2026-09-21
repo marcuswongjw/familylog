@@ -71,6 +71,7 @@
     let calMonth = new Date().getMonth();
     let selectedCalDayStr = loadPreference('selectedCalDay', localDateStr());
     let calWeekStart = getStartOfWeek(new Date());
+    let weekPersonFilter = loadPreference('weekPerson', 'All');
 
     // Expense & Budget filters
     let activeExpenseAccount = loadPreference('expenseAccount', 'All');
@@ -398,6 +399,7 @@
     function setAdultAccess(adult) {
       isAdultUser = !!adult;
       document.body.classList.toggle('is-child', !isAdultUser);
+      weekPersonFilter = adult ? (loadPreference('weekPerson', 'All') || 'All') : (user || 'All');
       buildMore();
       if (!isAdultUser && ['us', 'fertility', 'expenses', 'budgets', 'recurring'].includes(section)) {
         goTo('home');
@@ -679,6 +681,11 @@
 
     function goTo(id) {
       if (id === 'chat') id = 'home';
+      if (id === 'schedules') {
+        calView = 'week';
+        savePreference('calView', 'week');
+        id = 'calendar';
+      }
       // Adults-only destinations (UI + server); kids never enter these sections
       if (ADULT_SCREENS.includes(id) && !isAdultUser) {
         toast(id === 'us' || id === 'fertility' ? 'That space is for Mom & Dad only 💖' : 'Money is for Mom & Dad only', true);
@@ -723,7 +730,7 @@
         {id:'memories',icon:'💛',label:'Memories'},
         {id:'birthdays',icon:'🎂',label:'Birthdays'},
         ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'},{id:'recurring',icon:'🔄',label:'Recurring'}] : []),
-        {id:'schedules',icon:'⛵',label:'Schedules'},
+        {id:'calendar',icon:'⛵',label:'Week'},
         {id:'travel',icon:'✈️',label:'Travel'}
       ];
       el.innerHTML = tiles.map(t =>
@@ -779,8 +786,9 @@
     }
     function openM(id) {
       document.getElementById(id).classList.add('open');
-      if(id === 'm-event'){ const el=document.getElementById('ev-date'); if(el) el.value=selectedCalDayStr||todayStr(); chips('ev-chips', FAM, 'Everyone', 'ev-tag'); }
+      if(id === 'm-event'){ const el=document.getElementById('ev-date'); if(el) el.value=selectedCalDayStr||todayStr(); chips('ev-chips', FAM, gc('ev-tag') || 'Everyone', 'ev-tag'); }
       if(id === 'm-task') chips('tk-chips', isAdultUser ? FAM : [user], user, 'tk-a');
+      if(id === 'm-timetable-add'){ const el=document.getElementById('sch-date'); if(el) el.value=selectedCalDayStr||todayStr(); }
     }
     function closeM(id){ document.getElementById(id).classList.remove('open'); }
 
@@ -889,7 +897,76 @@
     }
 
     // ─── CALENDAR ──────────────────────────────────────────────
-    function getStartOfWeek(d){ const date=new Date(d); const day=date.getDay(); const diff=date.getDate()-day; return new Date(date.setDate(diff)); }
+    function getStartOfWeek(d){
+      const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = date.getDay();
+      date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+      return date;
+    }
+    function weekDateStr(d){
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+    function eventPeople(e){
+      const tags = (e.tags || []).filter(t => t && t !== 'Everyone');
+      return tags.length ? tags : ['Family'];
+    }
+    function timeToMinutes(s){
+      if (!s) return null;
+      const t = String(s).trim().toLowerCase().replace(/\s+/g, '');
+      if (!t || t === 'allday') return null;
+      const m = t.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+      if (!m) return null;
+      let h = parseInt(m[1], 10);
+      const min = parseInt(m[2], 10);
+      const mer = m[3];
+      if (mer === 'pm' && h !== 12) h += 12;
+      if (mer === 'am' && h === 12) h = 0;
+      return h * 60 + min;
+    }
+    function eventsOverlap(a, b){
+      const as = timeToMinutes(a.time), bs = timeToMinutes(b.time);
+      if (as == null || bs == null) return false;
+      const ae = timeToMinutes(a.endTime) ?? as + 60;
+      const be = timeToMinutes(b.endTime) ?? bs + 60;
+      return as < be && bs < ae;
+    }
+    function weekChipTitle(e, person){
+      let t = e.title || '';
+      if (person && person !== 'Family' && t.toLowerCase().startsWith(person.toLowerCase() + ' - ')) {
+        t = t.slice(person.length + 3);
+      }
+      return t;
+    }
+    function kidHoursThisMonth(name){
+      const now = new Date(), today = todayStr();
+      let hours = 0;
+      (data.events || []).forEach(e => {
+        if (!(e.tags || []).includes(name) || !e.dateRaw || e.dateRaw >= today) return;
+        const d = new Date(e.dateRaw + 'T00:00:00');
+        if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return;
+        hours += Number(e.duration) || 0;
+      });
+      return hours;
+    }
+    function setWeekPerson(person){
+      weekPersonFilter = person;
+      savePreference('weekPerson', person);
+      renderCal();
+    }
+    function openWeekAdd(dayStr, person){
+      if (!isAdultUser) return;
+      selectedCalDayStr = dayStr;
+      savePreference('selectedCalDay', dayStr);
+      if (person && person !== 'Family') {
+        document.getElementById('sch-child').value = (person === 'Meaghan' ? 'Meaghan' : 'Mikaela');
+        if (person === 'Mikaela' || person === 'Meaghan') {
+          openM('m-timetable-add');
+          return;
+        }
+      }
+      openM('m-event');
+      chips('ev-chips', FAM, person && person !== 'Family' ? person : 'Everyone', 'ev-tag');
+    }
     function toggleCalView(view) {
       calView = view;
       savePreference('calView', view);
@@ -935,61 +1012,104 @@
     function renderCalWeek() {
       const evs = data.events || [];
       const container = document.getElementById('cal-list');
-      if(!container) return;
+      if (!container) return;
       const weekStart = new Date(calWeekStart);
-      const daysOfWeek = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-      const monthNamesShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth()+1).padStart(2,'0')}-${String(weekStart.getDate()).padStart(2,'0')}`;
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + i);
+        days.push({ date: d, str: weekDateStr(d) });
+      }
+      const today = todayStr();
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const people = ['Family', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'];
+      const visiblePeople = weekPersonFilter && weekPersonFilter !== 'All'
+        ? people.filter(p => p === 'Family' || p === weekPersonFilter)
+        : people;
+      const matchesSearch = e => !searchCalQuery || (e.title || '').toLowerCase().includes(searchCalQuery) || (e.notes || '').toLowerCase().includes(searchCalQuery);
+      const eventsByDay = {};
+      days.forEach(day => {
+        eventsByDay[day.str] = evs.filter(e => e.dateRaw === day.str && matchesSearch(e))
+          .sort((a, b) => (timeToMinutes(a.time) ?? 0) - (timeToMinutes(b.time) ?? 0));
+      });
+      const conflictDays = {};
+      const conflictLines = [];
+      days.forEach(day => {
+        const mika = eventsByDay[day.str].filter(e => eventPeople(e).includes('Mikaela'));
+        const mega = eventsByDay[day.str].filter(e => eventPeople(e).includes('Meaghan'));
+        mika.forEach(a => mega.forEach(b => {
+          if (a.id === b.id || !eventsOverlap(a, b)) return;
+          const parentCovered = eventPeople(a).concat(eventPeople(b)).some(p => p === 'Marcus' || p === 'Eleanor');
+          if (parentCovered) return;
+          conflictDays[day.str] = true;
+          conflictLines.push(`${dayNames[day.date.getDay()]} ${day.date.getDate()}: ${weekChipTitle(a, 'Mikaela')} and ${weekChipTitle(b, 'Meaghan')}`);
+        }));
+      });
+      const end = days[6];
+      const rangeLabel = days[0].date.getMonth() === end.date.getMonth()
+        ? `${days[0].date.getDate()}–${end.date.getDate()} ${end.date.toLocaleDateString('en-SG', { month: 'short' })}`
+        : `${days[0].date.getDate()} ${days[0].date.toLocaleDateString('en-SG', { month: 'short' })} – ${end.date.getDate()} ${end.date.toLocaleDateString('en-SG', { month: 'short' })}`;
+      const personSub = {
+        Family: 'Everyone',
+        Mikaela: 'self-serve',
+        Meaghan: 'with you',
+        Eleanor: 'Mom',
+        Marcus: 'Dad'
+      };
+      const pills = ['All', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'];
+      const chip = (e, person) => {
+        const timeLabel = !e.time || e.time === 'All day' ? 'All day' : e.time;
+        const del = isAdultUser ? `<button class="week-chip-del" data-eid="${escapeHtml(e.id)}" onclick="event.stopPropagation();delEvent(this.dataset.eid)" aria-label="Delete">✕</button>` : '';
+        return `<button type="button" class="week-chip week-chip-${person}" onclick="event.stopPropagation()">
+          ${del}
+          <span class="week-chip-time">${escapeHtml(timeLabel)}</span>
+          <span class="week-chip-title">${escapeHtml(weekChipTitle(e, person))}</span>
+          ${e.location ? `<span class="week-chip-loc">${escapeHtml(e.location)}</span>` : ''}
+        </button>`;
+      };
       let html = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border-color);">
+        <div class="week-toolbar">
           <div style="display:flex;align-items:center;gap:8px;">
             <button onclick="prevCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">◀</button>
             <button onclick="snapCalWeekToday()" style="background:#edf4fc;border:none;font-size:11px;font-weight:700;color:#4f86c6;padding:4px 8px;border-radius:6px;cursor:pointer;">Today</button>
           </div>
-          <span style="font-weight:700;font-size:14px;">Week of ${fmtDate(weekStartStr)}</span>
+          <span class="week-toolbar-title">${rangeLabel}</span>
           <button onclick="nextCalWeek()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#4f86c6;padding:4px 8px;">▶</button>
         </div>
-        <div class="week-container" style="padding:8px 16px;">
+        <div class="week-people">
+          ${pills.map(p => `<button class="tab-pill${weekPersonFilter===p?' active':''}" onclick="setWeekPerson('${p}')">${p}</button>`).join('')}
+        </div>
+        ${isAdultUser && conflictLines.length ? `<div class="week-conflict-banner"><strong>Two places at once</strong><br>${conflictLines.map(escapeHtml).join('<br>')}</div>` : ''}
+        <div class="week-board-scroll">
+          <table class="week-board">
+            <thead>
+              <tr>
+                <th class="week-name"></th>
+                ${days.map(day => `<th class="${day.str===today?'week-day-today':''}">${dayNames[day.date.getDay()]}<br>${day.date.getDate()}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${visiblePeople.map(person => {
+                const hours = (person === 'Mikaela' || person === 'Meaghan') ? kidHoursThisMonth(person) : 0;
+                const sub = person === 'Mikaela' || person === 'Meaghan'
+                  ? `${personSub[person]}${hours ? ' · ' + hours.toFixed(1) + 'h this month' : ''}`
+                  : personSub[person];
+                return `<tr>
+                  <th class="week-name"><span class="week-name-label">${person === 'Mikaela' ? '⛵ ' : person === 'Meaghan' ? '🩰 ' : ''}${escapeHtml(person)}</span><span class="week-name-sub">${escapeHtml(sub)}</span></th>
+                  ${days.map(day => {
+                    const cellEvents = eventsByDay[day.str].filter(e => eventPeople(e).includes(person));
+                    const conflict = person !== 'Family' && conflictDays[day.str] && (person === 'Mikaela' || person === 'Meaghan');
+                    return `<td class="week-day-cell${day.str===today?' today':''}${conflict?' conflict':''}" onclick="openWeekAdd('${day.str}','${person}')">${cellEvents.map(e => chip(e, person)).join('')}</td>`;
+                  }).join('')}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       `;
-      const today = todayStr();
-      for(let i=0; i<7; i++) {
-        const d = new Date(weekStart);
-        d.setDate(weekStart.getDate()+i);
-        const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        const isToday = dStr === today;
-        let dayEvents = evs.filter(e => e.dateRaw === dStr);
-        if(searchCalQuery) dayEvents = dayEvents.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
-        let eventsHtml = '';
-        if(dayEvents.length > 0) {
-          eventsHtml = dayEvents.map(e => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border-color);">
-              <div style="flex:1;">
-                <div style="font-weight:600;font-size:13px;">${escapeHtml(e.title)}</div>
-                <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(e.time)}${e.endTime ? ' - ' + escapeHtml(e.endTime) : ''}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
-                ${e.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(e.notes)}"</div>` : ''}
-                ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;font-size:9px;padding:1px 4px;">${escapeHtml(t)}</span>`).join('')}
-              </div>
-              <button onclick="delEvent('${e.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;">✕</button>
-            </div>
-          `).join('');
-        } else {
-          eventsHtml = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;">No events</div>';
-        }
-        const dayStyle = isToday ? 'background:var(--bg-card);border-left:3px solid #4f86c6;padding:8px;border-radius:4px;margin-bottom:8px;' : 'padding:8px;margin-bottom:8px;';
-        html += `
-          <div style="${dayStyle}border-bottom:1px solid var(--border-color);">
-            <div style="font-weight:700;font-size:12px;color:${isToday ? '#4f86c6' : 'var(--text-secondary)'};margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-              <span>${daysOfWeek[d.getDay()]}, ${d.getDate()} ${monthNamesShort[d.getMonth()]}</span>
-              ${isToday ? '<span style="font-size:10px;background:#4f86c6;color:#fff;padding:1px 6px;border-radius:10px;">TODAY</span>' : ''}
-            </div>
-            <div style="padding-left:4px;">
-              ${eventsHtml}
-            </div>
-          </div>
-        `;
-      }
-      html += `</div>`;
       container.innerHTML = html;
+      const todayCol = container.querySelector('.week-day-today');
+      if (todayCol) todayCol.scrollIntoView({ inline: 'center', block: 'nearest' });
     }
 
     function renderCalMonth() {
@@ -1788,16 +1908,18 @@
       html += `<div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📅 Activities: ${fmtDate(selectedGridDayStr)}</div><div class="card-body" style="padding:0;">${selectedDayHtml}</div>`;
       container.innerHTML = html;
     }
-    function delSchedule(id) {
-      const ev = data.events.find(e => e.id === id);
-      if(!ev) return;
-      if(!confirm('Delete this calendar event?')) return;
+    function delEvent(id) {
+      if (!isAdultUser) { toast('Only Mom & Dad can delete events', true); return; }
+      const ev = (data.events || []).find(e => e.id === id);
+      if (!ev) return;
+      if (!confirm('Delete this calendar event?')) return;
       data.events = data.events.filter(e => e.id !== id);
-      pushUndo(() => { data.events.push(ev); renderSchedules(); renderCal(); }, 'Schedule deleted');
-      renderSchedules(); renderCal();
-      gPost({ note:'delete_event', event_id: id });
-      toast('Schedule deleted (undo available)');
+      pushUndo(() => { data.events.push(ev); renderCal(); }, 'Event deleted');
+      renderCal();
+      gPost({ note: 'delete_event', event_id: id });
+      toast('Event deleted (undo available)');
     }
+    function delSchedule(id) { delEvent(id); }
 
     // ─── SUBMIT FUNCTIONS ──────────────────────────────────────
     async function submitEvent(btn) {
@@ -1957,8 +2079,8 @@
         if(!dateVal){ alert('Please select a date'); return; }
         const title = child + ' - ' + activity;
         await gPost({note:'add_event',event_title:title,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
-        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Schedules updated! ⛵');
-        await loadData(); renderSchedules();
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Added to the week ⛵');
+        await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
     }
     async function submitAppreciation(btn) {
