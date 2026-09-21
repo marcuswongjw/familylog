@@ -129,8 +129,12 @@ exports.extractSchoolAnnouncement = functions.runWith({
   const text = typeof data?.text === 'string' ? data.text.trim() : '';
   const path = typeof data?.imagePath === 'string' ? data.imagePath : '';
   if (text.length > 20000 || (!text && !path)) throw new functions.https.HttpsError('invalid-argument', 'Add a message or screenshot (up to 20,000 characters).');
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'Gemini AI extraction is not configured. You can enter the plan manually.');
+  if (!apiKey.startsWith('AIzaSy')) {
+    console.error('Invalid GEMINI_API_KEY format. Google AI Studio keys start with AIzaSy.');
+    throw new functions.https.HttpsError('failed-precondition', 'Invalid Gemini API key. Google AI Studio keys start with "AIzaSy". Generate one at https://aistudio.google.com/app/apikey and update the secret.');
+  }
   if (path && !new RegExp('^school/' + email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/[a-f0-9]{64}$').test(path)) {
     throw new functions.https.HttpsError('permission-denied', 'Invalid screenshot owner.');
   }
@@ -158,18 +162,21 @@ exports.extractSchoolAnnouncement = functions.runWith({
     const model = process.env.SCHOOL_AI_MODEL || 'gemini-2.0-flash';
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(buildRequest(text, imageMime, imageBase64, model)),
       signal: AbortSignal.timeout(35000)
     });
     if (!response.ok) {
       const errSnippet = await response.text().catch(() => '');
       console.error('Gemini API HTTP error:', response.status, response.statusText, errSnippet.slice(0, 200));
-      throw new Error('Extraction service error (' + response.status + '). Try again or enter the plan manually.');
+      if (response.status === 401 || response.status === 403) {
+        throw new functions.https.HttpsError('permission-denied', 'Gemini API authentication failed (' + response.status + '). Check your GEMINI_API_KEY.');
+      }
+      throw new functions.https.HttpsError('unavailable', 'Extraction service error (' + response.status + '). Try again or enter the plan manually.');
     }
     return parseResponse(await response.json());
   } catch (err) {
-    // Diagnostic log without leaking private announcement text, images or tokens.
+    if (err instanceof functions.https.HttpsError) throw err;
     console.error('extractSchoolAnnouncement failed:', err.name || 'Error', err.message || String(err));
     throw new functions.https.HttpsError('unavailable', 'Could not read this message. Try a clearer screenshot or enter the plan manually.');
   }
