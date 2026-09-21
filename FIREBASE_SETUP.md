@@ -89,49 +89,94 @@ Without these, chat/users may be open or uploads may fail after path changes.
 
 ---
 
-## 5. Cloud Functions (school)
+## 5. Cloud Functions & Gemini AI (School Copilot)
 
-[index.js](index.js) exports callable functions only:
+[index.js](index.js) exports callable Cloud Functions for multimodal school extraction:
 
-- `extractSchoolAnnouncement` — Gemini read of a school message/screenshot (parents)  
-- `getSchoolSourceImage` — authenticated screenshot fetch  
+- `extractSchoolAnnouncement` — multimodal Gemini analysis of a school notice or screenshot (parents only)
+- `getSchoolSourceImage` — authenticated fetch of the original uploaded screenshot from Storage
 
-Chat push (`sendChatNotification`) has been removed.
+### Setting up the Gemini AI key
 
-```bash
-npx firebase-tools deploy --only functions
-```
+1. Generate an API key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+   - Keys typically start with `AQ.` (new format) or `AIza` (legacy Google Cloud keys).
+2. Store the secret in Google Cloud Secret Manager via the Firebase CLI:
+   ```bash
+   firebase functions:secrets:set GEMINI_API_KEY
+   # Paste your Gemini API key when prompted
+   ```
+3. Deploy Cloud Functions:
+   ```bash
+   firebase deploy --only functions
+   ```
+   *(Grant Secret Manager Secret Accessor permission to the App Engine / Cloud Functions service account if prompted during deploy).*
+
+### Architecture & safeguards
+- **Image downscaling:** The client downscales camera photos to max 1600px JPEG before upload, preventing upload timeouts on mobile networks.
+- **Quota gating:** 30 extractions per user per day tracked in Firestore collection `schoolExtractionLimits`.
+- **Model failover:** Primary model is `gemini-2.5-flash`, with automatic fallback to `gemini-3.5-flash` in case of 503 high-demand spikes.
+- **Zero dual-write:** Cloud Functions only perform extraction and return a draft structure. No calendar events or tasks are written by Firebase; publishing is strictly owned by Google Sheets + Apps Script.
 
 ---
 
-## 6. Data model (Firebase)
+## 6. End-to-End Live Verification Checklist
+
+Follow this checklist to verify that screenshot upload → Gemini → Sheets → Calendar operates cleanly:
+
+1. **Screenshot Upload & AI Extraction**:
+   - Open Family Log as a parent (Marcus or Eleanor).
+   - Tap **School Copilot** → choose a photo or paste text → tap **Read with Gemini AI**.
+   - *Verification:* Spinner should resolve within 2–5 seconds with an extracted draft (Title, Child, Event date/times, Tasks).
+2. **Review & Task Owner Defaulting**:
+   - Check that the detected child matches. If changed via the Child dropdown, task owners should sync to that child automatically.
+   - Verify task owners default to the child of the plan.
+3. **Save Draft & Publication**:
+   - Check the confirmation checkbox and tap **Add to family plan**.
+   - *Verification:*
+     - A calendar event appears on Google Calendar.
+     - Tasks are appended to the `ToDo` sheet.
+     - An announcement row is recorded on `SchoolAnnouncements` sheet with status `published`.
+4. **Child Readiness & Checklist Retention**:
+   - Open Home as a child (Mikaela or Meaghan).
+   - Tap **Today** / **Tomorrow** pills.
+   - Complete an undated packing task or homework task.
+   - *Verification:* The task remains visible on the daily card with a green `✓ Packed` or `✓ Done` badge, and the progress bar updates (e.g. 1 of 3 $\rightarrow$ 33%) without disappearing.
+
+---
+
+## 7. Data model (Firebase)
 
 | Collection / path | Contents |
 |-------------------|----------|
 | `users/{email}` | `email`, `name`, `fcmTokens[]` |
 | `memories/{id}` | `loggedBy`, `loggedByEmail`, `date`, `type`, `person`, `memory`, `imageUrl`, `timestamp` |
+| `schoolExtractionLimits/{uid}` | `day` (`YYYY-MM-DD`), `count` (daily operational rate-limit counter) |
 | Storage `memories/{email}/{file}` | Memory images |
+| Storage `school/{email}/{sha256}` | Temporary school announcement screenshots |
 
-**Not in Firebase:** expenses, budgets, Us appreciations/check-ins, fertility, travel pins, calendar — those are **Sheets + GAS**.
-
-**Do not recreate a Sheets “Chat” tab** — chat is Firestore-only. Safe to delete an old Chat sheet if it still exists.
+**Not in Firebase:** expenses, budgets, Us appreciations/check-ins, fertility, travel pins, calendar, todos, school announcements — those are **Sheets + GAS**.
 
 ---
 
-## 7. Apps Script + Firebase together
+## 8. Apps Script + Firebase together
 
 GAS verifies tokens with the Identity Toolkit API using `FIREBASE_API_KEY` (Script property or default in `Code.js`) and enforces `ALLOWED_EMAILS` / `ADULT_EMAILS`.
 
-After any `Code.js` change:
+After any `Code.js` change, deploy via clasp:
 
-1. Paste into the sheet’s Apps Script project  
-2. **Deploy → Manage deployments → New version**  
+```bash
+./scripts/deploy-gas.sh
+```
+
+Or manually:
+1. Paste `Code.js` into the spreadsheet's Apps Script editor (https://script.google.com).
+2. **Deploy → Manage deployments → Edit active deployment → New version → Deploy**.
 
 Recommended Script property: `APPROVAL_SECRET` (expense approval link signing).
 
 ---
 
-## 8. PWA & notifications
+## 9. PWA & notifications
 
 1. Deploy site via GitHub Pages  
 2. On phone: open site → **Add to Home Screen**  

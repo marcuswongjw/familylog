@@ -363,7 +363,18 @@ function renderSchoolHome() {
 
     <div class="school-day-grid">${children.map(child => {
       const events = (data.events || []).filter(e => e.dateRaw === day && (e.tags || []).includes(child));
-      const childTasks = tasks.filter(t => (t.assignee === child || t.assignee === 'Everyone') && (!t.dueRaw || t.dueRaw <= day) && (t.status !== 'Done' || t.dueRaw === day));
+      const childTasks = tasks.filter(t => {
+        if (t.assignee !== child && t.assignee !== 'Everyone') return false;
+        if (t.status !== 'Done') return !t.dueRaw || t.dueRaw <= day;
+        // Completed items: remain visible on the day due, day completed, or active checklist
+        if (t.dueRaw === day) return true;
+        if (t.completedRaw && t.completedRaw === day) return true;
+        if (!t.dueRaw) {
+          if (events.some(e => e.sourceId && e.sourceId === t.sourceId)) return true;
+          return isToday && (!t.completedRaw || t.completedRaw === day);
+        }
+        return false;
+      });
       const packingTasks = childTasks.filter(t => t.kind === 'packing');
       const otherTasks = childTasks.filter(t => t.kind !== 'packing');
       const done = childTasks.filter(t => t.status === 'Done').length;
@@ -471,8 +482,8 @@ async function schoolTaskAction(id, action, button) {
   const result = await gPost({ note: action, todo_id: id });
   if (!result || result.status !== 'ok') { button.disabled = false; return; }
   const status = action === 'help_todo' ? 'Needs help' : 'Done';
-  (data.schoolTasks || []).forEach(t => { if (t.id === id) t.status = status; });
-  (data.todos || []).forEach(t => { if (t.id === id) t.status = status; });
+  (data.schoolTasks || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
+  (data.todos || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
   if (status === 'Done') data.todos = (data.todos || []).filter(t => t.id !== id);
   renderHome(); renderTasks();
   toast(status === 'Done' ? 'Well done! ✓' : 'Your parent can see that you need a hand.');

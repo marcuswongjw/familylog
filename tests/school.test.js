@@ -126,6 +126,9 @@ test('children can read and complete tasks assigned to Everyone but cannot delet
   assert.equal(h.write({ note: 'delete_todo', todo_id: added.id }, child).status, 'error');
   assert.equal(h.write({ note: 'complete_todo', todo_id: added.id }, child).status, 'ok');
   assert.equal(h.c.getTodos(h.ss, child).length, 0);
+  const completed = h.c.getTodos(h.ss, child, true);
+  assert.equal(completed.length, 1);
+  assert.ok(completed[0].completedRaw);
 });
 test('formula-like source text is stored as text, not a spreadsheet formula', () => {
   const h = harness(), p = plan(); p.tasks[0].title = '=IMPORTXML("bad")';

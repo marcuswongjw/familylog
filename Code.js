@@ -843,12 +843,17 @@ function handleWriteInner_(data) {
         ? calendar.createAllDayEvent(title, startDate, { description: eventNotes || '', location: eventLocation || '' })
         : calendar.createEvent(title, startDate, endDate, { description: eventNotes || '', location: eventLocation || '' });
 
+      var member = toStr(data.event_member) || toStr(data.event_child) || '';
+      if (member && FAMILY_MEMBERS.indexOf(member) !== -1 && member !== 'Everyone') {
+        try { if (typeof createdEvent.setTag === 'function') createdEvent.setTag('familylogMember', member); } catch (te) {}
+      }
+
       var calSheet = ss.getSheetByName('Calendar');
       if (!calSheet) { calSheet = ss.insertSheet('Calendar'); calSheet.appendRow(['Title', 'Date', 'Time', 'Added By', 'Notes', 'Google Event ID']); }
       var calNotes = eventNotes;
       if (eventLocation) calNotes = (calNotes ? calNotes + '\n' : '') + 'Location: ' + eventLocation;
       calSheet.appendRow([title, startDate, timeStr, user, calNotes, createdEvent.getId()]);
-      console.log('✅ Event added: ' + title);
+      console.log('✅ Event added: ' + title + (member ? ' [' + member + ']' : ''));
       return { status: 'ok', id: createdEvent.getId() };
     }
 
@@ -1410,7 +1415,10 @@ function getEvents() {
     for (var i = 0; i < events.length; i++) {
       var ev        = events[i];
       var titleDesc = ev.getTitle() + ' ' + (ev.getDescription() || '');
-      var tags      = FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
+      var explicitTag = '';
+      try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
+      if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
+      var tags      = explicitTag ? [explicitTag] : FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
       var duration  = 0;
       try {
         duration = (ev.getEndTime().getTime() - ev.getStartTime().getTime()) / (1000 * 60 * 60);
@@ -1425,7 +1433,7 @@ function getEvents() {
         allDay:  ev.isAllDayEvent(),
         notes:   ev.getDescription() || '',
         location: ev.getLocation() || '',
-        tags:    schoolLinks[ev.getId()] ? [schoolLinks[ev.getId()].child] : tags,
+        tags:    tags,
         sourceId: schoolLinks[ev.getId()] ? schoolLinks[ev.getId()].sourceId : '',
         duration: duration
       });
@@ -1454,6 +1462,7 @@ function getTodos(ss, verifiedEmail, includeDone) {
       assignee: toStr(row[2]) || 'Everyone',
       due:      row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'dd MMM yyyy') : '',
       dueRaw:   row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'yyyy-MM-dd') : '',
+      completedRaw: row[6] ? Utilities.formatDate(new Date(row[6]), tz, 'yyyy-MM-dd') : '',
       addedBy:  toStr(row[4]),
       status:   toStr(row[5]) || 'Open'
     });

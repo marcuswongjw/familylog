@@ -1168,10 +1168,11 @@
       let selectedDayHtml = '';
       if(selectedDayEvents.length > 0) {
         selectedDayHtml = selectedDayEvents.map(e => `
-          <div class="row" style="padding:10px 16px;cursor:grab;" draggable="true" data-event-id="${e.id}" data-date="${e.dateRaw}" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
+          <div class="row" style="padding:10px 16px;cursor:${isAdultUser && !e.sourceId ? 'grab' : 'default'};" draggable="${isAdultUser && !e.sourceId}" data-event-id="${e.id}" data-date="${e.dateRaw}" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
             <div style="font-size:20px;flex-shrink:0;margin-right:6px;">📅</div>
             <div class="row-main">
               <div class="row-title" style="font-weight:600;">${escapeHtml(e.title)}</div>
+              ${e.sourceId ? '<div class="row-sub">School plan · Change dates in Google Calendar and review preparation tasks.</div>' : ''}
               <div class="row-sub">${escapeHtml(e.time)}${e.endTime ? ' - ' + escapeHtml(e.endTime) : ''}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
               ${e.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(e.notes)}"</div>` : ''}
               ${(e.tags||[]).map(t=>`<span class="badge ${getMemberBadgeClass(t)}" style="margin-top:4px;margin-right:3px;">${escapeHtml(t)}</span>`).join('')}
@@ -1199,37 +1200,68 @@
 
     // ─── CALENDAR DRAG & DROP ──────────────────────────────
     let draggedEventId = null;
+    const pendingCalendarMoves = new Set();
+    const SCHOOL_MOVE_MESSAGE = 'School events are linked to a reviewed plan. Edit the event in Google Calendar and review its preparation tasks together.';
     function onDragStart(e) {
+      draggedEventId = null;
       const el = e.target.closest('.row');
       if(!el) return;
+      const event = (data.events || []).find(ev => ev.id === el.dataset.eventId);
+      if (!event || !isAdultUser || event.sourceId || pendingCalendarMoves.has(event.id)) {
+        e.preventDefault();
+        if (event?.sourceId) showError(SCHOOL_MOVE_MESSAGE);
+        else if (!isAdultUser) showError('Only parents can move calendar events.');
+        else if (event) toast('This event is still saving.');
+        return;
+      }
       draggedEventId = el.dataset.eventId;
       e.dataTransfer.setData('text/plain', draggedEventId);
       el.classList.add('dragging');
     }
     function onDragEnd(e) {
+      draggedEventId = null;
       const el = e.target.closest('.row');
       if(el) el.classList.remove('dragging');
+      document.querySelectorAll('.cal-day-cell.drag-over').forEach(cell => cell.classList.remove('drag-over'));
     }
     function onDragOver(e) {
       e.preventDefault();
       const cell = e.target.closest('.cal-day-cell');
       if(cell) cell.classList.add('drag-over');
     }
-    function onDrop(e) {
+    async function onDrop(e) {
       e.preventDefault();
       const cell = e.target.closest('.cal-day-cell');
       if(cell) cell.classList.remove('drag-over');
-      const newDate = cell.dataset.date;
-      if(!newDate || !draggedEventId) return;
-      const event = data.events.find(ev => ev.id === draggedEventId);
-      if(event) {
-        event.dateRaw = newDate;
-        event.date = fmtDate(newDate);
-        renderCal();
-        gPost({ note: 'update_event_date', event_id: draggedEventId, new_date: newDate });
-        toast('Event moved to ' + fmtDate(newDate));
-      }
+      const newDate = cell?.dataset.date;
+      const eventId = draggedEventId;
       draggedEventId = null;
+      if (!newDate || !eventId) return;
+      const event = (data.events || []).find(ev => ev.id === eventId);
+      if (!event || pendingCalendarMoves.has(eventId) || event.dateRaw === newDate) return;
+      if (!isAdultUser) return showError('Only parents can move calendar events.');
+      if (event.sourceId) return showError(SCHOOL_MOVE_MESSAGE);
+      pendingCalendarMoves.add(eventId);
+      try {
+        const result = await gPost({ note: 'update_event_date', event_id: eventId, new_date: newDate });
+        if (!result || result.status !== 'ok') {
+          showError(result?.message || 'Could not confirm the move. Refresh the calendar before trying again.');
+          return;
+        }
+        // A refresh may have replaced the event object while the request was pending.
+        const currentEvent = (data.events || []).find(ev => ev.id === eventId);
+        if (currentEvent) {
+          currentEvent.dateRaw = newDate;
+          currentEvent.date = fmtDate(newDate);
+        }
+        renderCal();
+        renderHome();
+        toast('Event moved to ' + fmtDate(newDate));
+      } catch (err) {
+        showError('Could not confirm the move. Refresh the calendar before trying again.');
+      } finally {
+        pendingCalendarMoves.delete(eventId);
+      }
     }
 
     // ─── CALENDAR YEAR VIEW ──────────────────────────────────
@@ -1931,7 +1963,7 @@
         const tag = gc('ev-tag');
         let notes = v('ev-notes');
         if(tag && tag !== 'Everyone') notes = (notes?notes+'\n':'') + 'Tag: '+tag;
-        await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes});
+        await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes,event_member:tag||''});
         closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added! ✅');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Add Event'; }
@@ -2078,7 +2110,7 @@
         if(!activity){ alert('Please enter activity name'); return; }
         if(!dateVal){ alert('Please select a date'); return; }
         const title = child + ' - ' + activity;
-        await gPost({note:'add_event',event_title:title,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
+        await gPost({note:'add_event',event_title:title,event_child:child,event_member:child,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
         closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Added to the week ⛵');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
