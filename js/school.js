@@ -201,7 +201,7 @@ function renderSchoolReview() {
             ${schoolField('Location', 'school-event-location', p.event.location)}
             ${p.event.evidence ? `<blockquote>${escapeHtml(p.event.evidence)}</blockquote>` : ''}
           </div>
-          <h3>Who needs to do what?</h3>
+          <h3>Preparation & packing items</h3>
           <p class="school-muted">Task owners default to the child. Preparation and packing tasks default to the day before the event.</p>
           <div id="school-task-editor">${p.tasks.map((t, i) => `
             <div class="school-edit-task">
@@ -213,16 +213,16 @@ function renderSchoolReview() {
               <button class="btn btn-s" type="button" data-remove-task="${i}">Remove task</button>
             </div>`).join('')}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
-            <button type="button" class="btn btn-s" id="school-add-task">+ Add task</button>
+            <button type="button" class="btn btn-s" id="school-add-task">Add task</button>
             <span class="school-muted" style="font-size:12px;">Presets:</span>
             <button type="button" class="btn btn-xs" data-school-tpl="sailing">+ ⛵ Sailing kit</button>
             <button type="button" class="btn btn-xs" data-school-tpl="ballet">+ 🩰 Ballet kit</button>
             <button type="button" class="btn btn-xs" data-school-tpl="swim">+ 🏊 Swim kit</button>
           </div>
         </fieldset>
-        ${!locked ? '<label class="school-check school-confirm"><input type="checkbox" id="school-confirm">I checked the source, dates and owners.</label>' : ''}
+        ${!locked ? '<label class="school-check school-confirm"><input type="checkbox" id="school-confirm">I have checked the date, times, and assigned items.</label>' : ''}
         <div class="school-actions">
-          ${!locked ? '<button type="button" class="btn btn-s" id="school-save">Save draft</button><button type="button" class="btn btn-p" id="school-publish">Add to family plan</button>' : p.status === 'publishing' ? '<button type="button" class="btn btn-p" id="school-retry">Retry remaining items</button>' : ''}
+          ${!locked ? '<button type="button" class="btn btn-s" id="school-save">Save draft</button><button type="button" class="btn btn-p" id="school-publish">Add to calendar & tasks</button>' : p.status === 'publishing' ? '<button type="button" class="btn btn-p" id="school-retry">Retry remaining items</button>' : ''}
         </div>
       </div>
     </div>`;
@@ -402,7 +402,7 @@ function renderSchoolHome() {
               <div style="font-weight:600;">${escapeHtml(t.task)}</div>
               ${t.dueRaw ? `<small style="color:#a06a12;">Due ${fmtDate(t.dueRaw)}</small>` : ''}
             </div>
-            <button class="btn btn-s" data-school-done="${escapeHtml(t.id)}" style="background:#fff;border-color:#dec486;color:#77500c;">Mark Done</button>
+            <button class="btn btn-s" data-school-done="${escapeHtml(t.id)}" style="background:#fff;border-color:#dec486;color:#77500c;">Mark done</button>
           </div>
         `).join('')}
       </div>
@@ -412,11 +412,11 @@ function renderSchoolHome() {
     ${isAdultUser ? `
       <div class="school-intro">
         <div>
-          <span class="school-eyebrow">FAMILY SCHOOL COPILOT</span>
-          <h2>From school message<br>to family plan.</h2>
-          <p>One place to turn school notices into everyone's next step.</p>
+          <span class="school-eyebrow">School notices</span>
+          <h2>Turn school notices into dates and tasks</h2>
+          <p>Read circulars and messages to prepare schedules and packing checklists.</p>
         </div>
-        <button class="btn btn-p" id="school-open">+ Add school message</button>
+        <button class="btn btn-p" id="school-open">Add school message</button>
       </div>
       ${pending.length ? `
         <div class="school-inbox">
@@ -571,5 +571,5 @@ async function schoolTaskAction(id, action, button) {
   (data.todos || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
   if (status === 'Done') data.todos = (data.todos || []).filter(t => t.id !== id);
   renderHome(); renderTasks();
-  toast(status === 'Done' ? 'Well done! ✓' : 'Your parent can see that you need a hand.');
+  toast(status === 'Done' ? 'Task completed.' : 'Your parent can see that you need a hand.');
 }

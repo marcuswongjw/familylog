@@ -75,8 +75,6 @@
       </div>
       <div class="hdr-actions">
         <button class="hdr-btn" onclick="toggleDarkMode()" id="darkToggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-        <button class="hdr-btn" id="rbtn" onclick="loadData()" aria-label="Refresh" title="Refresh">🔄</button>
-        <button class="hdr-btn" onclick="logout()" aria-label="Sign out" title="Sign out">🚪</button>
         <span class="notif-bell" id="notifBell" onclick="toggleNotifications()" title="Notifications">
           🔔
           <span class="badge-dot" id="notifDot"></span>
@@ -106,8 +104,8 @@
             <div class="card-hdr">
               <span class="card-title"><span style="width:10px;height:10px;border-radius:50%;background:var(--mod-week);display:inline-block;"></span> Family week</span>
               <div style="display:flex;gap:8px;">
-                <button class="btn btn-sm adult-only" onclick="openM('m-timetable-add')">+ Add activity</button>
-                <button class="btn btn-sm btn-p adult-only" onclick="openM('m-event')">+ Add event</button>
+                <button class="btn btn-sm adult-only" onclick="openM('m-timetable-add')">Add activity</button>
+                <button class="btn btn-sm btn-p adult-only" onclick="openM('m-event')">Add event</button>
               </div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 4px;">
@@ -116,7 +114,7 @@
               <button class="toggle-pill" id="cal-view-month" onclick="toggleCalView('month')">Month</button>
               <button class="toggle-pill" id="cal-view-year" onclick="toggleCalView('year')">Year</button>
             </div>
-            <div class="search-wrap"><input type="text" id="cal-search" placeholder="Search events..." oninput="filterCalendar()"><span class="clear-btn" onclick="document.getElementById('cal-search').value='';filterCalendar();">✕</span></div>
+            <div class="search-wrap"><input type="text" id="cal-search" placeholder="Search events…" oninput="filterCalendar()"><span class="clear-btn" onclick="document.getElementById('cal-search').value='';filterCalendar();">✕</span></div>
             <div class="card-body" id="cal-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
           </div>
         </div>
@@ -127,7 +125,7 @@
         <div class="sec-body">
           <div class="card">
             <div class="card-hdr"><span class="card-title">Tasks</span></div>
-            <div class="search-wrap"><input type="text" id="task-search" placeholder="Search tasks..." oninput="filterTasks()"><span class="clear-btn" onclick="document.getElementById('task-search').value='';filterTasks();">✕</span></div>
+            <div class="search-wrap"><input type="text" id="task-search" placeholder="Search tasks…" oninput="filterTasks()"><span class="clear-btn" onclick="document.getElementById('task-search').value='';filterTasks();">✕</span></div>
             <div class="card-body" id="task-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
           </div>
         </div>
@@ -141,7 +139,7 @@
           <button class="toggle-pill" id="exp-acc-Personal" onclick="toggleExpenseAccount('Personal')" style="flex:1;text-align:center;">Personal</button>
         </div>
         <div class="search-wrap">
-          <input type="text" id="exp-search" placeholder="Search expenses..." oninput="filterExpenses()">
+          <input type="text" id="exp-search" placeholder="Search expenses…" oninput="filterExpenses()">
           <span class="clear-btn" onclick="document.getElementById('exp-search').value='';filterExpenses();">✕</span>
         </div>
         <div class="sec-body" id="exp-body"><div class="loading"><div class="spin"></div>Loading…</div></div>
@@ -152,8 +150,8 @@
         <div class="sec-body">
           <div class="card">
             <div class="card-hdr">
-              <span class="card-title"><span style="width:10px;height:10px;border-radius:50%;background:var(--mod-week);display:inline-block;"></span> Kid activities</span>
-              <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">+ Add activity</button>
+              <span class="card-title"><span style="width:10px;height:10px;border-radius:50%;background:var(--mod-week);display:inline-block;"></span> Child activities</span>
+              <button class="btn btn-sm btn-p" onclick="openM('m-timetable-add')">Add activity</button>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 4px;">
               <button class="tab-pill active" id="pill-Mikaela" onclick="filterSchedules('Mikaela')">Mikaela</button>
@@ -180,7 +178,7 @@
               <span class="card-title"><span style="width:10px;height:10px;border-radius:50%;background:var(--mod-budgets);display:inline-block;"></span> Household budgets</span>
               <div style="display:flex;align-items:center;gap:8px;">
                 <span class="badge b-privacy adult-only">Visible only to selected adults</span>
-                <button class="btn btn-sm btn-p" onclick="openM('m-budget')">+ Set budget</button>
+                <button class="btn btn-sm btn-p" onclick="openM('m-budget')">Set budget</button>
               </div>
             </div>
             <div class="card-body" id="bud-list"><div class="loading"><div class="spin"></div>Loading…</div></div>
@@ -250,8 +248,8 @@
             <div class="card-hdr">
               <span class="card-title"><span style="width:10px;height:10px;border-radius:50%;background:var(--mod-travel);display:inline-block;"></span> Travel map</span>
               <div style="display:flex;gap:8px;">
-                <button class="btn btn-sm" id="btn-play-timeline" onclick="playTravelTimeline()" style="background:var(--primary-light);color:var(--primary);border:1px solid var(--border-color);">▶ Play</button>
-                <button class="btn btn-sm btn-p" onclick="openM('m-trip-add')">+ Add trip</button>
+                <button class="btn btn-sm" id="btn-play-timeline" onclick="playTravelTimeline()" style="background:var(--primary-light);color:var(--primary);border:1px solid var(--border-color);">Play timeline</button>
+                <button class="btn btn-sm btn-p" onclick="openM('m-trip-add')">Add trip</button>
               </div>
             </div>
             <div class="travel-stats" style="display:flex;gap:10px;margin:12px;flex-wrap:wrap;">
@@ -268,11 +266,11 @@
               <div style="flex:1;min-width:70px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:12px;text-align:center;">
                 <div style="font-size:16px;">🏆</div>
                 <div id="stat-top-traveler" style="font-size:16px;font-weight:bold;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="None">None</div>
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Top Traveler</div>
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Top traveler</div>
               </div>
             </div>
             <div id="travel-map" style="height:280px;border-radius:var(--radius-sm);margin:0 12px 12px;border:1.5px solid var(--border-color);"></div>
-            <div class="card-hdr" style="border-top:1px solid var(--border-color);"><span class="card-title">✈️ Visited Places</span></div>
+            <div class="card-hdr" style="border-top:1px solid var(--border-color);"><span class="card-title">Visited places</span></div>
             <div class="card-body" id="trip-list" style="padding:0;"><div class="loading"><div class="spin"></div>Loading…</div></div>
           </div>
         </div>
@@ -319,7 +317,7 @@
   <div class="drawer-overlay" id="drawer-overlay" onclick="toggleMenuDrawer(false)"></div>
   <div class="drawer" id="menu-drawer">
     <div class="drawer-hdr">
-      <span class="drawer-title">Hearth Modules</span>
+      <span class="drawer-title">More spaces</span>
       <button class="drawer-close" onclick="toggleMenuDrawer(false)" aria-label="Close menu">✕</button>
     </div>
     <div class="drawer-body">
@@ -333,27 +331,27 @@
       </div>
       <div class="drawer-item" onclick="navigateDrawer('birthdays')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16h16"/><path d="M12 7V4"/><circle cx="12" cy="3" r="1"/></svg></span>
-        <span class="di-lbl">Birthdays & Anniversaries</span>
+        <span class="di-lbl">Birthdays & anniversaries</span>
       </div>
       <div class="drawer-item adult-only" id="drawer-fertility" onclick="navigateDrawer('fertility')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 4.5 7 13 7 13s7-8.5 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
-        <span class="di-lbl">Fertility Tracker</span>
+        <span class="di-lbl">Fertility tracker</span>
       </div>
       <div class="drawer-item adult-only" onclick="navigateDrawer('recurring')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/></svg></span>
-        <span class="di-lbl">Recurring Expenses</span>
+        <span class="di-lbl">Recurring expenses</span>
       </div>
       <div class="drawer-item" onclick="navigateDrawer('calendar')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-        <span class="di-lbl">Family Week</span>
+        <span class="di-lbl">Family week</span>
       </div>
       <div class="drawer-item" onclick="navigateDrawer('travel')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg></span>
-        <span class="di-lbl">Travel Map</span>
+        <span class="di-lbl">Travel map</span>
       </div>
       <div class="drawer-item" onclick="toggleMenuDrawer(false); logout();" style="border-top:1px solid var(--border-color);margin-top:12px;color:#b83232;font-weight:600;">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
-        <span class="di-lbl">Log out</span>
+        <span class="di-lbl">Sign out</span>
       </div>
     </div>
   </div>
@@ -369,10 +367,11 @@
   <!-- ─── MODALS ────────────────────────────────────────── -->
 
   <!-- Add Event -->
+  <!-- Add Event -->
   <div class="overlay" id="m-event">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Event</span><button class="modal-close" onclick="closeM('m-event')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add event</span><button class="modal-close" onclick="closeM('m-event')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Title</label><input type="text" id="ev-title" placeholder="e.g. Dentist"></div>
         <div class="field"><label>Tag (Family Member)</label><div class="chips" id="ev-chips"></div></div>
@@ -385,7 +384,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-event')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="ev-submit" onclick="submitEvent(this)">Add Event</button>
+        <button class="btn btn-p" style="flex:1" id="ev-submit" onclick="submitEvent(this)">Add event</button>
       </div>
     </div>
   </div>
@@ -394,15 +393,15 @@
   <div class="overlay" id="m-task">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Task</span><button class="modal-close" onclick="closeM('m-task')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add task</span><button class="modal-close" onclick="closeM('m-task')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
-        <div class="field"><label>Task</label><input type="text" id="tk-title" placeholder="What needs doing?"></div>
+        <div class="field"><label>Task</label><input type="text" id="tk-title" placeholder="What needs to be done?"></div>
         <div class="field"><label>Assign to</label><div class="chips" id="tk-chips"></div></div>
         <div class="field"><label>Due Date (opt)</label><input type="date" id="tk-due"></div>
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-task')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="tk-submit" onclick="submitTask(this)">Add Task</button>
+        <button class="btn btn-p" style="flex:1" id="tk-submit" onclick="submitTask(this)">Save task</button>
       </div>
     </div>
   </div>
@@ -411,11 +410,11 @@
   <div class="overlay" id="m-memory">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Log a Memory</span><button class="modal-close" onclick="closeM('m-memory')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Save a memory</span><button class="modal-close" onclick="closeM('m-memory')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Type</label><div class="chips" id="mem-type-chips"></div></div>
         <div class="field"><label>About</label><div class="chips" id="mem-pers-chips"></div></div>
-        <div class="field"><label>Memory</label><textarea id="mem-text" placeholder="Write the memory…"></textarea></div>
+        <div class="field"><label>Memory</label><textarea id="mem-text" placeholder="What happened today?"></textarea></div>
         <div class="field"><label>Date</label><input type="date" id="mem-date"></div>
         <div class="field">
           <label>Attach Photo (Optional)</label>
@@ -431,7 +430,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-memory')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="mem-submit" onclick="submitMemory(this)">Save</button>
+        <button class="btn btn-p" style="flex:1" id="mem-submit" onclick="submitMemory(this)">Save memory</button>
       </div>
     </div>
   </div>
@@ -440,7 +439,7 @@
   <div class="overlay" id="m-birthday">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Birthday / Anniversary</span><button class="modal-close" onclick="closeM('m-birthday')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add birthday or anniversary</span><button class="modal-close" onclick="closeM('m-birthday')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Name</label><input type="text" id="bd-name" placeholder="e.g. Grandma Wong"></div>
         <div class="field"><label>Type</label><div class="chips" id="bd-type-chips"></div></div>
@@ -463,7 +462,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-birthday')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="bd-submit" onclick="submitBirthday(this)">Save</button>
+        <button class="btn btn-p" style="flex:1" id="bd-submit" onclick="submitBirthday(this)">Save date</button>
       </div>
     </div>
   </div>
@@ -472,7 +471,7 @@
   <div class="overlay" id="m-budget">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Set Group Budget</span><button class="modal-close" onclick="closeM('m-budget')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Set budget</span><button class="modal-close" onclick="closeM('m-budget')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Group</label><select id="bud-grp"></select></div>
         <div class="field"><label>Monthly Budget ($)</label><input type="number" id="bud-amt" placeholder="e.g. 500" min="0" step="0.01"></div>
@@ -486,7 +485,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-budget')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="bud-submit" onclick="submitBudget(this)">Save Budget</button>
+        <button class="btn btn-p" style="flex:1" id="bud-submit" onclick="submitBudget(this)">Save budget</button>
       </div>
     </div>
   </div>
@@ -495,7 +494,7 @@
   <div class="overlay" id="m-recurring">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Recurring Expense</span><button class="modal-close" onclick="closeM('m-recurring')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add recurring expense</span><button class="modal-close" onclick="closeM('m-recurring')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Name</label><input type="text" id="rc-name" placeholder="e.g. Netflix"></div>
         <div class="frow">
@@ -508,7 +507,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-recurring')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="rc-submit" onclick="submitRecurring(this)">Save</button>
+        <button class="btn btn-p" style="flex:1" id="rc-submit" onclick="submitRecurring(this)">Save expense</button>
       </div>
     </div>
   </div>
@@ -517,7 +516,7 @@
   <div class="overlay" id="m-trip-add">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Log Family Trip</span><button class="modal-close" onclick="closeM('m-trip-add')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add trip</span><button class="modal-close" onclick="closeM('m-trip-add')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field">
           <label>Search Location</label>
@@ -554,7 +553,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-trip-add')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="tr-submit" onclick="submitTrip(this)">Pin Trip 📍</button>
+        <button class="btn btn-p" style="flex:1" id="tr-submit" onclick="submitTrip(this)">Save trip</button>
       </div>
     </div>
   </div>
@@ -563,7 +562,7 @@
   <div class="overlay" id="m-timetable-add">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Activity Session / Class</span><button class="modal-close" onclick="closeM('m-timetable-add')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add activity</span><button class="modal-close" onclick="closeM('m-timetable-add')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field">
           <label>Child</label>
@@ -598,7 +597,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-timetable-add')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="sch-submit" onclick="submitSchedule(this)">Save to Calendar</button>
+        <button class="btn btn-p" style="flex:1" id="sch-submit" onclick="submitSchedule(this)">Save activity</button>
       </div>
     </div>
   </div>
@@ -607,7 +606,7 @@
   <div class="overlay" id="m-expense">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add Expense</span><button class="modal-close" onclick="closeM('m-expense')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Add expense</span><button class="modal-close" onclick="closeM('m-expense')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Description</label><input type="text" id="ex-desc" placeholder="e.g. Lunch, taxi, grocery..."></div>
         <div class="frow">
@@ -620,7 +619,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-expense')">Cancel</button>
-        <button class="btn btn-p" style="flex:1" id="ex-submit" onclick="submitExpense(this)">Save Expense</button>
+        <button class="btn btn-p" style="flex:1" id="ex-submit" onclick="submitExpense(this)">Save expense</button>
       </div>
     </div>
   </div>
@@ -629,9 +628,9 @@
   <!-- Log Intimacy -->
   <div class="overlay" id="m-intimacy">
     <div class="modal">
-      <div class="modal-hdr"><span class="modal-title">💕 Log Intimacy</span><button class="modal-close" onclick="closeM('m-intimacy')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Log intimacy</span><button class="modal-close" onclick="closeM('m-intimacy')" aria-label="Close modal">✕</button></div>
       <div class="modal-body" style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-        <p style="font-size:13px;color:var(--text-muted);margin:0;">A private log for you two — only Marcus &amp; Eleanor can see this.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin:0;">A private log for you two — visible only to selected adults.</p>
         <div class="field"><label>Date</label><input type="date" id="intimacy-date"></div>
         <div class="field"><label>Notes (optional)</label><input type="text" id="intimacy-notes" placeholder="e.g. date night, spontaneous…"></div>
         <div class="field"><label>How connected did you feel?</label>
@@ -649,19 +648,19 @@
   <div class="overlay" id="m-love-note">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Drop note in jar</span><button class="modal-close" onclick="closeM('m-love-note')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title">Write appreciation note</span><button class="modal-close" onclick="closeM('m-love-note')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
         <div class="field">
           <label>Write an encouraging note or appreciation</label>
           <textarea id="love-note-msg" placeholder="Write something you appreciate about your partner..."></textarea>
         </div>
         <p style="font-size:12px; color:var(--text-secondary); margin:0; line-height:1.4;">
-          Note will remain locked in the jar until the upcoming Friday at 6:00 PM date night.
+          Notes remain safely in the jar until Friday at 6:00 PM date night.
         </p>
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-love-note')">Cancel</button>
-        <button class="btn btn-p" style="flex:1;" id="love-submit" onclick="submitAppreciation(this)">Drop in jar</button>
+        <button class="btn btn-p" style="flex:1;" id="love-submit" onclick="submitAppreciation(this)">Save note</button>
       </div>
     </div>
   </div>
@@ -713,20 +712,20 @@
   <!-- JAVASCRIPT – APP LOGIC (FIRESTORE MEMORIES + FCM)         -->
   <!-- ============================================================ -->
   <dialog id="school-dialog" aria-labelledby="school-dialog-title" oncancel="event.preventDefault();closeSchoolCapture()">
-    <header class="school-dialog-header"><div><span class="school-eyebrow">ANNOUNCEMENT → ACTION</span><h2 id="school-dialog-title">Add a school message</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close school message">Close</button></header>
+    <header class="school-dialog-header"><div><span class="school-eyebrow">School notice</span><h2 id="school-dialog-title">Review school notice</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close school message">Close</button></header>
     <div id="school-capture">
-      <p>Paste a teacher's message or upload a screenshot. Review the details before adding anything to your family plan.</p>
+      <p>Paste a school message or upload a notice. Check the details before adding them to your family calendar and tasks.</p>
       <fieldset id="school-capture-fields">
         <label class="school-field">Message<textarea id="school-text" maxlength="20000" rows="7" placeholder="Dear parents, students attending the Science Learning Journey…"></textarea></label>
         <label class="school-field school-upload">Or choose a screenshot or PDF<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><small>PNG, JPEG, WebP or PDF · under 5 MB</small></label>
-        <p class="school-muted">“Read with AI” extracts the event and checklist items using Google Gemini. Originals stay available to parents. Check names and dates before saving.</p>
+        <p class="school-muted">“Read with AI” drafts the event and preparation tasks using Gemini. The original notice is saved for reference.</p>
         <div class="school-actions"><button class="btn btn-p" type="button" onclick="extractSchool(false)">Read with AI</button><button class="btn btn-s" type="button" onclick="extractSchool(true)">Enter manually</button></div>
       </fieldset>
     </div>
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=17"></script>
-  <script src="js/app.js?v=17"></script>
+  <script src="js/school.js?v=18"></script>
+  <script src="js/app.js?v=18"></script>
 </body>
 </html>

@@ -261,7 +261,7 @@
       const item = _pendingUndo;
       _pendingUndo = null;
       item.restore();
-      toast('↩️ Undo successful');
+      toast('Action undone.');
     }
     window.addEventListener('pagehide', () => _flushPendingUndo(true));
     document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true); });
@@ -702,11 +702,11 @@
       }
       // Adults-only destinations (UI + server); kids never enter these sections
       if (ADULT_SCREENS.includes(id) && !isAdultUser) {
-        toast(id === 'us' || id === 'fertility' ? 'That space is for Mom & Dad only 💖' : 'Money is for Mom & Dad only', true);
+        toast(id === 'us' || id === 'fertility' ? 'This space is visible only to parents.' : 'Budgets and expenses are visible only to parents.', true);
         id = 'home';
       }
       section = id;
-      if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; }
+      if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; }
 
       // Handle memories listener
       if(id === 'memories') {
@@ -861,7 +861,7 @@
         return false;
       });
       document.getElementById('dash-summary').innerHTML = `
-        <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Need You</span></div>
+        <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Needs attention</span></div>
         <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsToday.length}</span><span class="lbl">Today</span></div>
         <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsTomorrow.length}</span><span class="lbl">Tomorrow</span></div>
       `;
@@ -873,20 +873,20 @@
         const memberEvents = events.filter(e => (e.tags || []).includes(m) && e.dateRaw >= tod).slice(0, 3);
         const together = m === 'Meaghan' ? ' · with you' : m === 'Mikaela' ? ' · self-serve' : '';
         membersHtml += `
-          <div class="dash-member" onclick="goToMember('${m}')" title="Click to view tasks for ${m}">
+          <div class="dash-member" onclick="goToMember('${m}')" title="View tasks for ${m}">
             <span class="emoji">${m==='Marcus'?'👨':m==='Eleanor'?'👩':m==='Mikaela'?'⛵':'🩰'}</span>
             <div class="info"><div class="name">${m}</div><div class="detail">${tasks.length} open tasks · ${memberEvents.length} upcoming${together}</div></div>
             <span class="count">${tasks.length}</span>
           </div>
         `;
       });
-      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Family logistics (click for tasks)</div>${membersHtml}`;
+      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Family members</div>${membersHtml}`;
       const tksToday = todos.filter(t => t.dueRaw && t.dueRaw <= tod);
       document.getElementById('today-wrap').innerHTML = `
         <div class="card">
-          <div class="card-hdr"><span class="card-title">Today at a Glance</span></div>
+          <div class="card-hdr"><span class="card-title">Today at a glance</span></div>
           <div class="card-body">
-            ${!evsToday.length && !tksToday.length ? '<div class="empty">Clear schedule today 🎉</div>' : ''}
+            ${!evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
             ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
             ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '✅'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
@@ -894,7 +894,7 @@
         <div class="card">
           <div class="card-hdr"><span class="card-title">Tomorrow</span><button class="btn btn-sm btn-s" onclick="goTo('calendar')">Week</button></div>
           <div class="card-body">
-            ${!evsTomorrow.length ? '<div class="empty">Nothing on the calendar tomorrow</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
+            ${!evsTomorrow.length ? '<div class="empty">Nothing scheduled for tomorrow.</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
           </div>
         </div>
       `;
@@ -1428,11 +1428,11 @@
       el.innerHTML = `
         <div class="card">
           <div class="card-hdr"><span class="card-title">💰 ${month}</span><div style="display:flex;align-items:center;"><span class="badge b-blue">$${(total||0).toFixed(2)}</span>${momHtml}</div></div>
-          <div class="donut-container"><div class="donut-wrap"><svg viewBox="0 0 42 42" class="donut">${donutSvgCircles}<g class="chart-text"><text x="50%" y="50%" class="chart-number" style="font-size:5px;font-weight:800;">$${total.toFixed(0)}</text><text x="50%" y="64%" class="chart-label" style="font-size:2px;fill:var(--text-muted);">Total</text></g></svg></div><div class="pie-wrap" style="flex:1;padding:0;gap:6px;">${cats.slice(0,5).map((e,i)=>`<div class="pie-row"><div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-lbl" style="font-size:12px;">${escapeHtml(e[0].split(' - ').pop())}</span><span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span></div>`).join('')||'<div class="empty">No expenses</div>'}</div></div>
+          <div class="donut-container"><div class="donut-wrap"><svg viewBox="0 0 42 42" class="donut">${donutSvgCircles}<g class="chart-text"><text x="50%" y="50%" class="chart-number" style="font-size:5px;font-weight:800;">$${total.toFixed(0)}</text><text x="50%" y="64%" class="chart-label" style="font-size:2px;fill:var(--text-muted);">Total</text></g></svg></div><div class="pie-wrap" style="flex:1;padding:0;gap:6px;">${cats.slice(0,5).map((e,i)=>`<div class="pie-row"><div class="pie-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-lbl" style="font-size:12px;">${escapeHtml(e[0].split(' - ').pop())}</span><span class="pie-val" style="font-size:12px;">$${e[1].toFixed(0)}</span></div>`).join('')||'<div class="empty">No expenses recorded yet.</div>'}</div></div>
         </div>
-        <div class="card"><div class="card-hdr"><span class="card-title">📈 6-Month Trend (${activeExpenseAccount})</span></div><div class="bar-chart-wrap">${barChartHtml||'<div class="empty">No trend data</div>'}</div></div>
+        <div class="card"><div class="card-hdr"><span class="card-title">📈 6-month trend (${activeExpenseAccount})</span></div><div class="bar-chart-wrap">${barChartHtml||'<div class="empty">No spending trend data yet.</div>'}</div></div>
         <div class="card">
-          <div class="card-hdr"><span class="card-title">Recent Entries</span></div>
+          <div class="card-hdr"><span class="card-title">Recent entries</span></div>
           <div class="card-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;">
             ${(filteredRows||[]).slice(0, 15).map(r => {
               const emoji = getCategoryEmoji(r.desc || r.category);
@@ -1459,7 +1459,7 @@
                   </div>
                 </div>
               `;
-            }).join('') || '<div class="empty">No entries yet</div>'}
+            }).join('') || '<div class="empty">No entries yet.</div>'}
           </div>
         </div>
       `;
@@ -1954,7 +1954,7 @@
       container.innerHTML = html;
     }
     function delEvent(id) {
-      if (!isAdultUser) { toast('Only Mom & Dad can delete events', true); return; }
+      if (!isAdultUser) { toast('Only parents can delete events.', true); return; }
       const ev = (data.events || []).find(e => e.id === id);
       if (!ev) return;
       if (!confirm('Delete this calendar event?')) return;
@@ -1962,7 +1962,7 @@
       pushUndo(() => { data.events.push(ev); renderCal(); }, 'Event deleted');
       renderCal();
       gPost({ note: 'delete_event', event_id: id });
-      toast('Event deleted (undo available)');
+      toast('Event deleted. Undo available.');
     }
     function delSchedule(id) { delEvent(id); }
 
@@ -1972,32 +1972,32 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const title = v('ev-title'), date = v('ev-date');
-        if(!title||!date){ toast('Please fill in title and date'); return; }
+        if(!title||!date){ toast('Please enter a title and date.'); return; }
         const tag = gc('ev-tag');
         let notes = v('ev-notes');
         if(tag && tag !== 'Everyone') notes = (notes?notes+'\n':'') + 'Tag: '+tag;
         await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes,event_member:tag||''});
-        closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added! ✅');
+        closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Add Event'; }
+      } finally { btn.disabled = false; btn.textContent = 'Add event'; }
     }
     async function submitTask(btn) {
       if(!btn) btn = document.getElementById('tk-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const task = v('tk-title');
-        if(!task){ toast('Please enter a task'); return; }
+        if(!task){ toast('Please enter a task.'); return; }
         await gPost({note:'add_todo',todo_task:task,todo_assignee:gc('tk-a')||'Everyone',todo_due:v('tk-due')?fmtDate(v('tk-due')):''});
-        closeM('m-task'); clr('tk-title'); toast('Task added! ✅');
+        closeM('m-task'); clr('tk-title'); toast('Task added.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Add Task'; }
+      } finally { btn.disabled = false; btn.textContent = 'Add task'; }
     }
     async function submitMemory(btn) {
       if(!btn) btn = document.getElementById('mem-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const text = v('mem-text');
-        if(!text && !memImageBase64){ toast('Please write the memory or attach a photo'); return; }
+        if(!text && !memImageBase64){ toast('Please write a note or attach a photo.'); return; }
         
         let imageUrl = '';
         
@@ -2046,9 +2046,9 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const name = v('bd-name'), month = v('bd-month'), day = v('bd-day');
-        if(!name||!month||!day){ toast('Please fill in name, month, and day'); return; }
+        if(!name||!month||!day){ toast('Please enter a name, month, and day.'); return; }
         await gPost({note:'add_birthday',name,type:gc('bdt')||'Birthday',date:month+'-'+String(day).padStart(2,'0'),year:v('bd-year'),notes:v('bd-notes')});
-        closeM('m-birthday'); clr('bd-name','bd-day','bd-year','bd-notes'); toast('Saved! 🎂');
+        closeM('m-birthday'); clr('bd-name','bd-day','bd-year','bd-notes'); toast('Birthday saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save'; }
     }
@@ -2057,31 +2057,31 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const group = v('bud-grp'), amt = parseFloat(v('bud-amt')), account = document.getElementById('bud-account').value;
-        if(!group||isNaN(amt)||amt<=0){ toast('Please enter a valid amount'); return; }
+        if(!group||isNaN(amt)||amt<=0){ toast('Please enter a valid amount.'); return; }
         await gPost({note:'set_budget',group,budget:amt,account});
-        closeM('m-budget'); clr('bud-amt'); toast('Budget saved! 📊');
+        closeM('m-budget'); clr('bud-amt'); toast('Budget saved.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Save Budget'; }
+      } finally { btn.disabled = false; btn.textContent = 'Set budget'; }
     }
     async function submitFert(btn) {
       if(!btn) btn = document.getElementById('fert-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const date = v('fert-date');
-        if(!date){ toast('Please select a date'); return; }
+        if(!date){ toast('Please select a date.'); return; }
         await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')});
-        clr('fert-notes'); toast('Logged! 🌸');
+        clr('fert-notes'); toast('Cycle entry saved.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Log Entry'; }
+      } finally { btn.disabled = false; btn.textContent = 'Save entry'; }
     }
     async function submitRecurring(btn) {
       if(!btn) btn = document.getElementById('rc-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const name = v('rc-name'), amt = parseFloat(v('rc-amt')), day = parseInt(v('rc-day'));
-        if(!name||isNaN(amt)||isNaN(day)||day<1||day>28){ toast('Please fill all fields (day: 1–28)'); return; }
+        if(!name||isNaN(amt)||isNaN(day)||day<1||day>28){ toast('Please complete all fields (day: 1–28).'); return; }
         await gPost({note:'add_recurring',rec_name:name,rec_amount:amt,rec_day:day,rec_category:v('rc-cat'),rec_account:gc('rca')||'Family'});
-        closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved! 🔄');
+        closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save'; }
     }
@@ -2090,11 +2090,11 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const desc = v('ex-desc'), amt = parseFloat(v('ex-amt')), date = v('ex-date');
-        if(!desc||isNaN(amt)||amt<=0||!date){ toast('Please fill description, amount, and date'); return; }
+        if(!desc||isNaN(amt)||amt<=0||!date){ toast('Please enter a description, amount, and date.'); return; }
         await gPost({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'});
-        closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense logged! 💰');
+        closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense saved.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Save Expense'; }
+      } finally { btn.disabled = false; btn.textContent = 'Save expense'; }
     }
     async function submitTrip(btn) {
       if(!btn) btn = document.getElementById('tr-submit');
@@ -2108,9 +2108,9 @@
         const memberBoxes = document.querySelectorAll('input[name="tr-mem"]:checked');
         const membersStr = Array.from(memberBoxes).map(cb=>cb.value).join(',');
         await gPost({note:'add_trip',trip_city:city,trip_country:country,trip_date:fmtDate(dateVal),trip_lat:lat,trip_lng:lng,trip_members:membersStr,trip_notes:notes});
-        closeM('m-trip-add'); document.getElementById('tr-loc-search').value=''; document.getElementById('tr-city').value=''; document.getElementById('tr-country').value=''; document.getElementById('tr-lat').value='0'; document.getElementById('tr-lng').value='0'; clr('tr-notes'); toast('Trip pinned! 📍');
+        closeM('m-trip-add'); document.getElementById('tr-loc-search').value=''; document.getElementById('tr-city').value=''; document.getElementById('tr-country').value=''; document.getElementById('tr-lat').value='0'; document.getElementById('tr-lng').value='0'; clr('tr-notes'); toast('Trip added.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Pin Trip 📍'; }
+      } finally { btn.disabled = false; btn.textContent = 'Add trip'; }
     }
     function applyActivityPreset(act) {
       const actInput = document.getElementById('sch-act');
@@ -2146,8 +2146,8 @@
         const endTime = document.getElementById('sch-end-time').value, location = document.getElementById('sch-loc').value;
         const notes = document.getElementById('sch-notes').value;
         const addChecklist = document.getElementById('sch-add-checklist')?.checked;
-        if(!activity){ alert('Please enter activity name'); return; }
-        if(!dateVal){ alert('Please select a date'); return; }
+        if(!activity){ alert('Please enter activity name.'); return; }
+        if(!dateVal){ alert('Please select a date.'); return; }
         const title = child + ' - ' + activity;
         await gPost({note:'add_event',event_title:title,event_child:child,event_member:child,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
 
@@ -2167,20 +2167,20 @@
           }
         }
 
-        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Added to the week with prep checklist ⛵');
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Activity and preparation checklist added.');
         await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Save to Calendar'; }
+      } finally { btn.disabled = false; btn.textContent = 'Save activity'; }
     }
     async function submitAppreciation(btn) {
       if(!btn) btn = document.getElementById('love-submit');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const msg = v('love-note-msg');
-        if(!msg){ toast('Please enter a note'); return; }
+        if(!msg){ toast('Please enter a note.'); return; }
         closeM('m-love-note');
         const res = await gPost({note:'add_appreciation',message:msg});
-        if(res && res.status === 'ok'){ toast('Note dropped in the jar! 🍯'); await loadData(); } else toast('Error saving note');
-      } finally { btn.disabled = false; btn.textContent = 'Drop in Jar 🍯'; }
+        if(res && res.status === 'ok'){ toast('Note saved to the jar.'); await loadData(); } else toast('Could not save note.', true);
+      } finally { btn.disabled = false; btn.textContent = 'Save note'; }
     }
     async function submitLoveCheckin(btn) {
       if(!btn) btn = document.getElementById('checkin-submit');
@@ -2196,7 +2196,7 @@
         console.log('Check-in server response:', res);
         
         if(res && res.status === 'ok'){
-          toast('Check-in saved! 😊');
+          toast('Check-in saved.');
           await loadData();
         } else {
           const errMsg = (res && res.message) ? res.message : 'Unknown error';
@@ -2273,18 +2273,18 @@
     }
     function focusTrip(id, lat, lng){ if(!travelMap) return; travelMap.flyTo([lat,lng],6,{animate:true,duration:1.2}); const marker=travelMarkers.find(m=>m.tripId===id); if(marker) setTimeout(()=>marker.openPopup(),1200); }
     function playTravelTimeline() {
-      if(!travelMap){ toast('Map not loaded yet'); return; }
+      if(!travelMap){ toast('Map is still loading.'); return; }
       const trips = data.travel || [];
       const validTrips = trips.filter(t => t.lat !==0 || t.lng !==0);
-      if(!validTrips.length){ toast('No trip locations to play!'); return; }
+      if(!validTrips.length){ toast('No trip locations to show.'); return; }
       const sortedTrips = [...validTrips].sort((a,b)=>new Date(a.date)-new Date(b.date));
       const playBtn = document.getElementById('btn-play-timeline');
-      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Timeline stopped'); return; }
-      if(playBtn) playBtn.innerHTML='<span>⏹</span><span>Stop Play</span>';
-      toast('Starting travel tour! ✈️');
+      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; toast('Timeline stopped.'); return; }
+      if(playBtn) playBtn.innerHTML='<span>⏹</span><span>Stop playback</span>';
+      toast('Starting travel tour.');
       let i=0;
       function nextStep(){
-        if(i>=sortedTrips.length){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play Timeline</span>'; toast('Travel tour completed! 🎉'); setTimeout(()=>{ if(travelMap) travelMap.setView([20,0],2); },2000); return; }
+        if(i>=sortedTrips.length){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; toast('Travel tour finished.'); setTimeout(()=>{ if(travelMap) travelMap.setView([20,0],2); },2000); return; }
         const t=sortedTrips[i]; focusTrip(t.id,t.lat,t.lng); i++;
       }
       nextStep();
@@ -2398,7 +2398,7 @@
       const container = document.getElementById('us-container');
       if(!container) return;
       if(user !== 'Marcus' && user !== 'Eleanor'){
-        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">💖</div><h2 style="color:#6b2d5c;font-weight:700;">Connection Sanctuary</h2><p class="adults-only" style="margin-top:14px;color:#a85f89;">This is a private sanctuary space for Mom & Dad to share appreciations, plan date nights, and align.</p></div></div>`;
+        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">🔒</div><h2 style="color:#6b2d5c;font-weight:700;">Couple space</h2><p class="adults-only" style="margin-top:14px;color:#a85f89;">Visible only to selected adults.</p></div></div>`;
         return;
       }
       const partner = user === 'Marcus' ? 'Eleanor' : 'Marcus';
@@ -2420,7 +2420,7 @@
         let eleanorInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
         if(eleanorCheckin) eleanorInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(eleanorCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(eleanorCheckin.notes)||'No notes'}"</div>`;
         alignmentHtml = `<div style="display:flex;gap:12px;margin-top:8px;"><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👨 Marcus</div>${marcusInfo}</div><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👩 Eleanor</div>${eleanorInfo}</div></div>`;
-      } else { alignmentHtml = '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:8px;">No check-ins logged yet. Make yours below!</div>'; }
+      } else { alignmentHtml = '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:8px;">No check-ins logged yet. Add your check-in below.</div>'; }
       const historyCheckins = [...checkins].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
       let historyHtml = '';
       if(historyCheckins.length===0) historyHtml = '<div style="text-align:center;font-size:11px;color:var(--text-muted);padding:8px;">No past check-ins logged yet.</div>';
@@ -2433,7 +2433,7 @@
       }
       let unlockedHtml = '';
       if(unlockedApps.length===0) {
-        unlockedHtml = '<div style="text-align:center;padding:16px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No notes revealed yet. Write one to encourage partner!</div>';
+        unlockedHtml = '<div style="text-align:center;padding:16px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No notes ready to open yet. Write an appreciation for Friday date night.</div>';
       } else {
         unlockedHtml = unlockedApps.map(a => `<div class="envelope"><div style="font-size:20px;">✉️</div><div style="flex:1;"><div class="envelope-message">"${escapeHtml(a.message)}"</div><div class="envelope-meta">Revealed on ${fmtDate(a.revealDate? a.revealDate.split('T')[0] : '')}</div></div></div>`).join('');
       }
@@ -2442,7 +2442,7 @@
       const bucketItems = bucketList || [];
       let bucketHtml = '';
       if(bucketItems.length===0) {
-        bucketHtml = '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px;">No bucket list items yet. Add one below!</div>';
+        bucketHtml = '<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px;">No shared goals yet. Add one when you are ready.</div>';
       } else {
         bucketHtml = bucketItems.map(item => `
           <div class="bucket-item">
@@ -2456,10 +2456,10 @@
       }
       const bucketSection = `
         <div class="us-card">
-          <div class="us-card-title">📝 Shared Bucket List</div>
+          <div class="us-card-title">Shared goals</div>
           <div id="bucket-list-container">${bucketHtml}</div>
           <div class="bucket-add">
-            <input type="text" id="bucket-input" placeholder="Add a new goal..." onkeypress="if(event.key==='Enter') addBucketItem()">
+            <input type="text" id="bucket-input" placeholder="Add a goal…" onkeypress="if(event.key==='Enter') addBucketItem()">
             <button onclick="addBucketItem()">Add</button>
           </div>
         </div>
@@ -2467,18 +2467,18 @@
 
       const rouletteHtml = `
         <div class="us-card">
-          <div class="us-card-title">🎡 Spark Roulette</div>
+          <div class="us-card-title">Conversation sparks</div>
           <div class="roulette-tabs">
-            <div class="roulette-tab active" id="r-tab-q" onclick="switchRouletteTab('q')">💬 Deep Talk</div>
-            <div class="roulette-tab" id="r-tab-d" onclick="switchRouletteTab('d')">🍕 Date Night</div>
+            <div class="roulette-tab active" id="r-tab-q" onclick="switchRouletteTab('q')">Deep conversation</div>
+            <div class="roulette-tab" id="r-tab-d" onclick="switchRouletteTab('d')">Date night ideas</div>
           </div>
           <div class="roulette-wrapper">
             <div class="roulette-card" id="r-card" onclick="spinRoulette()">
               <div id="r-card-icon" style="font-size:32px;margin-bottom:8px;">✨</div>
-              <div class="roulette-prompt" id="r-result-text">Tap to Spin!</div>
-              <div class="roulette-card-sub" id="r-result-sub">Get a random card</div>
+              <div class="roulette-prompt" id="r-result-text">Pick a conversation topic</div>
+              <div class="roulette-card-sub" id="r-result-sub">Tap to draw a card</div>
             </div>
-            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Spin Again 🔄</button>
+            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Pick another topic</button>
           </div>
         </div>
       `;
@@ -2487,7 +2487,7 @@
       const intimacyEntries = data.intimacyLog || [];
       let intimacyHtml = '';
       if (intimacyEntries.length === 0) {
-        intimacyHtml = '<div style="text-align:center;padding:12px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No entries yet. Log a private moment below 💕</div>';
+        intimacyHtml = '<div style="text-align:center;padding:12px;border:1px dashed rgba(168,95,137,0.3);border-radius:12px;color:var(--text-muted);font-size:12px;">No intimacy entries logged yet.</div>';
       } else {
         intimacyHtml = intimacyEntries.slice(0, 12).map(entry => {
           const hearts = entry.rating > 0 ? '❤️'.repeat(Math.min(5, entry.rating)) : '';
@@ -2513,23 +2513,23 @@
       }).length;
       const intimacySection = `
         <div class="us-card">
-          <div class="us-card-title">💕 Intimacy Log</div>
-          <div style="font-size:12px;color:#a85f89;margin-bottom:10px;">Private to you two · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
-          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:#be123c;color:#fff;border:none;width:100%;margin-bottom:12px;">We made love — log it 💕</button>
+          <div class="us-card-title">Intimacy log</div>
+          <div style="font-size:12px;color:#a85f89;margin-bottom:10px;">Visible only to selected adults · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
+          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:#be123c;color:#fff;border:none;width:100%;margin-bottom:12px;">Log intimate moment</button>
           <div id="intimacy-list">${intimacyHtml}</div>
         </div>
       `;
 
       container.innerHTML = `
-        <div class="us-header"><h2>💖 Us Connection Sanctuary</h2><p>A private space for Marcus & Eleanor</p></div>
-        <div class="us-card"><div class="us-card-title">📊 Daily Battery Check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Log Daily Check-in</button>
-          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Timeline of Past Check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
+        <div class="us-header"><h2>Couple space</h2><p>Visible only to selected adults</p></div>
+        <div class="us-card"><div class="us-card-title">Daily battery check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Save daily check-in</button>
+          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Past check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
         </div>
         ${intimacySection}
-        <div class="us-card"><div class="us-card-title">🍯 Appreciation Jar</div>
-          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Love Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:#6b2d5c;font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:#a85f89;margin-top:2px;">Unlocking Friday at 6:00 PM for Date Night!</div></div></div>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:#6b2d5c;color:#fff;border:none;">Drop a Note in the Jar ✍️</button></div>
-          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;margin-bottom:8px;">📬 Unlocked Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
+        <div class="us-card"><div class="us-card-title">Appreciation jar</div>
+          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:#6b2d5c;font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:#a85f89;margin-top:2px;">Unlocks Friday at 6:00 PM.</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:#6b2d5c;color:#fff;border:none;">Write appreciation note</button></div>
+          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;margin-bottom:8px;">Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
         </div>
         ${bucketSection}
         ${rouletteHtml}
@@ -2571,9 +2571,9 @@
         const date = v('intimacy-date');
         const notes = v('intimacy-notes');
         const rating = selectedIntimacyRating || 0;
-        if (!date) { toast('Please select a date'); return; }
+        if (!date) { toast('Please select a date.'); return; }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-          toast('Invalid date', true);
+          toast('Please enter a valid date.', true);
           return;
         }
         const res = await gPost({
@@ -2600,7 +2600,7 @@
             data.intimacyLog = mergeIntimacyLogs(data.intimacyLog, [entry]);
           }
           closeM('m-intimacy');
-          toast('Logged 💕');
+          toast('Intimacy entry saved.');
           renderUs();
           // Background refresh — mergeIntimacyLogs keeps this entry if get_all is stale
           loadData().then(() => { if (section === 'us') renderUs(); }).catch(() => {});
@@ -2609,22 +2609,22 @@
         }
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Save 💕';
+        btn.textContent = 'Save entry';
       }
     }
     async function deleteIntimacy(id) {
-      if (!id || !confirm('Remove this intimacy log entry?')) return;
+      if (!id || !confirm('Delete this intimacy log entry?')) return;
       const res = await gPost({ note: 'delete_intimacy', id: id });
       if (res && res.status === 'ok') {
         if (Array.isArray(data.intimacyLog)) {
           data.intimacyLog = data.intimacyLog.filter(e => e.id !== id);
         }
-        toast('Entry removed');
+        toast('Entry deleted.');
         renderUs();
         await loadData();
         if (section === 'us') renderUs();
       } else {
-        toast((res && res.message) || 'Could not delete entry', true);
+        toast((res && res.message) || 'Could not delete entry.', true);
       }
     }
 
@@ -2636,26 +2636,26 @@
       const res = await gPost({ note: 'add_bucket_item', item: text });
       if(res && res.status === 'ok') {
         input.value = '';
-        toast('Bucket item added!');
+        toast('Goal added.');
         await loadData();
         renderUs();
       } else {
-        toast('Failed to add item', true);
+        toast('Could not add goal.', true);
       }
     }
     async function toggleBucketItem(id) {
       const res = await gPost({ note: 'toggle_bucket_item', id: id });
       if(res && res.status === 'ok') {
-        toast('Bucket item updated');
+        toast('Goal updated.');
         await loadData();
         renderUs();
       }
     }
     async function deleteBucketItem(id) {
-      if(!confirm('Delete this bucket item?')) return;
+      if(!confirm('Delete this goal?')) return;
       const res = await gPost({ note: 'delete_bucket_item', id: id });
       if(res && res.status === 'ok') {
-        toast('Bucket item deleted');
+        toast('Goal deleted.');
         await loadData();
         renderUs();
       }
@@ -2769,7 +2769,7 @@
         notificationPermissionGranted = (perm === 'granted');
         if (notificationPermissionGranted) {
           document.getElementById('notifBell').classList.add('on');
-          toast('Notifications enabled 🔔');
+          toast('Notifications turned on.');
         } else {
           document.getElementById('notifBell').classList.remove('on');
         }
@@ -2778,25 +2778,25 @@
 
     function toggleNotifications() {
       if (!('Notification' in window)) {
-        toast('Notifications not supported in this browser');
+        toast('Notifications are not supported in this browser.');
         return;
       }
       if (Notification.permission === 'denied') {
-        toast('Notifications blocked by browser. Please allow them in settings.');
+        toast('Notifications are blocked by your browser. Please allow them in settings.');
         return;
       }
       if (Notification.permission === 'granted') {
         // Toggle on/off for this session
         notificationPermissionGranted = !notificationPermissionGranted;
         document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
-        toast(notificationPermissionGranted ? 'Notifications ON 🔔' : 'Notifications OFF 🔕');
+        toast(notificationPermissionGranted ? 'Notifications turned on.' : 'Notifications turned off.');
         return;
       }
       // Request permission
       Notification.requestPermission().then(perm => {
         notificationPermissionGranted = (perm === 'granted');
         document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
-        toast(notificationPermissionGranted ? 'Notifications enabled 🔔' : 'Notifications blocked');
+        toast(notificationPermissionGranted ? 'Notifications turned on.' : 'Notifications blocked.');
       });
     }
 
@@ -2804,7 +2804,7 @@
     function startMemoriesListener() {
       if (memoriesUnsubscribe) return;
       if (!db) {
-        toast('Firestore not initialized', true);
+        toast('Could not connect to database.', true);
         return;
       }
       memoriesUnsubscribe = db.collection('memories')
@@ -2840,7 +2840,7 @@
           if (section === 'memories') renderMemories();
         }, (error) => {
           console.error('Memories listener error:', error);
-          toast('Memories connection error', true);
+          toast('Could not load memories.', true);
         });
     }
 
@@ -2866,7 +2866,7 @@
       if (!file) return;
       
       if (!file.type.startsWith('image/')) {
-        toast('Please select an image file');
+        toast('Please select an image file.');
         return;
       }
       
