@@ -827,9 +827,8 @@
     function renderHome() {
       renderSchoolHome();
       const h = new Date().getHours();
-      const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-      const childEmoji = user === 'Mikaela' ? '⛵' : user === 'Meaghan' ? '🩰' : '👋';
-      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}! ${childEmoji}</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+      const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}. Here is what is coming up.</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
 
       const summaryEl = document.getElementById('dash-summary');
       const membersEl = document.getElementById('dash-members');
@@ -1491,7 +1490,7 @@
         return true;
       });
       let budgetsHtml = '';
-      if(!filteredBuds.length){ budgetsHtml = '<div class="empty"><div class="ei">📊</div>No budgets set for this account</div>'; }
+      if(!filteredBuds.length){ budgetsHtml = '<div class="empty"><div class="ei">📊</div>No household budget yet. Add one when you are ready.</div>'; }
       else {
         budgetsHtml = filteredBuds.sort((a,b)=>a.group.localeCompare(b.group)).map(b => {
           const pct = b.budget>0 ? Math.round(b.spent/b.budget*100) : 0;
@@ -1534,7 +1533,7 @@
     function renderMemories() {
       const mems = data.memories || [];
       const el   = document.getElementById('mem-list');
-      if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>No memories yet</div>'; return; }
+      if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>What would you like to remember about today?</div>'; return; }
       
       const getIcon = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
       
@@ -2034,10 +2033,10 @@
         
         closeM('m-memory');
         clr('mem-text');
-        toast('Memory saved! 💛');
+        toast('Saved to your family memories.');
         // Listener updates data.memories; no loadData() needed
       } catch (err) {
-        toast('Failed to save memory: ' + err.message, true);
+        toast('We could not save that. Your changes are still here. Try again.', true);
       } finally {
         btn.disabled = false; btn.textContent = 'Save';
       }
@@ -2973,4 +2972,4 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('✅ Wong Family app loaded.');
+    console.log('Hearth app loaded.');

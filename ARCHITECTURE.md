@@ -142,3 +142,19 @@ Historical rows may still exist in the spreadsheet. The app no longer reads or w
 | `firestore.rules` / `storage.rules` | Firebase access control |
 | `index.js` | Chat → FCM |
 | `firebase-messaging-sw.js` | PWA cache + background push |
+| `BRAND.md` | Master design system & brand guidelines (Hearth Brand Guide 1.0) |
+| `css/styles.css` | Design tokens, typography, dark mode, responsive layout |
+| `assets/h-arch.svg` | Master vector logo mark |
+
+---
+
+## Brand & Design System Governance
+
+All UI development in Hearth must adhere strictly to [BRAND.md](BRAND.md) (Hearth Brand Guide Version 1.0, September 2026):
+
+1. **Logo & Identity:** Always use the official H-Arch symbol (`assets/h-arch.svg`, `assets/hearth-lockup.svg`). Never distort or alter the geometry (squared top, rounded arch bottom).
+2. **Color Tokens:** Use CSS variables defined in `css/styles.css` (`--bg-forest`, `--bg-cream`, `--accent-terracotta`, `--text-charcoal`, plus module accents: `--mod-week`, `--mod-birthdays`, `--mod-memories`, `--mod-travel`, `--mod-fertility`).
+3. **Iconography:** Never use emojis as permanent primary navigation or drawer icons. Use 24×24px outline SVG icons with 2px rounded strokes. Emojis are reserved for user avatars and chat content.
+4. **Typography:** Source Sans 3 across the entire application with explicit hierarchy (Display 700, Page title 700, Section 600, Body 400). Numbers, amounts, and dates must use `font-variant-numeric: tabular-nums`.
+5. **Verbal Voice:** Maintain a warm, calm household tone. Avoid tech jargon or blame-oriented error text. Sentence case for action buttons (`Add expense`, `Save memory`, `Set budget`).
+

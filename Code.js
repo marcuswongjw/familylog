@@ -1,5 +1,5 @@
 // ============================================================
-// WONG FAMILY BOT — Google Apps Script (PWA Version)
+// HEARTH — Google Apps Script (PWA Version)
 // with Firebase ID token verification
 // Google Calendar ID: family09091668338066744284@group.calendar.google.com
 //
@@ -283,14 +283,14 @@ function sendMorningDigest(now) {
   var dateStr = Utilities.formatDate(now, tz, 'EEEE, d MMMM yyyy');
   var body    = '';
 
-  body += _h('h2', '🌅 Good morning, Wong Family!', 'color:#2c7a4b;font-family:sans-serif;');
+  body += _h('h2', 'Hearth — Morning Digest', 'color:#1E3F30;font-family:sans-serif;');
   body += _h('p', dateStr, 'color:#666;font-family:sans-serif;font-size:14px;');
 
   var verse = getDailyVerse();
   body += _h('div',
     _h('p', '"' + verse.text + '"', 'margin:0;font-style:italic;color:#333;') +
     _h('p', '— ' + verse.ref, 'margin:4px 0 0;color:#888;font-size:13px;'),
-    'background:#f0f7f4;border-left:4px solid #2c7a4b;padding:12px 16px;border-radius:4px;font-family:sans-serif;margin:16px 0;'
+    'background:#FDF4E1;border-left:4px solid #1E3F30;padding:12px 16px;border-radius:4px;font-family:sans-serif;margin:16px 0;'
   );
 
   try {
@@ -326,7 +326,7 @@ function sendMorningDigest(now) {
     }
   }
   body += _h('p', 'Have a blessed day! 🙏', 'font-family:sans-serif;color:#666;margin-top:24px;');
-  sendFamilyEmail('🌅 Wong Family Morning Digest — ' + dateStr, body);
+  sendFamilyEmail('Hearth — Morning Digest — ' + dateStr, body);
 }
 
 function nightlyNotifications() {
@@ -342,7 +342,7 @@ function sendNightBeforeDigest(now) {
   var tomorrowDisplay = Utilities.formatDate(tomorrow, tz, 'EEEE, d MMMM yyyy');
 
   var body = '';
-  body += _h('h2', '🎒 Night-Before Prep — Wong Family', 'color:#6b2d5c;font-family:sans-serif;');
+  body += _h('h2', 'Hearth — Night-Before Prep', 'color:#1E3F30;font-family:sans-serif;');
   body += _h('p', 'Tomorrow: ' + tomorrowDisplay, 'color:#666;font-family:sans-serif;font-size:14px;');
 
   var tomorrowEvents = [];
@@ -408,7 +408,7 @@ function sendNightBeforeDigest(now) {
   }
 
   body += _h('p', 'Rest well! 🌙', 'font-family:sans-serif;color:#888;margin-top:24px;font-size:13px;');
-  sendFamilyEmail('🎒 Wong Family Night-Before Prep — ' + tomorrowDisplay, body);
+  sendFamilyEmail('Hearth — Night-Before Prep — ' + tomorrowDisplay, body);
 }
 
 function getDailyVerse() {
@@ -447,7 +447,7 @@ function sendExpenseSummary(now) {
   var accItems = '';
   for (var acc in byAccount) accItems += _li(acc + ': <strong>$' + byAccount[acc].toFixed(2) + '</strong>');
   body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + accItems + '</ul>';
-  sendFamilyEmail('💰 Wong Family — ' + monthName + ' Expense Summary', body);
+  sendFamilyEmail('Hearth — ' + monthName + ' Expense Summary', body);
 }
 
 function sendExpenseReport(now) {
@@ -488,7 +488,7 @@ function sendExpenseReport(now) {
     });
     body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + topItems + '</ul>';
   }
-  sendFamilyEmail('📊 Wong Family — ' + monthName + ' Full Report', body);
+  sendFamilyEmail('Hearth — ' + monthName + ' Full Report', body);
 }
 
 // new Date(year, 1, 29) silently rolls to Mar 1 in non-leap years;
@@ -536,7 +536,7 @@ function checkUpcomingBirthdays() {
   if (messages.length > 0) {
     var body = _h('h2', '🎂 Birthday & Anniversary Reminder', 'font-family:sans-serif;color:#333;');
     messages.forEach(function(m) { body += _h('p', m, 'font-family:sans-serif;font-size:15px;border-left:4px solid #f4a261;padding:8px 12px;margin:8px 0;background:#fff8f0;border-radius:4px;'); });
-    sendFamilyEmail('🎂 Wong Family — Birthday Reminder', body);
+    sendFamilyEmail('Hearth — Birthday Reminder', body);
   }
 }
 
@@ -617,7 +617,7 @@ function sendBudgetAlerts(alerts) {
       'font-family:sans-serif;border:1px solid #eee;border-radius:6px;padding:12px;margin:8px 0;'
     );
   });
-  sendFamilyEmail('📊 Wong Family — Budget Alert', body);
+  sendFamilyEmail('Hearth — Budget Alert', body);
 }
 
 // ─── CYCLE ESTIMATION ──────────────────────────────────────
@@ -722,7 +722,7 @@ function processRecurringExpenses() {
     logged.forEach(function(r) { items += _li('<strong>' + r.name + '</strong> — $' + r.amount.toFixed(2) + ' (' + r.account + ')'); });
     body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + items + '</ul>';
     body += _h('p', 'These have been automatically added to your expenses.', 'font-family:sans-serif;color:#888;font-size:13px;');
-    sendFamilyEmail('🔄 Wong Family — Recurring Expenses Logged', body);
+    sendFamilyEmail('Hearth — Recurring Expenses Logged', body);
   }
 }
 

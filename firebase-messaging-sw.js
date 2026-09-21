@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wong-family-v16';
+const CACHE_NAME = 'hearth-v17';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,9 @@ const ASSETS = [
   './js/school.js',
   './manifest.json',
   './icon.png',
-  './favicon.png'
+  './favicon.png',
+  './favicon.svg',
+  './assets/h-arch.svg'
 ];
 
 self.addEventListener('install', event => {
@@ -143,7 +145,7 @@ messaging.onBackgroundMessage((payload) => {
 
   const n = payload.notification || {};
   const d = payload.data || {};
-  const title = n.title || d.title || 'New Family Log Update';
+  const title = n.title || d.title || 'Hearth';
   const body = n.body || d.body || '';
   const screen = d.screen || 'home';
   const scope = self.registration.scope;
@@ -154,7 +156,7 @@ messaging.onBackgroundMessage((payload) => {
     icon: scope + 'favicon.png',
     badge: scope + 'favicon.png',
     data: Object.assign({ screen: screen, url: url, open: screen }, d),
-    tag: d.tag || 'familylog',
+    tag: d.tag || 'hearth',
     renotify: true,
     requireInteraction: false
   };

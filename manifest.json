@@ -1,11 +1,12 @@
 {
-  "name": "Wong Family Log",
-  "short_name": "Wong Family",
+  "name": "Hearth",
+  "short_name": "Hearth",
+  "description": "The shared home for family life",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fff5f6",
-  "theme_color": "#6b2d5c",
+  "background_color": "#FDF4E1",
+  "theme_color": "#1E3F30",
   "icons": [
     {
       "src": "icon.png",
