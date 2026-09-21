@@ -12,7 +12,7 @@ flowchart TB
     Auth[Auth email + PIN]
     FS[(Firestore)]
     ST[(Storage)]
-    FCM[FCM + Cloud Function]
+    FCM[FCM tokens]
   end
 
   subgraph google [Google Workspace via Apps Script]
@@ -23,9 +23,8 @@ flowchart TB
   end
 
   UI -->|sign-in, idToken| Auth
-  UI -->|chat, memories, FCM tokens| FS
+  UI -->|memories, FCM tokens| FS
   UI -->|photos| ST
-  FS --> FCM
   UI -->|POST action + idToken| GAS
   GAS -->|verify token + allowlist| Auth
   GAS --> SH
@@ -39,7 +38,7 @@ flowchart TB
 
 | Put it in **Firebase** when… | Put it in **Sheets + GAS** when… |
 |------------------------------|----------------------------------|
-| Needs **live multi-user** updates (chat, photo album) | Is a **ledger / log / list** parents may open in a spreadsheet |
+| Needs **live multi-user** updates (photo album) | Is a **ledger / log / list** parents may open in a spreadsheet |
 | Is a **binary file** (images) | Needs **Gmail**, **Calendar**, or **email** (bank scan, digests, approval links) |
 | Is **device/session** state (FCM tokens) | Needs **server-side adult gates** without trusting the client UI alone |
 | Auth identity | Batch jobs and time-driven triggers in Apps Script |
@@ -94,7 +93,6 @@ flowchart TB
 ```
 loadData()     → POST { action: "get_all", idToken }  → GAS → Sheets (+ Calendar)
 gPost(note)    → POST { action: "write", note, idToken, … } → GAS → Sheets / Calendar
-sendChat…      → Firestore + Storage only
 submitMemory   → Storage (optional image) + Firestore only
 ```
 

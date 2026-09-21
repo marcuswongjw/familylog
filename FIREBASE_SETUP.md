@@ -89,19 +89,18 @@ Without these, chat/users may be open or uploads may fail after path changes.
 
 ---
 
-## 5. Cloud Function (chat push)
+## 5. Cloud Functions (school)
 
-[index.js](index.js) exports `sendChatNotification` on `chat/{messageId}` create:
+[index.js](index.js) exports callable functions only:
 
-- Notifies other members’ FCM tokens (matches **email**, not display name)  
-- Deep link: `?open=chat#chat`  
-- Prunes invalid tokens after failed sends  
+- `extractSchoolAnnouncement` — Gemini read of a school message/screenshot (parents)  
+- `getSchoolSourceImage` — authenticated screenshot fetch  
+
+Chat push (`sendChatNotification`) has been removed.
 
 ```bash
-firebase deploy --only functions
+npx firebase-tools deploy --only functions
 ```
-
-Optional env: `FAMILYLOG_APP_URL` if the PWA is not at `https://marcuswongjw.github.io/familylog/`.
 
 ---
 
@@ -109,10 +108,8 @@ Optional env: `FAMILYLOG_APP_URL` if the PWA is not at `https://marcuswongjw.git
 
 | Collection / path | Contents |
 |-------------------|----------|
-| `chat/{id}` | `user`, `senderEmail`, `message`, `imageUrl`, `timestamp` |
 | `users/{email}` | `email`, `name`, `fcmTokens[]` |
 | `memories/{id}` | `loggedBy`, `loggedByEmail`, `date`, `type`, `person`, `memory`, `imageUrl`, `timestamp` |
-| Storage `chat/{email}/{file}` | Chat images |
 | Storage `memories/{email}/{file}` | Memory images |
 
 **Not in Firebase:** expenses, budgets, Us appreciations/check-ins, fertility, travel pins, calendar — those are **Sheets + GAS**.

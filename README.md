@@ -27,7 +27,7 @@ flowchart LR
 | **Frontend** | `index.html`, `css/styles.css`, `js/app.js` | UI; routes each feature to the correct backend |
 | **Firebase** | Auth, Firestore, Storage, FCM | **Owns:** login, memories, photos, push tokens |
 | **GAS + Sheets** | `Code.js` + spreadsheet | **Owns:** money, tasks, calendar, travel, Us/fertility logs; Gmail bank scan |
-| **Push** | `index.js` + `firebase-messaging-sw.js` | PWA cache + optional FCM |
+| **Functions** | `index.js` | School announcement extraction |
 | **Hosting** | GitHub Pages | Static frontend |
 
 **Do not dual-write.** Memories never go through Sheets. Expenses and Us data never go through Firestore. Kids never receive money payloads.
@@ -62,7 +62,7 @@ css/styles.css          # All app styles
 js/app.js               # Client: Firebase memories/auth + GAS for Sheets data
 Code.js                 # Apps Script: Sheets/Calendar/Gmail only (deploy separately)
 firebase-messaging-sw.js
-index.js                # Cloud Function (legacy chat push; unused)
+index.js                # Cloud Functions (school extraction)
 firestore.rules
 storage.rules
 manifest.json
