@@ -1,9 +1,126 @@
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getStorage } = require('firebase-admin/storage');
 const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'familylog-86db6.firebasestorage.app';
 admin.initializeApp({
   storageBucket: STORAGE_BUCKET
 });
+const db = getFirestore();
+const storage = getStorage();
+
+// Public PWA URL (GitHub Pages). Used as the notification click target.
+const APP_URL = process.env.FAMILYLOG_APP_URL || 'https://marcuswongjw.github.io/familylog/';
+
+function chatDeepLink() {
+  // Query + hash: iOS PWAs sometimes drop hash on open; Android handles both.
+  const base = APP_URL.replace(/\/?$/, '/');
+  return base + '?open=chat#chat';
+}
+
+// Dormant: the Chat UI was removed. Kept so an old Firestore write cannot
+// crash the function deploy; new app versions do not create chat docs.
+exports.sendChatNotification = functions.firestore
+  .document('chat/{messageId}')
+  .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const senderName = message.user || 'Someone';
+    const senderEmail = String(message.senderEmail || '').toLowerCase().trim();
+    const text = message.message || '📷 Image';
+    const imageUrl = message.imageUrl || '';
+    const title = `💬 New message from ${senderName}`;
+    const body = text.length > 120 ? text.slice(0, 117) + '…' : text;
+    const chatLink = chatDeepLink();
+
+    const usersSnapshot = await admin.firestore().collection('users').get();
+    const tokens = [];
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      const memberEmail = String(userData.email || doc.id || '').toLowerCase().trim();
+      const isSender = senderEmail
+        ? memberEmail === senderEmail
+        : (userData.name && userData.name === senderName);
+      if (!isSender && userData.fcmTokens && userData.fcmTokens.length) {
+        tokens.push(...userData.fcmTokens);
+      }
+    });
+
+    const uniqueTokens = [...new Set(tokens.filter(Boolean))];
+
+    if (uniqueTokens.length === 0) {
+      console.log('No tokens to send to.');
+      return null;
+    }
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens: uniqueTokens,
+        notification: {
+          title,
+          body,
+          ...(imageUrl ? { imageUrl } : {}),
+        },
+        data: {
+          screen: 'chat',
+          open: 'chat',
+          url: chatLink,
+          title,
+          body,
+        },
+        webpush: {
+          fcmOptions: {
+            link: chatLink,
+          },
+          notification: {
+            icon: APP_URL.replace(/\/?$/, '/') + 'favicon.png',
+            badge: APP_URL.replace(/\/?$/, '/') + 'favicon.png',
+            tag: 'familylog-chat',
+          },
+          headers: {
+            Urgency: 'high',
+          },
+        },
+      });
+      console.log(
+        'Successfully sent messages:',
+        response.successCount,
+        'ok /',
+        response.failureCount,
+        'failed'
+      );
+      // Drop dead tokens so lists stay healthy
+      if (response.responses) {
+        const toRemove = [];
+        response.responses.forEach((r, i) => {
+          if (!r.success && r.error) {
+            const code = r.error.code || '';
+            if (
+              code.includes('registration-token-not-registered')
+              || code.includes('invalid-registration-token')
+              || code.includes('invalid-argument')
+            ) {
+              toRemove.push(uniqueTokens[i]);
+            }
+          }
+        });
+        if (toRemove.length) {
+          console.log('Pruning invalid FCM tokens:', toRemove.length);
+          const batch = admin.firestore().batch();
+          usersSnapshot.forEach(doc => {
+            const toks = (doc.data().fcmTokens || []).filter(t => !toRemove.includes(t));
+            if (toks.length !== (doc.data().fcmTokens || []).length) {
+              batch.update(doc.ref, { fcmTokens: toks });
+            }
+          });
+          await batch.commit().catch(e => console.warn('Token prune failed', e));
+        }
+      }
+      return response;
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+      return null;
+    }
+  });
 
 // Parent-only extraction; no calendar/task side effects. Secrets never reach the PWA.
 const { buildRequest, parseResponse } = require('./school-extraction');
@@ -26,8 +143,8 @@ exports.extractSchoolAnnouncement = functions.runWith({
     throw new functions.https.HttpsError('permission-denied', 'Invalid screenshot owner.');
   }
   // Server-owned operational counter, not a second store for school records.
-  const quota = admin.firestore().collection('schoolExtractionLimits').doc(context.auth.uid);
-  await admin.firestore().runTransaction(async tx => {
+  const quota = db.collection('schoolExtractionLimits').doc(context.auth.uid);
+  await db.runTransaction(async tx => {
     const old = (await tx.get(quota)).data() || {};
     const day = new Date().toISOString().slice(0, 10);
     const count = old.day === day ? old.count : 0;
@@ -38,7 +155,7 @@ exports.extractSchoolAnnouncement = functions.runWith({
     let imageMime = '';
     let imageBase64 = '';
     if (path) {
-      const file = admin.storage().bucket(STORAGE_BUCKET).file(path);
+      const file = storage.bucket(STORAGE_BUCKET).file(path);
       const [metadata] = await file.getMetadata();
       if (Number(metadata.size) > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType)) throw new Error('Use a PNG, JPEG or WebP under 5 MB.');
       const [bytes] = await file.download();
@@ -46,7 +163,7 @@ exports.extractSchoolAnnouncement = functions.runWith({
       imageMime = metadata.contentType;
       imageBase64 = bytes.toString('base64');
     }
-    const model = process.env.SCHOOL_AI_MODEL || 'gemini-2.0-flash';
+    const model = process.env.SCHOOL_AI_MODEL || 'gemini-3.6-flash';
     const endpoint = apiKey.startsWith('AQ.')
       ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
       : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -67,6 +184,7 @@ exports.extractSchoolAnnouncement = functions.runWith({
     return parseResponse(await response.json());
   } catch (err) {
     if (err instanceof functions.https.HttpsError) throw err;
+    // Diagnostic log without leaking private announcement text, images or tokens.
     console.error('extractSchoolAnnouncement failed:', err.name || 'Error', err.message || String(err));
     throw new functions.https.HttpsError('unavailable', 'Could not read this message. Try a clearer screenshot or enter the plan manually.');
   }
@@ -78,7 +196,7 @@ exports.getSchoolSourceImage = functions.runWith({ memory: '256MB' }).https.onCa
   if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Parents only.');
   const path = typeof data?.path === 'string' ? data.path : '';
   if (!/^school\/(marcuswongjw@gmail\.com|eleanor\.jiamin@gmail\.com)\/[a-f0-9]{64}$/.test(path)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image path.');
-  const file = admin.storage().bucket(STORAGE_BUCKET).file(path);
+  const file = storage.bucket(STORAGE_BUCKET).file(path);
   const [meta] = await file.getMetadata();
   if (Number(meta.size) >= 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(meta.contentType)) throw new functions.https.HttpsError('invalid-argument', 'Invalid image.');
   const [bytes] = await file.download();

@@ -3,7 +3,7 @@
 const str = { type: 'STRING' };
 const object = properties => ({ type: 'OBJECT', properties, required: Object.keys(properties) });
 const schema = object({
-  title: str, child: { type: 'STRING', enum: ['', 'Mikaela', 'Meaghan'] },
+  title: str, child: { type: 'STRING', enum: ['Unknown', 'Mikaela', 'Meaghan'] },
   sourceText: str, warnings: { type: 'ARRAY', items: str },
   event: object({ title: str, date: str, time: str, endTime: str, location: str, evidence: str }),
   tasks: { type: 'ARRAY', items: object({ title: str, kind: { type: 'STRING', enum: ['packing', 'homework', 'consent', 'payment', 'other'] }, due: str, evidence: str }) }
@@ -80,7 +80,9 @@ function parseResponse(response) {
   }
   const text = candidate.content?.parts?.map(p => p.text).join('') || '';
   if (!text) throw new Error('Empty text content received from extraction service.');
-  return validateExtraction(JSON.parse(text));
+  const parsed = JSON.parse(text);
+  if (parsed && (parsed.child === 'Unknown' || parsed.child === 'None')) parsed.child = '';
+  return validateExtraction(parsed);
 }
 
 module.exports = { schema, validateExtraction, buildRequest, parseResponse };
