@@ -118,16 +118,16 @@ async function schoolUpload() {
   const file = document.getElementById('school-file').files[0];
   if (!file) return '';
   const isPdf = file.type === 'application/pdf';
-  schoolMessage(isPdf ? 'Preparing PDF announcement…' : 'Optimizing screenshot…');
+  schoolMessage(isPdf ? 'Preparing PDF document…' : 'Optimizing image…');
   const blob = await schoolOptimizeImage(file);
   if (blob.size >= 5 * 1024 * 1024) throw new Error('File too large (max 5 MB).');
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('');
   const email = (firebase.auth().currentUser?.email || '').toLowerCase();
-  if (!email) throw new Error('Sign in as a parent to upload school messages.');
+  if (!email) throw new Error('Sign in as a parent to upload notices or messages.');
   const path = 'school/' + email + '/' + hash;
   const storageInstance = window.storage || firebase.storage();
   const ref = storageInstance.ref(path);
-  schoolMessage(isPdf ? 'Uploading PDF announcement…' : 'Uploading screenshot…');
+  schoolMessage(isPdf ? 'Uploading PDF…' : 'Uploading image…');
   try {
     await ref.getMetadata();
   } catch (err) {
@@ -145,14 +145,14 @@ async function extractSchool(manual) {
   if (schoolBusy || !isAdultUser) return;
   schoolBusy = true;
   const capture = document.getElementById('school-capture-fields'); capture.disabled = true;
-  schoolMessage(manual ? 'Preparing your review…' : 'Reading your message…');
+  schoolMessage(manual ? 'Preparing your review…' : 'Reading your notice or message…');
   try {
     const text = document.getElementById('school-text').value.trim();
-    if (!text && !document.getElementById('school-file').files.length) throw new Error('Paste a message or choose a screenshot first.');
+    if (!text && !document.getElementById('school-file').files.length) throw new Error('Paste a message or choose an image first.');
     const sourcePath = await schoolUpload();
     let extracted = { title: '', child: '', event: {}, tasks: [], warnings: [] };
     if (!manual) {
-      schoolMessage('Reading announcement with Gemini AI…');
+      schoolMessage('Reading text with Gemini AI…');
       extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
     }
     const eventDate = extracted.event?.date || '';
@@ -170,7 +170,7 @@ async function extractSchool(manual) {
     };
     document.getElementById('school-capture').hidden = true;
     renderSchoolReview();
-    schoolMessage(manual ? 'Enter the details below. Nothing is saved until you choose Save draft.' : 'Check the source and confirm the child, dates and task owners. Nothing has been added yet.');
+    schoolMessage(manual ? 'Enter the details below. Nothing is saved until you choose Save draft.' : 'Check the details and confirm the dates, times, and owners. Nothing has been added yet.');
   } catch (err) { schoolMessage((err.message || 'Extraction unavailable.') + ' You can use “Enter manually”.', true); }
   finally { schoolBusy = false; capture.disabled = false; }
 }
@@ -182,16 +182,16 @@ function renderSchoolReview() {
   const locked = p.status !== 'draft';
   document.getElementById('school-review').innerHTML = `
     <div class="school-review-grid">
-      <aside class="school-source"><h3>Original message</h3>
-        ${p.sourcePath ? `<button type="button" class="btn btn-s" id="school-source-button">View screenshot</button><img id="school-source-image" alt="Original school announcement" ${schoolImageUrl ? `src="${escapeHtml(schoolImageUrl)}"` : 'hidden'}>` : ''}
-        <pre>${escapeHtml(p.sourceText || 'Screenshot attached. Compare the image with the plan.')}</pre>
+      <aside class="school-source"><h3>Original text or notice</h3>
+        ${p.sourcePath ? `<button type="button" class="btn btn-s" id="school-source-button">View attachment</button><img id="school-source-image" alt="Original notice" ${schoolImageUrl ? `src="${escapeHtml(schoolImageUrl)}"` : 'hidden'}>` : ''}
+        <pre>${escapeHtml(p.sourceText || 'Attachment included. Compare the image with the extracted details.')}</pre>
       </aside>
-      <div><h3>${locked ? (p.status === 'published' ? 'Added to family plan' : 'Finish saving this plan') : 'Review the family plan'}</h3>
-        <p class="school-muted">All times are Singapore time. Missing details stay blank. This does not submit forms, make payments or schedule notifications.</p>
+      <div><h3>${locked ? (p.status === 'published' ? 'Added to family calendar & tasks' : 'Finish saving these details') : 'Review details'}</h3>
+        <p class="school-muted">All times are Singapore time. Missing details stay blank. Check everything before adding to the calendar.</p>
         ${p.warnings.length ? `<div class="school-warning"><strong>Please check</strong><ul>${p.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` : ''}
         <fieldset id="school-review-fields" ${locked ? 'disabled' : ''}>
-          ${schoolField('Plan title', 'school-title', p.title)}
-          <label class="school-field">Child<select id="school-child" ${p.id ? 'disabled' : ''}>${schoolOptions(['', 'Mikaela', 'Meaghan'], p.child)}</select></label>
+          ${schoolField('Title', 'school-title', p.title)}
+          <label class="school-field">Child (if applicable)<select id="school-child" ${p.id ? 'disabled' : ''}>${schoolOptions(['', 'Mikaela', 'Meaghan'], p.child)}</select></label>
           <label class="school-check"><input id="school-event-enabled" type="checkbox" ${p.event.enabled ? 'checked' : ''}> Add an event to the family calendar</label>
           <div class="school-event-fields">
             ${schoolField('Event title', 'school-event-title', p.event.title)}
@@ -201,8 +201,8 @@ function renderSchoolReview() {
             ${schoolField('Location', 'school-event-location', p.event.location)}
             ${p.event.evidence ? `<blockquote>${escapeHtml(p.event.evidence)}</blockquote>` : ''}
           </div>
-          <h3>Preparation & packing items</h3>
-          <p class="school-muted">Task owners default to the child. Preparation and packing tasks default to the day before the event.</p>
+          <h3>Preparation & tasks</h3>
+          <p class="school-muted">Preparation tasks default to the day before the event. You can change owners and due dates below.</p>
           <div id="school-task-editor">${p.tasks.map((t, i) => `
             <div class="school-edit-task">
               ${schoolField('Task ' + (i + 1), 'school-task-title-' + i, t.title)}
@@ -412,11 +412,11 @@ function renderSchoolHome() {
     ${isAdultUser ? `
       <div class="school-intro">
         <div>
-          <span class="school-eyebrow">School notices</span>
-          <h2>Turn school notices into dates and tasks</h2>
-          <p>Read circulars and messages to prepare schedules and packing checklists.</p>
+          <span class="school-eyebrow">Notice reader</span>
+          <h2>Drop info to create dates and tasks</h2>
+          <p>Paste any message, circular, or text, or upload a screenshot to extract schedules and to-dos.</p>
         </div>
-        <button class="btn btn-p" id="school-open">Add school message</button>
+        <button class="btn btn-p" id="school-open">Drop info or message</button>
       </div>
       ${pending.length ? `
         <div class="school-inbox">

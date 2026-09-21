@@ -129,10 +129,10 @@ exports.extractSchoolAnnouncement = functions.runWith({
   secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'
 }).https.onCall(async (data, context) => {
   const email = String(context.auth?.token?.email || '').toLowerCase();
-  if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Only parents can extract school messages.');
+  if (!SCHOOL_PARENTS.includes(email)) throw new functions.https.HttpsError('permission-denied', 'Only parents can extract notices and messages.');
   const text = typeof data?.text === 'string' ? data.text.trim() : '';
   const path = typeof data?.imagePath === 'string' ? data.imagePath : '';
-  if (text.length > 20000 || (!text && !path)) throw new functions.https.HttpsError('invalid-argument', 'Add a message or screenshot (up to 20,000 characters).');
+  if (text.length > 20000 || (!text && !path)) throw new functions.https.HttpsError('invalid-argument', 'Add a message, notice, or screenshot (up to 20,000 characters).');
   const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   if (!apiKey) throw new functions.https.HttpsError('failed-precondition', 'Gemini AI extraction is not configured. You can enter the plan manually.');
   if (!apiKey.startsWith('AIza') && !apiKey.startsWith('AQ.')) {

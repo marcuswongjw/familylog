@@ -712,20 +712,20 @@
   <!-- JAVASCRIPT – APP LOGIC (FIRESTORE MEMORIES + FCM)         -->
   <!-- ============================================================ -->
   <dialog id="school-dialog" aria-labelledby="school-dialog-title" oncancel="event.preventDefault();closeSchoolCapture()">
-    <header class="school-dialog-header"><div><span class="school-eyebrow">School notice</span><h2 id="school-dialog-title">Review school notice</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close school message">Close</button></header>
+    <header class="school-dialog-header"><div><span class="school-eyebrow">Notice or message</span><h2 id="school-dialog-title">Read notice or message</h2></div><button class="btn btn-s" type="button" onclick="closeSchoolCapture()" aria-label="Close">Close</button></header>
     <div id="school-capture">
-      <p>Paste a school message or upload a notice. Check the details before adding them to your family calendar and tasks.</p>
+      <p>Paste any message or notice, or upload a photo, screenshot, or PDF. We will pull out the dates, times, and tasks so you can check them before adding to the calendar.</p>
       <fieldset id="school-capture-fields">
-        <label class="school-field">Message<textarea id="school-text" maxlength="20000" rows="7" placeholder="Dear parents, students attending the Science Learning Journey…"></textarea></label>
-        <label class="school-field school-upload">Or choose a screenshot or PDF<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><small>PNG, JPEG, WebP or PDF · under 5 MB</small></label>
-        <p class="school-muted">“Read with AI” drafts the event and preparation tasks using Gemini. The original notice is saved for reference.</p>
+        <label class="school-field">Message or text<textarea id="school-text" maxlength="20000" rows="7" placeholder="Paste a WhatsApp or text message, circular, email, or schedule snippet…"></textarea></label>
+        <label class="school-field school-upload">Or choose an image or PDF<input id="school-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"><small>PNG, JPEG, WebP or PDF · under 5 MB</small></label>
+        <p class="school-muted">“Read with AI” drafts the event and tasks using Gemini. The original text or notice is saved for reference.</p>
         <div class="school-actions"><button class="btn btn-p" type="button" onclick="extractSchool(false)">Read with AI</button><button class="btn btn-s" type="button" onclick="extractSchool(true)">Enter manually</button></div>
       </fieldset>
     </div>
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=18"></script>
-  <script src="js/app.js?v=18"></script>
+  <script src="js/school.js?v=19"></script>
+  <script src="js/app.js?v=19"></script>
 </body>
 </html>
