@@ -49,10 +49,17 @@ const ACTIVITY_TEMPLATES = {
       { title: 'Pack towel & dry clothes', kind: 'packing' },
       { title: 'Pack swim cap & kickboard', kind: 'packing' }
     ]
+  },
+  parentAction: {
+    child: '',
+    tasks: [
+      { title: 'Sign consent form & acknowledge', kind: 'consent' },
+      { title: 'Make payment & submit confirmation', kind: 'payment' }
+    ]
   }
 };
-function schoolOptions(values, selected) {
-  return values.map(value => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value || 'Choose child')}</option>`).join('');
+function schoolOptions(values, selected, emptyLabel = 'Select…') {
+  return values.map(value => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value || emptyLabel)}</option>`).join('');
 }
 function schoolMessage(message, error = false) {
   const el = document.getElementById('school-feedback');
@@ -168,11 +175,15 @@ async function extractSchool(manual) {
       title: extracted.title || '', child: extracted.child || '',
       sourceText: text || extracted.sourceText || '', sourcePath, warnings: extracted.warnings || [],
       event: { enabled: !!extracted.event?.title, title: extracted.event?.title || '', date: extracted.event?.date || '', time: extracted.event?.time || '', endTime: extracted.event?.endTime || '', location: extracted.event?.location || '', evidence: extracted.event?.evidence || '' },
-      tasks: (extracted.tasks || []).map(t => ({
-        ...t,
-        assignee: extracted.child || '',
-        due: (eventDate && (!t.due || t.due === eventDate)) ? prepDate : (t.due || '')
-      })),
+      tasks: (extracted.tasks || []).map(t => {
+        let assignee = t.assignee || extracted.child || '';
+        if (assignee === 'Family') assignee = 'Everyone';
+        return {
+          ...t,
+          assignee: assignee,
+          due: (eventDate && (!t.due || t.due === eventDate)) ? prepDate : (t.due || '')
+        };
+      }),
       status: 'draft', revision: 0
     };
     document.getElementById('school-capture').hidden = true;
@@ -198,7 +209,7 @@ function renderSchoolReview() {
         ${p.warnings.length ? `<div class="school-warning"><strong>Please check</strong><ul>${p.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` : ''}
         <fieldset id="school-review-fields" ${locked ? 'disabled' : ''}>
           ${schoolField('Title', 'school-title', p.title)}
-          <label class="school-field">Child (if applicable)<select id="school-child" ${p.id ? 'disabled' : ''}>${schoolOptions(['', 'Mikaela', 'Meaghan'], p.child)}</select></label>
+          <label class="school-field">For (family member or household)<select id="school-child" ${p.id ? 'disabled' : ''}>${schoolOptions(['', 'Mikaela', 'Meaghan', 'Marcus', 'Eleanor', 'Family'], p.child, 'General / Household')}</select></label>
           <label class="school-check"><input id="school-event-enabled" type="checkbox" ${p.event.enabled ? 'checked' : ''}> Add an event to the family calendar</label>
           <div class="school-event-fields">
             ${schoolField('Event title', 'school-event-title', p.event.title)}
@@ -214,7 +225,7 @@ function renderSchoolReview() {
             <div class="school-edit-task">
               ${schoolField('Task ' + (i + 1), 'school-task-title-' + i, t.title)}
               <div class="school-two"><label class="school-field">Type<select id="school-task-kind-${i}">${schoolOptions(['packing', 'homework', 'consent', 'payment', 'other'], t.kind)}</select></label>
-              <label class="school-field">Owner<select id="school-task-owner-${i}">${schoolOptions(['', 'Mikaela', 'Meaghan', 'Marcus', 'Eleanor'], t.assignee)}</select></label></div>
+              <label class="school-field">Owner<select id="school-task-owner-${i}">${schoolOptions(['', 'Mikaela', 'Meaghan', 'Marcus', 'Eleanor', 'Everyone'], t.assignee, 'Unassigned')}</select></label></div>
               ${schoolField('Due date (optional)', 'school-task-due-' + i, t.due, 'date')}
               ${t.evidence ? `<blockquote>${escapeHtml(t.evidence)}</blockquote>` : '<small>Added by parent</small>'}
               <button class="btn btn-s" type="button" data-remove-task="${i}">Remove task</button>
@@ -222,6 +233,7 @@ function renderSchoolReview() {
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
             <button type="button" class="btn btn-s" id="school-add-task">Add task</button>
             <span class="school-muted" style="font-size:12px;">Presets:</span>
+            <button type="button" class="btn btn-xs" data-school-tpl="parentAction">+ 💼 Parent action</button>
             <button type="button" class="btn btn-xs" data-school-tpl="natB">+ ⛵ Nat B Sailing</button>
             <button type="button" class="btn btn-xs" data-school-tpl="sailing">+ ⛵ Sailing kit</button>
             <button type="button" class="btn btn-xs" data-school-tpl="ballet">+ 🩰 Ballet kit</button>
@@ -240,11 +252,13 @@ function renderSchoolReview() {
     const newChild = e.target.value;
     schoolCollect();
     p.child = newChild;
+    const defaultAssignee = newChild === 'Family' ? 'Everyone' : newChild;
+    const prevDefault = prevChild === 'Family' ? 'Everyone' : prevChild;
     p.tasks.forEach((t, i) => {
-      if (!t.assignee || t.assignee === prevChild) {
-        t.assignee = newChild;
+      if (!t.assignee || t.assignee === prevChild || t.assignee === prevDefault) {
+        t.assignee = defaultAssignee;
         const ownerEl = document.getElementById('school-task-owner-' + i);
-        if (ownerEl) ownerEl.value = newChild;
+        if (ownerEl) ownerEl.value = defaultAssignee;
       }
     });
   });
@@ -268,7 +282,8 @@ function renderSchoolReview() {
   document.getElementById('school-add-task')?.addEventListener('click', () => {
     schoolCollect(); if (p.tasks.length >= 30) return schoolMessage('Use up to 30 tasks per message.', true);
     const defaultDue = p.event?.date ? schoolDayOffset(p.event.date, -1) : '';
-    p.tasks.push({ title: '', kind: 'other', assignee: p.child || '', due: defaultDue, evidence: '' }); renderSchoolReview();
+    const defaultOwner = p.child === 'Family' ? 'Everyone' : (p.child || '');
+    p.tasks.push({ title: '', kind: 'other', assignee: defaultOwner, due: defaultDue, evidence: '' }); renderSchoolReview();
   });
   document.querySelectorAll('[data-school-tpl]').forEach(btn => btn.addEventListener('click', () => {
     const tplKey = btn.dataset.schoolTpl;
@@ -277,9 +292,10 @@ function renderSchoolReview() {
     schoolCollect();
     if (tpl.child && !p.child) p.child = tpl.child;
     const defaultDue = p.event?.date ? schoolDayOffset(p.event.date, -1) : '';
+    const defaultOwner = p.child === 'Family' ? 'Everyone' : (p.child || tpl.child || '');
     tpl.tasks.forEach(item => {
       if (p.tasks.length < 30) {
-        p.tasks.push({ title: item.title, kind: item.kind, assignee: p.child || tpl.child || '', due: defaultDue, evidence: 'Activity template' });
+        p.tasks.push({ title: item.title, kind: item.kind, assignee: defaultOwner, due: defaultDue, evidence: 'Activity template' });
       }
     });
     renderSchoolReview();
@@ -544,18 +560,35 @@ function renderSchoolHome() {
     }).join('')}</div>
 
     ${isAdultUser ? `
+      ${(() => {
+        const parentEvents = (data.events || []).filter(e => e.dateRaw === day && (e.tags || []).some(t => t === 'Family' || t === 'Marcus' || t === 'Eleanor'));
+        if (!parentEvents.length) return '';
+        return `
+          <div class="school-parent-schedule" style="margin-top:20px;padding:16px;background:var(--card-bg, #fff);border:1px solid var(--border-color, #e2e8f0);border-radius:12px;">
+            <h3 style="margin-top:0;font-size:15px;color:var(--text, #1e293b);display:flex;align-items:center;gap:6px;">📅 Family & Parent Schedule · ${dayLabel}</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+              ${parentEvents.map(e => `
+                <div class="school-day-event" style="border-left:3px solid #6366f1;padding-left:10px;">
+                  <strong>${escapeHtml(e.time)} · ${escapeHtml(e.title)}${(e.tags && e.tags.includes('Family')) ? ' <span style="font-size:11px;background:#e0f2fe;color:#0369a1;padding:2px 6px;border-radius:4px;font-weight:600;">Family</span>' : (e.tags && (e.tags.includes('Marcus') || e.tags.includes('Eleanor'))) ? ` <span style="font-size:11px;background:#f3e8ff;color:#6b21a8;padding:2px 6px;border-radius:4px;font-weight:600;">${e.tags.filter(t => t === 'Marcus' || t === 'Eleanor').join(', ')}</span>` : ''}</strong>
+                  ${e.location ? `<small style="display:block;color:#64748b;">📍 ${escapeHtml(e.location)}</small>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      })()}
       <div class="school-parent-actions">
-        <h3>${escapeHtml(user)} — your school actions</h3>
-        ${tasks.filter(t => t.sourceId && ['Marcus', 'Eleanor'].includes(t.assignee) && t.status !== 'Done')
-          .sort((a, b) => (a.assignee === user ? 0 : a.assignee === 'Marcus' ? 1 : 2) - (b.assignee === user ? 0 : b.assignee === 'Marcus' ? 1 : 2))
-          .map(t => schoolTaskCard(t, day)).join('') || '<p class="school-muted">No school actions waiting for a parent.</p>'}
+        <h3>${escapeHtml(user)} — your actions & tasks</h3>
+        ${tasks.filter(t => (t.sourceId || t.kind) && ['Marcus', 'Eleanor', 'Everyone'].includes(t.assignee) && t.status !== 'Done')
+          .sort((a, b) => (a.assignee === user ? 0 : a.assignee === 'Everyone' ? 1 : 2) - (b.assignee === user ? 0 : b.assignee === 'Everyone' ? 1 : 2))
+          .map(t => schoolTaskCard(t, day)).join('') || '<p class="school-muted">No pending notice or prep actions waiting for you.</p>'}
       </div>
       ${plans.some(p => p.status === 'published') ? `
         <details class="school-inbox">
           <summary>Saved announcements</summary>
           ${plans.filter(p => p.status === 'published').slice(0, 20).map(p => `
             <button class="school-inbox-item" data-plan="${escapeHtml(p.id)}">
-              ${escapeHtml(p.title)} · ${escapeHtml(p.child)} <span>View source →</span>
+              ${escapeHtml(p.title)} · ${escapeHtml(p.child || 'Household')} <span>View source →</span>
             </button>`).join('')}
         </details>` : ''}
     ` : ''}`;

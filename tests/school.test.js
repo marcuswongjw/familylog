@@ -300,3 +300,119 @@ test('Habits management: seed, log habit, retrieve logs, and delete log', () => 
   assert.equal(adultDel.status, 'ok');
 });
 
+test('parent notice and tasks save, publish, and tag appropriately for Marcus/Eleanor', () => {
+  const h = harness();
+  const parentPlan = plan({
+    title: 'Dentist Checkup',
+    child: 'Marcus',
+    sourceText: 'Dentist appointment for Marcus on 28 Sep 2026 at 2pm at Q&M Dental.',
+    event: { enabled: true, title: 'Marcus Dentist Checkup', date: '2026-09-28', time: '14:00', endTime: '15:00', location: 'Q&M Dental', evidence: 'Dentist appointment' },
+    tasks: [{ title: 'Bring dental card', kind: 'other', assignee: 'Marcus', due: '2026-09-27', evidence: 'Bring dental card' }]
+  });
+
+  const saved = save(h, parentPlan);
+  assert.equal(saved.status, 'ok');
+  assert.equal(saved.state, 'draft');
+
+  const pub = publish(h, saved);
+  assert.equal(pub.status, 'ok');
+  assert.equal(pub.state, 'published');
+
+  // Verify calendar event saved with Marcus in extended properties
+  const calEvent = [...h.calendar.values()][0];
+  assert.ok(calEvent);
+  assert.equal(calEvent.extendedProperties.private.child, 'Marcus');
+
+  // Verify task assigned to Marcus in ToDo
+  assert.equal(h.sheets.ToDo.rows[1][2], 'Marcus');
+  assert.equal(h.sheets.ToDo.rows[1][10], 'Marcus');
+
+  // Verify getEvents tags Marcus
+  h.calendarEvents.push({
+    id: calEvent.id,
+    title: calEvent.summary,
+    location: calEvent.location,
+    start: new Date('2026-09-28T14:00:00+08:00'),
+    end: new Date('2026-09-28T15:00:00+08:00'),
+    allDay: false
+  });
+  const events = h.c.getEvents(h.ss);
+  const foundEvent = events.find(e => e.id === calEvent.id);
+  assert.ok(foundEvent);
+  assert.deepEqual([...foundEvent.tags], ['Marcus']);
+});
+
+test('family notice and tasks expand tags to all family members and allow Everyone as assignee', () => {
+  const h = harness();
+  const familyPlan = plan({
+    title: 'Family Day Outing',
+    child: 'Family',
+    sourceText: 'Family gathering at East Coast Park on 10 Oct 2026, 9am - 12pm.',
+    event: { enabled: true, title: 'Family Day Outing', date: '2026-10-10', time: '09:00', endTime: '12:00', location: 'East Coast Park', evidence: 'gathering' },
+    tasks: [
+      { title: 'Pack picnic mat and drinks', kind: 'packing', assignee: 'Everyone', due: '2026-10-09', evidence: 'picnic' },
+      { title: 'Book barbecue pit', kind: 'payment', assignee: 'Eleanor', due: '2026-10-05', evidence: 'pit' }
+    ]
+  });
+
+  const saved = save(h, familyPlan);
+  assert.equal(saved.status, 'ok');
+
+  const pub = publish(h, saved);
+  assert.equal(pub.status, 'ok');
+  assert.equal(pub.state, 'published');
+
+  // Verify tasks assigned to Everyone and Eleanor
+  assert.equal(h.sheets.ToDo.rows[1][2], 'Everyone');
+  assert.equal(h.sheets.ToDo.rows[2][2], 'Eleanor');
+
+  // Verify getEvents expands Family tag to all family members
+  const calEvent = [...h.calendar.values()][0];
+  h.calendarEvents.push({
+    id: calEvent.id,
+    title: calEvent.summary,
+    location: calEvent.location,
+    start: new Date('2026-10-10T09:00:00+08:00'),
+    end: new Date('2026-10-10T12:00:00+08:00'),
+    allDay: false
+  });
+  const events = h.c.getEvents(h.ss);
+  const foundEvent = events.find(e => e.id === calEvent.id);
+  assert.ok(foundEvent);
+  assert.deepEqual([...foundEvent.tags], ['Family', 'Marcus', 'Eleanor', 'Mikaela', 'Meaghan']);
+});
+
+test('extraction prompt and response parser handle parent and family notices and assignees', () => {
+  const req = buildRequest('Marcus dentist appointment');
+  const systemPrompt = req.systemInstruction.parts[0].text;
+  assert.ok(systemPrompt.includes('Marcus'));
+  assert.ok(systemPrompt.includes('Eleanor'));
+  assert.ok(systemPrompt.includes('Family'));
+
+  const geminiResponse = (data) => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(data) }] } }] });
+
+  const parsed = parseResponse(geminiResponse({
+    title: 'Tax Filing Reminder',
+    child: 'Marcus',
+    sourceText: 'Tax deadline reminder',
+    event: { title: 'IRAS Filing Deadline', date: '2026-04-18', time: '23:59', endTime: '23:59', location: '', evidence: 'tax deadline' },
+    tasks: [{ title: 'Submit IRAS form', kind: 'payment', assignee: 'Marcus', due: '2026-04-17', evidence: 'submit form' }],
+    warnings: []
+  }));
+  assert.equal(parsed.child, 'Marcus');
+  assert.equal(parsed.tasks[0].assignee, 'Marcus');
+
+  // Unknown child and None assignee are sanitized to empty strings
+  const sanitized = parseResponse(geminiResponse({
+    title: 'General Notification',
+    child: 'Unknown',
+    sourceText: 'General Notification meeting',
+    event: { title: 'General Notification', date: '2026-05-01', time: '10:00', endTime: '11:00', location: '', evidence: 'meeting' },
+    tasks: [{ title: 'Review circular', kind: 'other', assignee: 'None', due: '', evidence: 'review' }],
+    warnings: []
+  }));
+  assert.equal(sanitized.child, '');
+  assert.equal(sanitized.tasks[0].assignee, '');
+});
+
+

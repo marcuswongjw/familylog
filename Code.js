@@ -1752,7 +1752,14 @@ function getEvents() {
       var explicitTag = '';
       try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
       if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
-      var tags      = explicitTag ? [explicitTag] : FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
+      var tags;
+      if (explicitTag === 'Family' || explicitTag === 'Everyone') {
+        tags = ['Family', 'Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
+      } else if (explicitTag) {
+        tags = [explicitTag];
+      } else {
+        tags = FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
+      }
       var duration  = 0;
       try {
         duration = (ev.getEndTime().getTime() - ev.getStartTime().getTime()) / (1000 * 60 * 60);
@@ -3184,12 +3191,20 @@ function schoolEventLinks_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SchoolAnnouncements');
   var links = {};
   if (sheet) sheet.getDataRange().getValues().slice(1).forEach(function(r) {
-    if (r[4]) { var p = JSON.parse(r[3]); links[toStr(r[4])] = { child: p.child, sourceId: p.id }; }
+    if (r[4]) {
+      var p = JSON.parse(r[3]);
+      var calId = toStr(r[4]);
+      links[calId] = { child: p.child, sourceId: p.id };
+      if (calId.indexOf('@') !== -1) {
+        links[calId.split('@')[0]] = { child: p.child, sourceId: p.id };
+      }
+    }
   });
   return links;
 }
 function schoolValidatePlan_(raw, email) {
-  if (!raw || ['Mikaela', 'Meaghan'].indexOf(raw.child) === -1) throw new Error('Choose the child this message is for.');
+  var VALID_TARGETS = ['Mikaela', 'Meaghan', 'Marcus', 'Eleanor', 'Family', 'Everyone'];
+  if (!raw || VALID_TARGETS.indexOf(raw.child) === -1) throw new Error('Choose who this notice or message is for (Mikaela, Meaghan, Marcus, Eleanor, or Family).');
   var p = {
     title: schoolText_(raw.title, 200, true), child: raw.child,
     sourceText: schoolText_(raw.sourceText || '', 20000, false), sourcePath: schoolText_(raw.sourcePath || '', 250, false),
@@ -3206,7 +3221,7 @@ function schoolValidatePlan_(raw, email) {
   raw.tasks.forEach(function(t, i) {
     var kind = t.kind;
     if (['packing', 'homework', 'consent', 'payment', 'other'].indexOf(kind) === -1) throw new Error('Invalid task type.');
-    if (FAMILY_MEMBERS.indexOf(t.assignee) === -1 || t.assignee === 'Everyone') throw new Error('Choose a task owner.');
+    if (FAMILY_MEMBERS.indexOf(t.assignee) === -1) throw new Error('Choose a task owner.');
     p.tasks.push({ id: p.id + '_' + i, title: schoolText_(t.title, 200, true), kind: kind, assignee: t.assignee,
       due: schoolDate_(t.due || '', true), evidence: schoolText_(t.evidence || '', 1500, false) });
   });
@@ -3232,8 +3247,8 @@ function schoolPublishEvent_(p) {
   var eventId = 'fl' + schoolHash_(p.id);
   var url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(CALENDAR_ID) + '/events';
   var event = { id: eventId, summary: ev.title, location: ev.location,
-    description: 'Family Log school plan: ' + p.title,
-    extendedProperties: { private: { familylogSourceId: p.id, child: p.child } }, reminders: { useDefault: false } };
+    description: 'Family Log plan: ' + p.title,
+    extendedProperties: { private: { familylogSourceId: p.id, child: p.child, member: p.child } }, reminders: { useDefault: false } };
   if (ev.time) {
     event.start = { dateTime: ev.date + 'T' + ev.time + ':00+08:00', timeZone: 'Asia/Singapore' };
     event.end = { dateTime: ev.date + 'T' + ev.endTime + ':00+08:00', timeZone: 'Asia/Singapore' };
