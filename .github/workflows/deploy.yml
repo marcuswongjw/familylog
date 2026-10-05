@@ -1,0 +1,54 @@
+name: Deploy production
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Also deploy Apps Script and Firebase (requires configured credentials)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - uses: google-github-actions/auth@v2
+        if: inputs.backend
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Deploy backend
+        if: inputs.backend
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+          CLASP_SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID }}
+        run: |
+          node -e "const fs=require('fs');if(!process.env.CLASP_CREDENTIALS||!process.env.CLASP_SCRIPT_ID)throw Error('Configure clasp deployment credentials');fs.writeFileSync(process.env.HOME+'/.clasprc.json',process.env.CLASP_CREDENTIALS,{mode:384});fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:process.env.CLASP_SCRIPT_ID}));"
+          ./scripts/deploy-gas.sh
+          npx firebase deploy --project familylog-86db6 --only functions,firestore:rules,storage --non-interactive
+      - uses: actions/configure-pages@v5
+      - name: Prepare public client only
+        run: |
+          mkdir public-site
+          cp index.html manifest.json firebase-messaging-sw.js *.png *.svg public-site/
+          cp -R js css assets public-site/
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: public-site}
+      - uses: actions/deploy-pages@v4
+        id: pages

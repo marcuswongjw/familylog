@@ -23,13 +23,15 @@ window.firebase = {
  storage: () => ({}),
  messaging: () => ({useServiceWorker(){},onMessage(){}}),
  functions: () => ({httpsCallable:name=>async payload=>name==='updateReminderSettings'?({data:{settings:payload?.settings||{enabled:false,packing:true,habits:true,overdue:true,includeChildren:false,hour:19,quietStart:21,quietEnd:7},bridgeReady:true}}):({data:{title:'Science Learning Journey',child:'Mikaela',sourceText:'',warnings:['The year is missing. Confirm the date.','End time not provided.'],event:{title:'Science Learning Journey',date:'',time:'07:15',endTime:'',location:'School',evidence:'Report at 7:15am on 23 September.'},tasks:[{title:'Pack water bottle',kind:'packing',due:'',evidence:'Bring a water bottle.'}]}})}),
- auth: () => ({currentUser:{email:'marcuswongjw@gmail.com'},onAuthStateChanged(cb){cb(null)}})
+ auth: () => ({currentUser:{email:'marcuswongjw@gmail.com',getIdToken:async()=> 'fixture-token'},onAuthStateChanged(cb){cb(null)}})
 };
 window.fixtureErrors=[]; window.addEventListener('error',e=>fixtureErrors.push(e.message));
 window.addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reason)));
 </script>`;
 const setup = `<script>
 window.addEventListener('DOMContentLoaded', async()=>{
+ window.productionGasRequest=gasRequest;
+ firebase.firestore.FieldValue={serverTimestamp:()=>new Date()};
  gasRequest=async body=>{const r=await fetch('/api',{method:'POST',body:JSON.stringify({...body,email:currentUserEmail})});return r.json()};
  window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData();startMemoriesListener()};
  if (!location.search.includes('login-preview')) await fixtureLogin('Marcus');

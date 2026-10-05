@@ -16,7 +16,7 @@ function fixture(adult = true) {
     section:'home',user:adult?'Marcus':'Mikaela',MEMBERS:[{name:adult?'Marcus':'Mikaela',emoji:'avatar'}],isAdultUser:adult,timelineInterval:null,
     location:{hash:'',search:''},URLSearchParams,savePreference(){},startMemoriesListener(){},stopMemoriesListener(){},render:id=>renders.push(id),toast:m=>messages.push(m)});
   vm.runInContext(fs.readFileSync(require.resolve('../js/nest.js'),'utf8'),c);
-  const source=fs.readFileSync(require.resolve('../js/app.js'),'utf8');
+  const source=require('./helpers/app-source.cjs').readAppSource();
   vm.runInContext(source.slice(source.indexOf('    const NAV_SECONDARY'),source.indexOf('    function onFab')),c);
   return {c,pages,nav,renders,messages};
 }

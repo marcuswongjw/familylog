@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v29';
+const CACHE_NAME = 'wongs-nest-v30';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,13 @@ const ASSETS = [
   './js/nest.js',
   './assets/nest-mark.svg',
   './js/app.js',
+  './js/status.js',
+  './js/session.js',
+  './js/api.js',
+  './js/calendar.js',
+  './js/money.js',
+  './js/modals.js',
+
   './js/notifications.js',
   './js/memories.js',
   './js/operations.js',
@@ -56,7 +63,7 @@ self.addEventListener('fetch', event => {
       path.endsWith('/') ||
       path.endsWith('.html') ||
       path.endsWith('/familylog') ||
-      path.endsWith('/notifications.js') || path.endsWith('/memories.js') || path.endsWith('/operations.js') || path.endsWith('/habits.js') || path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
+      path.endsWith('/notifications.js') || path.endsWith('/memories.js') || path.endsWith('/operations.js') || path.endsWith('/habits.js') || path.endsWith('.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
       path.endsWith('/styles.css') || path.endsWith('/nest.css') || path.endsWith('/nest.js') ||
       path.includes('manifest.json') ||
       path.endsWith('.png') || path.endsWith('.svg') ||

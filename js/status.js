@@ -1,0 +1,5 @@
+let lastDashboardRefresh=null;
+function updateConnectionStatus(){const el=document.getElementById('connection-status');if(!el)return;const offline=navigator.onLine===false;el.textContent=(offline?'Offline — changes cannot be saved. ':'')+(lastDashboardRefresh?'Last refreshed '+lastDashboardRefresh.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}):'Family plan has not refreshed yet.');el.classList.toggle('is-offline',offline);}
+function initConnectionStatus(){let el=document.getElementById('connection-status');if(!el){el=document.createElement('div');el.id='connection-status';el.setAttribute('role','status');el.setAttribute('aria-live','polite');document.querySelector('#app-screen').prepend(el);}window.addEventListener('online',updateConnectionStatus);window.addEventListener('offline',updateConnectionStatus);updateConnectionStatus();}
+function resetConnectionStatus(){lastDashboardRefresh=null;updateConnectionStatus();}
+function markDashboardRefreshed(){lastDashboardRefresh=new Date();updateConnectionStatus();}

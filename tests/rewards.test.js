@@ -120,7 +120,7 @@ test('family milestone uses lifetime earnings and survives spending', () => {
   assert.equal(profile(h).balance,28); assert.equal(h.c.getRewards_(h.ss).family.unlocked,true);
 });
 function client(gPost) {
-  const source = fs.readFileSync(require.resolve('../js/app.js'),'utf8');
+  const source = require('./helpers/app-source.cjs').readAppSource();
   const block = source.slice(source.indexOf('    const pendingHabitLogs'),source.indexOf('    async function delHabitLog'));
   const c = vm.createContext({window:{},Set,user:'Mikaela',sessionGeneration:0,currentUserEmail:child,data:{habits:[{id:'h',habit:'Read',member:'Mikaela'}],habitLogs:[]},schoolToday:()=> '2026-10-05',gPost,
     renderHabits(){},renderHome(){},renderSchoolHome(){},applyRewardResult(){c.celebrations++},toast(){},showError(){c.errors++},celebrations:0,errors:0});

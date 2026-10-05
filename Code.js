@@ -111,24 +111,6 @@ function toStr(val) {
 }
 
 // ─── IDENTITY & ROLE HELPERS ──────────────────────────────
-function isAllowedEmail_(email) {
-  return ALLOWED_EMAILS.indexOf(toStr(email).toLowerCase()) !== -1;
-}
-
-function isAdultEmail_(email) {
-  return ADULT_EMAILS.indexOf(toStr(email).toLowerCase()) !== -1;
-}
-
-/** Map verified Firebase email → family display name. Never trust client. */
-function memberNameFromEmail_(email) {
-  var key = toStr(email).toLowerCase();
-  if (EMAIL_TO_MEMBER[key]) return EMAIL_TO_MEMBER[key];
-  return null;
-}
-
-// ─── EXPENSE APPROVAL SIGNING ─────────────────────────────
-// Links in approval emails carry id + exp + HMAC so guessing pending
-// IDs is not enough to approve/reject expenses.
 function getApprovalSecret_() {
   if (APPROVAL_SECRET) return APPROVAL_SECRET;
   // Stable fallback so signing works without extra setup. Prefer setting
@@ -170,52 +152,6 @@ function verifyApprovalToken_(id, exp, sig) {
 // (keyed by a hash of the token) so chat polling doesn't spend one
 // UrlFetchApp call per request — that quota is shared with the daily
 // digest, verse fetch, and expense scanner.
-function verifyFirebaseToken(idToken) {
-  if (!idToken) {
-    console.log('❌ No token provided');
-    return null;
-  }
-  var cache = null, cacheKey = null;
-  try {
-    cache = CacheService.getScriptCache();
-    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken);
-    cacheKey = 'tok_' + Utilities.base64EncodeWebSafe(digest);
-    var cached = cache.get(cacheKey);
-    if (cached === '__denied__') return null;
-    if (cached) return cached;
-  } catch (e) { /* cache unavailable — fall through to live check */ }
-
-  var email = null;
-  try {
-    var url = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_API_KEY;
-    var options = {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ idToken: idToken }),
-      muteHttpExceptions: true
-    };
-    var response = UrlFetchApp.fetch(url, options);
-    var result = JSON.parse(response.getContentText());
-    if (result.users && result.users.length > 0) {
-      email = result.users[0].email;
-    } else if (result.error) {
-      console.log('❌ Firebase error: ' + result.error.message);
-    }
-  } catch (e) {
-    console.log('❌ Token verification error: ' + e.toString());
-  }
-
-  if (email && !isAllowedEmail_(email)) {
-    console.log('❌ Verified account is not in the family allowlist: ' + email);
-    email = null;
-  } else if (email) {
-    console.log('✅ Token verified for: ' + email);
-  }
-
-  try { if (cache && cacheKey) cache.put(cacheKey, email || '__denied__', 600); } catch (e) {}
-  return email;
-}
-
 function respondJSONP(data, callback) {
   var json = JSON.stringify(data);
   // The callback name is echoed into an executable JS response, so it
@@ -558,30 +494,30 @@ function checkBudgetAlerts() {
 
   var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
   var alerts = [];
-  
+
   for (var j = 1; j < bdgVals.length; j++) {
     var bRow  = bdgVals[j];
     var group = toStr(bRow[0]); if (!group) continue;
     var limit = parseFloat(bRow[1]) || 0; if (limit <= 0) continue;
     var budgetAcc = toStr(bRow[2]) || 'Family';
-    
+
     var spent = 0;
     var targetCategories = EXPENSE_GROUPS[group] || [];
-    
+
     for (var i = 1; i < expVals.length; i++) {
       var eRow = expVals[i]; var rowDate = new Date(eRow[1]);
       if (isNaN(rowDate.getTime())) rowDate = new Date(eRow[0]);
       if (rowDate.getMonth() !== thisMonth || rowDate.getFullYear() !== thisYear) continue;
-      
+
       var eAcc = toStr(eRow[2]) || 'Family';
       if (eAcc.toLowerCase().indexOf(budgetAcc.toLowerCase()) === -1) continue;
-      
+
       var eCat = toStr(eRow[3]) || 'Other';
       if (targetCategories.indexOf(eCat) !== -1) {
         spent += parseFloat(eRow[4]) || 0;
       }
     }
-    
+
     var pct = spent / limit;
     if (pct >= 1.0) alerts.push({ group: group, account: budgetAcc, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'over' });
     else if (pct >= 0.8) alerts.push({ group: group, account: budgetAcc, spent: spent, budget: limit, pct: Math.round(pct * 100), level: 'warning' });
@@ -1099,7 +1035,7 @@ function handleWriteInner_(data) {
       var account = toStr(data.ex_account) || 'Family';
 
       if (!desc) return { status: 'error', message: 'Description required' };
-      if (isNaN(amount) || amount < 0) return { status: 'error', message: 'Invalid amount' };
+      if (!Number.isFinite(amount) || amount < 0) return { status: 'error', message: 'Invalid amount' };
       if (!validateDate(date)) return { status: 'error', message: 'Invalid date' };
       if (!validateString(desc, 200)) return { status: 'error', message: 'Description too long' };
 
@@ -1188,7 +1124,7 @@ function handleWriteInner_(data) {
       var budget = parseFloat(data.budget);
       var budgetAcc = toStr(data.account) || 'Family';
       if (!group) return { status: 'error', message: 'Group name required' };
-      if (isNaN(budget) || budget < 0) return { status: 'error', message: 'Invalid budget amount' };
+      if (!Number.isFinite(budget) || budget < 0) return { status: 'error', message: 'Invalid budget amount' };
       if (!validateString(group, 100)) return { status: 'error', message: 'Group name too long' };
 
       var bdgSheet = ss.getSheetByName('Budgets');
@@ -1246,7 +1182,7 @@ function handleWriteInner_(data) {
       var recCategory = toStr(data.rec_category) || 'Other';
       var recAccount = toStr(data.rec_account) || 'Family';
       if (!recName) return { status: 'error', message: 'Name required' };
-      if (isNaN(recAmount) || recAmount < 0) return { status: 'error', message: 'Invalid amount' };
+      if (!Number.isFinite(recAmount) || recAmount < 0) return { status: 'error', message: 'Invalid amount' };
       if (isNaN(recDay) || recDay < 1 || recDay > 28) return { status: 'error', message: 'Day must be 1-28' };
       if (!validateString(recName, 100)) return { status: 'error', message: 'Name too long' };
 
@@ -1278,7 +1214,7 @@ function handleWriteInner_(data) {
       var notes = toStr(data.trip_notes);
       if (!city || !country) return { status: 'error', message: 'City and country required' };
       if (!validateDate(tripDate)) return { status: 'error', message: 'Invalid date' };
-      if (isNaN(lat) || isNaN(lng)) return { status: 'error', message: 'Invalid coordinates' };
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return { status: 'error', message: 'Invalid coordinates' };
       if (!validateString(notes, 500)) return { status: 'error', message: 'Notes too long' };
 
       var travelSheet = ss.getSheetByName('Travel');
@@ -1723,290 +1659,6 @@ function getHabitLogs(ss, verifiedEmail) {
     });
   }
   return result.reverse();
-}
-
-function syncCalendarEventTasks_(ss, events) {
-  if (!events || !events.length) return;
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var tz = Session.getScriptTimeZone();
-  var now = new Date();
-  var todayStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
-  var oneWeekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  var oneWeekLaterStr = Utilities.formatDate(oneWeekLater, tz, 'yyyy-MM-dd');
-
-  var tdSheet = ensureTodoIds_(ss);
-  var tdVals = tdSheet.getDataRange().getValues();
-  var existingSourceMap = {};
-  for (var i = 1; i < tdVals.length; i++) {
-    var src = toStr(tdVals[i][8]); // Source ID column (index 8)
-    if (src) existingSourceMap[src] = { row: i + 1, due: tdVals[i][3] };
-  }
-
-  for (var j = 0; j < events.length; j++) {
-    var ev = events[j];
-    var title = (ev.title || '').toLowerCase();
-    if (title.indexOf('nat b training') === -1) continue;
-
-    var evDateStr = ev.dateRaw;
-    if (!evDateStr) continue;
-
-    // Must be within 1 week in advance: today <= evDateStr <= oneWeekLaterStr
-    if (evDateStr < todayStr || evDateStr > oneWeekLaterStr) continue;
-
-    // Previous day calculation
-    var evParts = evDateStr.split('-').map(Number);
-    var prevDate = new Date(Date.UTC(evParts[0], evParts[1] - 1, evParts[2] - 1));
-    var prevDateStr = prevDate.toISOString().slice(0, 10);
-    var parsedDue = parseEventDate(prevDateStr, '');
-
-    var evIdClean = toStr(ev.id).replace(/[^a-zA-Z0-9]/g, '_');
-    var srcBag = 'cal_natb_' + evIdClean + '_bag';
-    var srcBox = 'cal_natb_' + evIdClean + '_box';
-
-    var taskBag = 'Pack sailing bag (life jacket, watch, clothes, rashguard, towel)';
-    var taskBox = 'Pack sailing box (shoes, slippers)';
-
-    if (!existingSourceMap[srcBag]) {
-      var idBag = Utilities.getUuid();
-      tdSheet.appendRow([new Date(), schoolCell_(taskBag), 'Mikaela', parsedDue, 'System', 'Open', '', idBag, srcBag, 'packing', 'Mikaela', 'Calendar: ' + (ev.title || 'Nat B Training')]);
-      existingSourceMap[srcBag] = { row: tdSheet.getLastRow(), due: parsedDue };
-    }
-    if (!existingSourceMap[srcBox]) {
-      var idBox = Utilities.getUuid();
-      tdSheet.appendRow([new Date(), schoolCell_(taskBox), 'Mikaela', parsedDue, 'System', 'Open', '', idBox, srcBox, 'packing', 'Mikaela', 'Calendar: ' + (ev.title || 'Nat B Training')]);
-      existingSourceMap[srcBox] = { row: tdSheet.getLastRow(), due: parsedDue };
-    }
-  }
-}
-
-function memberEvents_(events, verifiedEmail) {
-  if (isAdultEmail_(verifiedEmail)) return events;
-  var member = memberNameFromEmail_(verifiedEmail);
-  return member ? events.filter(function(e) { return (e.tags || []).indexOf(member) !== -1 || (e.tags || []).indexOf('Everyone') !== -1 || (e.tags || []).indexOf('Family') !== -1; }) : [];
-}
-function getEvents() {
-  try {
-    var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
-    var now             = new Date();
-    var thirtyDaysAgo   = new Date(); thirtyDaysAgo.setDate(now.getDate() - 30);
-    var thirtyDaysLater = new Date(); thirtyDaysLater.setFullYear(now.getFullYear() + 1);
-    var schoolLinks = schoolEventLinks_();
-    var manualMembers = manualEventMembers_();
-    var events          = calendar.getEvents(thirtyDaysAgo, thirtyDaysLater);
-    var tz              = Session.getScriptTimeZone();
-    var result          = [];
-    for (var i = 0; i < events.length; i++) {
-      var ev        = events[i];
-      var rawTitle  = ev.getTitle();
-      var desc      = ev.getDescription() || '';
-      var titleDesc = rawTitle + ' ' + desc;
-      var explicitTag = '';
-      try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
-      if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
-      if (!explicitTag) explicitTag = manualMembers[ev.getId()] || '';
-      var tags;
-      if (explicitTag === 'Family' || explicitTag === 'Everyone') {
-        tags = ['Family', 'Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
-      } else if (explicitTag) {
-        tags = [explicitTag];
-      } else {
-        tags = FAMILY_MEMBERS.filter(function(m) { return m !== 'Everyone' && titleDesc.toLowerCase().indexOf(m.toLowerCase()) !== -1; });
-      }
-      var duration  = 0;
-      try {
-        duration = (ev.getEndTime().getTime() - ev.getStartTime().getTime()) / (1000 * 60 * 60);
-      } catch (de) {}
-
-      var isEYE = (rawTitle.indexOf('EYE') !== -1 || desc.indexOf('EYE') !== -1);
-      var examNote = isEYE ? 'End Year Exams' : '';
-
-      result.push({
-        id:      ev.getId(),
-        title:   rawTitle,
-        examNote: examNote,
-        date:    Utilities.formatDate(ev.getStartTime(), tz, 'dd MMM yyyy'),
-        dateRaw: Utilities.formatDate(ev.getStartTime(), tz, 'yyyy-MM-dd'),
-        time:    ev.isAllDayEvent() ? 'All day' : Utilities.formatDate(ev.getStartTime(), tz, 'h:mm a'),
-        endTime: ev.isAllDayEvent() ? '' : Utilities.formatDate(ev.getEndTime(), tz, 'h:mm a'),
-        allDay:  ev.isAllDayEvent(),
-        notes:   desc,
-        location: ev.getLocation() || '',
-        tags:    tags,
-        sourceId: schoolLinks[ev.getId()] ? schoolLinks[ev.getId()].sourceId : '',
-        duration: duration
-      });
-    }
-    return result;
-  } catch (e) { return []; }
-}
-
-function getTodos(ss, verifiedEmail, includeDone) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  var tdSheet;
-  try { tdSheet = ensureTodoIds_(ss); } finally { lock.releaseLock(); }
-  var tdVals = tdSheet.getDataRange().getValues();
-  var tz     = Session.getScriptTimeZone();
-  var result = [];
-  for (var i = 1; i < tdVals.length; i++) {
-    var row = tdVals[i];
-    if (!row[1] || toStr(row[5]).toLowerCase() === 'deleted' || (!includeDone && toStr(row[5]).toLowerCase() === 'done')) continue;
-    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && row[2] !== memberNameFromEmail_(verifiedEmail) && row[2] !== 'Everyone') continue;
-    result.push({
-      id: toStr(row[7]), sourceId: toStr(row[8]), kind: toStr(row[9]), child: toStr(row[10]),
-      rowNum:   i + 1,
-      task:     toStr(row[1]),
-      assignee: toStr(row[2]) || 'Everyone',
-      due:      row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'dd MMM yyyy') : '',
-      dueRaw:   row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'yyyy-MM-dd') : '',
-      completedRaw: row[6] ? Utilities.formatDate(new Date(row[6]), tz, 'yyyy-MM-dd') : '',
-      addedBy:  toStr(row[4]),
-      status:   toStr(row[5]) || 'Open'
-    });
-  }
-  return result;
-}
-
-function emptyExpensesPayload_() {
-  return {
-    rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0,
-    familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {},
-    familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0
-  };
-}
-
-function getExpensesData(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var expSheet = ss.getSheetByName('Expenses');
-  if (!expSheet) return emptyExpensesPayload_();
-  var eVals      = expSheet.getDataRange().getValues();
-  var tz         = Session.getScriptTimeZone();
-  var now        = new Date();
-  var thisMonth  = now.getMonth();
-  var thisYear   = now.getFullYear();
-  var rows       = [];
-  var total      = 0;
-  var familyTotal = 0;
-  var personalTotal = 0;
-  var byCategory = {};
-  var familyByCategory = {};
-  var personalByCategory = {};
-  var byAccount  = {};
-  var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var last6Months = [];
-  var familyHistory = [];
-  var personalHistory = [];
-  for (var m = 5; m >= 0; m--) {
-    var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-    var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    var label = monthNames[d.getMonth()] + ' ' + String(d.getFullYear()).substring(2);
-    last6Months.push({ key: key, label: label, total: 0 });
-    familyHistory.push({ key: key, label: label, total: 0 });
-    personalHistory.push({ key: key, label: label, total: 0 });
-  }
-  var lastMonthKey = '';
-  var lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  lastMonthKey = lm.getFullYear() + '-' + String(lm.getMonth() + 1).padStart(2, '0');
-  var lastMonthTotal = 0;
-  var lastMonthFamilyTotal = 0;
-  var lastMonthPersonalTotal = 0;
-  for (var i = 1; i < eVals.length; i++) {
-    var row = eVals[i];
-    var rowDate = new Date(row[1]);
-    if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
-    if (isNaN(rowDate.getTime())) continue;
-    var amount = parseFloat(row[4]) || 0;
-    var cat = toStr(row[3]) || 'Other';
-    var acc = toStr(row[2]) || 'Family';
-    var isPersonal = (acc === 'Personal Account');
-    var rKey = rowDate.getFullYear() + '-' + String(rowDate.getMonth() + 1).padStart(2, '0');
-    for (var h = 0; h < last6Months.length; h++) {
-      if (last6Months[h].key === rKey) {
-        last6Months[h].total += amount;
-        if (isPersonal) personalHistory[h].total += amount;
-        else familyHistory[h].total += amount;
-        break;
-      }
-    }
-    if (rKey === lastMonthKey) {
-      lastMonthTotal += amount;
-      if (isPersonal) lastMonthPersonalTotal += amount;
-      else lastMonthFamilyTotal += amount;
-    }
-    if (rowDate.getMonth() === thisMonth && rowDate.getFullYear() === thisYear) {
-      total += amount;
-      byCategory[cat] = (byCategory[cat] || 0) + amount;
-      byAccount[acc] = (byAccount[acc] || 0) + amount;
-      if (isPersonal) {
-        personalTotal += amount;
-        personalByCategory[cat] = (personalByCategory[cat] || 0) + amount;
-      } else {
-        familyTotal += amount;
-        familyByCategory[cat] = (familyByCategory[cat] || 0) + amount;
-      }
-      rows.push({
-        rowNum: i + 1,
-        date: Utilities.formatDate(rowDate, tz, 'dd MMM'),
-        account: acc,
-        category: cat,
-        amount: amount,
-        desc: toStr(row[5]),
-        ts: rowDate.getTime()
-      });
-    }
-  }
-  // Newest first, sorted explicitly — the sheet itself is append-ordered
-  // now that per-insert sorting was removed (see add_expense).
-  rows.sort(function(a, b) { return b.ts - a.ts; });
-  return {
-    rows: rows,
-    total: total,
-    byCategory: byCategory,
-    byAccount: byAccount,
-    history: last6Months,
-    lastMonthTotal: lastMonthTotal,
-    familyTotal: familyTotal,
-    personalTotal: personalTotal,
-    familyByCategory: familyByCategory,
-    personalByCategory: personalByCategory,
-    familyHistory: familyHistory,
-    personalHistory: personalHistory,
-    lastMonthFamilyTotal: lastMonthFamilyTotal,
-    lastMonthPersonalTotal: lastMonthPersonalTotal
-  };
-}
-
-function getBudgets(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var bdgSheet = ss.getSheetByName('Budgets');
-  if (!bdgSheet) return [];
-  var bdgVals  = bdgSheet.getDataRange().getValues();
-  if (bdgVals.length <= 1) return [];
-  var expSheet = ss.getSheetByName('Expenses');
-  var eVals = expSheet ? expSheet.getDataRange().getValues() : [];
-  var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
-  var budgets = [];
-  for (var i = 1; i < bdgVals.length; i++) {
-    var bRow = bdgVals[i]; if (!bRow[0]) continue;
-    var gn = toStr(bRow[0]);
-    var budgetAcc = toStr(bRow[2]) || 'Family';
-    var spent = 0;
-    var targetCategories = EXPENSE_GROUPS[gn] || [];
-    for (var j = 1; j < eVals.length; j++) {
-      var eRow = eVals[j];
-      var eDate = new Date(eRow[1]); if (isNaN(eDate.getTime())) eDate = new Date(eRow[0]);
-      if (eDate.getMonth() !== thisMonth || eDate.getFullYear() !== thisYear) continue;
-      var eAcc = toStr(eRow[2]) || 'Family';
-      if (eAcc.toLowerCase().indexOf(budgetAcc.toLowerCase()) === -1) continue;
-      var eCat = toStr(eRow[3]) || 'Other';
-      if (targetCategories.indexOf(eCat) !== -1) {
-        spent += parseFloat(eRow[4]) || 0;
-      }
-    }
-    budgets.push({ group: gn, budget: parseFloat(bRow[1]) || 0, spent: spent, account: budgetAcc, setBy: toStr(bRow[3]) });
-  }
-  return budgets;
 }
 
 function getBirthdays(ss) {
@@ -2628,7 +2280,7 @@ function parseDbsAlert(body, msg) {
 
 function parseGenericExpense(body, msg) {
   var amount = 0.0;
-  var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) || 
+  var amtMatch = body.match(/(?:SGD|S?\$|USD)\s*([\d\.,]+)/i) ||
                  body.match(/Total(?:\s+Amount)?\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i) ||
                  body.match(/(?:Amount|Price)\s*:\s*(?:SGD|S?\$|USD)?\s*([\d\.,]+)/i);
   if (amtMatch) {
@@ -3213,24 +2865,6 @@ function schoolSheet_(ss) {
   return sheet;
 }
 // Call under the script lock, including migration from the original seven columns.
-function ensureTodoIds_(ss) {
-  var sheet = ss.getSheetByName('ToDo');
-  if (!sheet) {
-    sheet = ss.insertSheet('ToDo');
-    sheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At', 'ID', 'Source ID', 'Kind', 'Child', 'Evidence', 'Reward Member']);
-    return sheet;
-  }
-  var headers = ['ID', 'Source ID', 'Kind', 'Child', 'Evidence'];
-  var rows = sheet.getDataRange().getValues();
-  if (rows[0] && rows[0][12] !== 'Reward Member') sheet.getRange(1, 13).setValue('Reward Member');
-  if (!rows || rows.length === 0 || rows[0].length < 8 || rows[0][7] !== 'ID') {
-    sheet.getRange(1, 8, 1, headers.length).setValues([headers]);
-  }
-  for (var i = 1; i < rows.length; i++) {
-    if (rows[i][1] && !rows[i][7]) sheet.getRange(i + 1, 8).setValue(Utilities.getUuid());
-  }
-  return sheet;
-}
 function schoolReadPlans_(ss, adult) {
   if (!adult) return [];
   var sheet = ss.getSheetByName('SchoolAnnouncements');
@@ -3358,190 +2992,4 @@ function schoolHandleWrite_(data, ss, email, user) {
     sheet.getRange(rowIndex + 1, 6, 1, 2).setValues([[new Date(), user]]);
     return { status: 'ok', id: plan.id, state: 'published' };
   } catch (e) { return { status: 'error', message: e.message }; }
-}
-
-// ============================================================
-// COMPANIONS & STARS — server-owned ledger, under handleWrite's lock.
-// Earn IDs survive edits/deletes; spending never reduces family progress.
-// ============================================================
-var REWARD_ITEMS_ = [
-  { id: 'glasses', name: 'Reading glasses', cost: 5, description: 'For a curious little companion.' },
-  { id: 'sailing-cap', name: 'Sailing cap', cost: 8, description: 'Ready for a little adventure.' },
-  { id: 'ballet-bow', name: 'Ballet bow', cost: 8, description: 'A bow for your next happy dance.' },
-  { id: 'backpack', name: 'Little backpack', cost: 12, description: 'Small steps, big adventures.' }
-];
-var REWARD_GOALS_ = [
-  {id:'garden',name:'Our family garden',stars:40,emoji:'🌷'},
-  {id:'reading',name:'Our cosy reading corner',stars:80,emoji:'📚'},
-  {id:'picnic',name:'Our family picnic',stars:120,emoji:'🧺'}
-];
-var REWARD_MEMBERS_ = ['Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
-var COMPANION_DEFAULTS_ = {
-  Marcus: { species: 'bear', name: 'Oak' }, Eleanor: { species: 'cat', name: 'Clover' },
-  Mikaela: { species: 'fox', name: 'Pip' }, Meaghan: { species: 'rabbit', name: 'Mochi' }
-};
-function rewardSheet_(ss, name, headers) {
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) { sheet = ss.insertSheet(name); sheet.appendRow(headers); }
-  return sheet;
-}
-function rewardRows_(ss, name) {
-  var sheet = ss.getSheetByName(name);
-  return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }) : [];
-}
-function getRewards_(ss, savedRules) {
-  var ledger = rewardRows_(ss, 'RewardLedger');
-  var profiles = rewardRows_(ss, 'Companions');
-  var familyStars = 0;
-  var members = REWARD_MEMBERS_.map(function(member) {
-    var entries = ledger.filter(function(r) { return r[1] === member; });
-    var earned = entries.filter(function(r) { return r[2] === 'earn'; }).reduce(function(n, r) { return n + Number(r[3]); }, 0);
-    var balance = entries.reduce(function(n, r) { return n + Number(r[3]); }, 0);
-    familyStars += earned;
-    var owned = entries.filter(function(r) { return r[2] === 'purchase'; }).map(function(r) { return toStr(r[4]); });
-    var saved = profiles.find(function(r) { return r[0] === member; });
-    var defaults = COMPANION_DEFAULTS_[member];
-    return { member: member, earned: earned, balance: balance, owned: owned,
-      species: saved ? toStr(saved[1]) : defaults.species,
-      name: saved ? toStr(saved[2]) : defaults.name,
-      equipped: saved && owned.indexOf(saved[3]) !== -1 ? toStr(saved[3]) : '' };
-  });
-  var selected = rewardRows_(ss,'FamilyGoal')[0];
-  var goal = REWARD_GOALS_.find(function(g){return selected && g.id === selected[0];}) || REWARD_GOALS_[0];
-  return { members: members, catalog: REWARD_ITEMS_, goals: REWARD_GOALS_, family: { earned: familyStars, goal: goal.stars, unlocked: familyStars >= goal.stars, name: goal.name, goalId:goal.id, emoji:goal.emoji },
-    rules: (savedRules || rewardRows_(ss, 'RewardRules')).filter(function(r){return r[0];}).map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
-}
-function rewardAward_(ss, type, sourceId, member, occurrence) {
-  var none = { stars: 0, member: member };
-  if (REWARD_MEMBERS_.indexOf(member) === -1) return none;
-  var rule = rewardRows_(ss, 'RewardRules').find(function(r) { return r[1] === type && r[2] === sourceId; });
-  if (!rule || Number(rule[3]) <= 0) return none;
-  var id = 'earn:' + type + ':' + sourceId + ':' + occurrence;
-  if (rewardRows_(ss, 'RewardLedger').some(function(r) { return r[0] === id; })) return none;
-  var stars = Number(rule[3]);
-  var sheet = rewardSheet_(ss, 'RewardLedger', ['ID', 'Member', 'Kind', 'Stars', 'Source or Item', 'Earned At']);
-  sheet.appendRow([id, member, 'earn', stars, type + ':' + sourceId, new Date()]);
-  SpreadsheetApp.flush();
-  return { stars: stars, member: member };
-}
-function rewardHandleWrite_(data, ss, email, user) {
-  try {
-    var note = toStr(data.note).toLowerCase().trim();
-    if (note === 'set_family_goal') {
-      if (!isAdultEmail_(email)) throw new Error('Only parents can choose the family goal.');
-      if (!REWARD_GOALS_.some(function(g){return g.id === data.goal_id;})) throw new Error('Choose an existing family goal.');
-      rewardSheet_(ss,'FamilyGoal',['Goal','UpdatedBy','UpdatedAt']).getRange(2,1,1,3).setValues([[data.goal_id,user,new Date()]]);
-    } else if (note === 'set_habit_rewards') {
-      if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
-      if (!Array.isArray(data.rules) || !data.rules.length || data.rules.length > 500) throw new Error('Choose the habits to update.');
-      var habitSheet=ss.getSheetByName('Habits');
-      var habitIds=habitSheet?habitSheet.getDataRange().getValues().slice(1).map(function(r){return toStr(r[0]);}):[];
-      var seen = {};
-      var updates = data.rules.map(function(rule) {
-        var sourceId = toStr(rule.source_id), stars = rule.stars;
-        if (habitIds.indexOf(sourceId) === -1 || seen[sourceId]) throw new Error('A habit changed. Refresh before saving stars.');
-        if (typeof stars !== 'number' || !Number.isInteger(stars) || stars < 0 || stars > 100) throw new Error('Enter a whole number from 0 to 100 stars for each habit.');
-        seen[sourceId] = true;
-        return ['habit:' + sourceId, 'habit', sourceId, stars, user, new Date()];
-      });
-      // Validate every row before a single write; preserve task and omitted habit rules.
-      var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
-      var rows = rules.getDataRange().getValues().slice(1);
-      updates.forEach(function(update) {
-        var index = rows.findIndex(function(row) { return row[0] === update[0]; });
-        if (index < 0) rows.push(update); else rows[index] = update;
-      });
-      rules.getRange(2, 1, rows.length, 6).setValues(rows.map(function(row) { return row.slice(0, 6); }));
-      SpreadsheetApp.flush();
-      return {status:'ok',rewards:getRewards_(ss,rows)};
-    } else if (note === 'set_reward_rule') {
-      if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
-      var type = toStr(data.source_type), sourceId = toStr(data.source_id), stars = Number(data.stars);
-      if (['task', 'habit'].indexOf(type) === -1 || [0, 1, 3, 5].indexOf(stars) === -1) throw new Error('Choose 0, 1, 3 or 5 stars.');
-      var sheet = type === 'task' ? ensureTodoIds_(ss) : ensureHabitSheets_(ss).habits;
-      var source = sheet.getDataRange().getValues().find(function(r, i) { return i > 0 && toStr(r[type === 'task' ? 7 : 0]) === sourceId; });
-      if (!source || (type === 'task' && ['Done', 'Deleted'].indexOf(source[5]) !== -1)) throw new Error('Choose an existing open task or habit.');
-      var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
-      var id = type + ':' + sourceId;
-      var row = rules.getDataRange().getValues().findIndex(function(r) { return r[0] === id; });
-      var values = [id, type, sourceId, stars, user, new Date()];
-      if (row > 0) rules.getRange(row + 1, 1, 1, 6).setValues([values]); else rules.appendRow(values);
-    } else if (note === 'buy_reward_item') {
-      var item = REWARD_ITEMS_.find(function(i) { return i.id === data.item_id; });
-      if (!item) throw new Error('Accessory not found.');
-      var id = 'buy:' + user + ':' + item.id;
-      var ledger = rewardRows_(ss, 'RewardLedger');
-      if (!ledger.some(function(r) { return r[0] === id; })) {
-        var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
-        if (profile.balance < item.cost) throw new Error('Keep collecting stars to unlock this accessory.');
-        rewardSheet_(ss, 'RewardLedger', ['ID', 'Member', 'Kind', 'Stars', 'Source or Item', 'Earned At']).appendRow([id, user, 'purchase', -item.cost, item.id, new Date()]);
-      }
-    } else if (note === 'save_companion') {
-      var species = toStr(data.species), name = toStr(data.companion_name).trim(), equipped = toStr(data.equipped);
-      if (['fox', 'rabbit', 'bear', 'cat'].indexOf(species) === -1 || !name || name.length > 24) throw new Error('Choose a companion and a name of up to 24 characters.');
-      var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
-      if (equipped && profile.owned.indexOf(equipped) === -1) throw new Error('Unlock this accessory before wearing it.');
-      var sheet = rewardSheet_(ss, 'Companions', ['Member', 'Species', 'Name', 'Equipped', 'Updated At']);
-      var row = sheet.getDataRange().getValues().findIndex(function(r) { return r[0] === user; });
-      var values = [user, species, schoolCell_(name), equipped, new Date()];
-      if (row > 0) sheet.getRange(row + 1, 1, 1, 5).setValues([values]); else sheet.appendRow(values);
-    }
-    return { status: 'ok', rewards: getRewards_(ss) };
-  } catch (e) { return { status: 'error', message: e.message }; }
-}
-
-// Retry-safe creates. Keys are scoped to verified account + action, never row numbers.
-function operationContext_(ss,data,email,note) {
-  if (['add_todo','add_event','add_expense','add_trip','add_birthday'].indexOf(note)<0 || !data.operation_id) return null;
-  if (!/^[A-Za-z0-9-]{16,80}$/.test(data.operation_id)) throw new Error('Invalid operation ID.');
-  var fields={};Object.keys(data).sort().forEach(function(k){if(k[0]!=='_' && ['idToken','user','action','operation_id'].indexOf(k)<0) fields[k]=data[k];});
-  var op={id:'op'+schoolHash_(email+'|'+note+'|'+data.operation_id),fingerprint:schoolHash_(JSON.stringify(fields)),note:note,email:email};
-  var sheet=ss.getSheetByName('Operations');
-  var row=sheet && sheet.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});
-  if(row){if(row[1]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');op.cached=JSON.parse(row[4]);}
-  return op;
-}
-function operationFinish_(ss,op,result) {
-  if(op){var sheet=ss.getSheetByName('Operations');if(!sheet){sheet=ss.insertSheet('Operations');sheet.appendRow(['ID','Fingerprint','Action','Email','Result','At']);}sheet.appendRow([op.id,op.fingerprint,op.note,op.email,JSON.stringify(result),new Date()]);SpreadsheetApp.flush();}
-  return result;
-}
-function operationRecover_(ss,op,sheet,idColumn,hashColumn) {
-  if(!op)return null;
-  var row=sheet.getDataRange().getValues().slice(1).find(function(r){return r[idColumn]===op.id;});
-  if(!row)return null;if(row[hashColumn]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');
-  return operationFinish_(ss,op,{status:'ok',id:op.id});
-}
-function operationCalendar_(op,title,start,end,allDay,notes,location,member) {
-  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CALENDAR_ID)+'/events';
-  var event={id:op.id,summary:title,description:notes||'',location:location||'',extendedProperties:{private:{familylogMember:member,member:member,operationFingerprint:op.fingerprint}}};
-  if(allDay){event.start={date:Utilities.formatDate(start,'Asia/Singapore','yyyy-MM-dd')};event.end={date:Utilities.formatDate(end,'Asia/Singapore','yyyy-MM-dd')};}
-  else {event.start={dateTime:start.toISOString(),timeZone:'Asia/Singapore'};event.end={dateTime:end.toISOString(),timeZone:'Asia/Singapore'};}
-  var headers={Authorization:'Bearer '+ScriptApp.getOAuthToken()};
-  var response=UrlFetchApp.fetch(url+'?sendUpdates=none',{method:'post',contentType:'application/json',headers:headers,payload:JSON.stringify(event),muteHttpExceptions:true});
-  if(response.getResponseCode()===409)response=UrlFetchApp.fetch(url+'/'+op.id,{headers:headers,muteHttpExceptions:true});
-  if(response.getResponseCode()<200 || response.getResponseCode()>=300)throw new Error('Calendar save interrupted. Retry the same entry.');
-  var saved=JSON.parse(response.getContentText());
-  if(saved.status==='cancelled' || saved.extendedProperties.private.operationFingerprint!==op.fingerprint)throw new Error('This calendar request was changed or deleted. Start a new entry.');
-  var id=saved.iCalUID||op.id+'@google.com';
-  var calendar=CalendarApp.getCalendarById(CALENDAR_ID);
-  var nativeEvent=typeof calendar.getEventById==='function'?calendar.getEventById(id):null;
-  return nativeEvent||{getId:function(){return id;}};
-}
-function reminderSnapshot_(data) {
-  var secret=PropertiesService.getScriptProperties().getProperty('REMINDER_BRIDGE_SECRET');
-  var timestamp=Number(data.timestamp);
-  if(!secret || !Number.isFinite(timestamp) || Math.abs(Date.now()-timestamp)>300000)return {status:'error',message:'Unauthorized'};
-  var bytes=Utilities.computeHmacSha256Signature('reminder_snapshot|'+timestamp,secret);
-  var expected=bytes.map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');
-  var supplied=toStr(data.signature);var difference=expected.length^supplied.length;
-  for(var i=0;i<expected.length;i++)difference|=expected.charCodeAt(i)^(supplied.charCodeAt(i)||0);
-  if(difference)return {status:'error',message:'Unauthorized'};
-  var ss=SpreadsheetApp.getActiveSpreadsheet();
-  return {status:'ok',todos:getTodos(ss,null,false),habits:getHabits(ss),habitLogs:getHabitLogs(ss),events:getEvents()};
-}
-
-function manualEventMembers_(){
-  var sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar'),members={};
-  if(sheet)sheet.getDataRange().getValues().slice(1).forEach(function(r){if(r[5]&&FAMILY_MEMBERS.indexOf(r[7])!==-1)members[toStr(r[5])]=r[7];});
-  return members;
 }

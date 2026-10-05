@@ -40,7 +40,11 @@ service cloud.firestore {
       allow create: if isFamily()
         && request.resource.data.loggedByEmail is string
         && request.resource.data.loggedByEmail.lower() == callerEmail();
-      allow update, delete: if isFamily()
+      allow update: if isFamily()
+        && request.resource.data.loggedByEmail == resource.data.loggedByEmail
+        && resource.data.loggedByEmail is string
+        && resource.data.loggedByEmail.lower() == callerEmail();
+      allow delete: if isFamily()
         && resource.data.loggedByEmail is string
         && resource.data.loggedByEmail.lower() == callerEmail();
     }

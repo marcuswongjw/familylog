@@ -1,5 +1,5 @@
 #!/bin/bash
-# Push Code.js and roll the existing web app deployment (GAS_URL stays the same).
+# Push Code.js + gas domain modules and roll the existing web app deployment (GAS_URL stays the same).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

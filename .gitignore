@@ -43,3 +43,9 @@ ui-debug.log
 *.pyd
 .Python
 *.so
+
+# Local test artifacts
+playwright-report/
+test-results/
+*-debug.log
+public-site/

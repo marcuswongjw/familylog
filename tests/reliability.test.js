@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
-const source=fs.readFileSync(require.resolve('../js/app.js'),'utf8');
+const source=require('./helpers/app-source.cjs').readAppSource();
 const defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function fixture(){
  const elements=new Map(), calls={closed:[],cleared:[],messages:[],renders:0};

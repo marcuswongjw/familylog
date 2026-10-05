@@ -63,7 +63,7 @@ function harness() {
       return { getResponseCode: () => code, getContentText: () => JSON.stringify(saved) };
     } }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../../Code.js'), 'utf8'), c);
+  vm.runInContext(['Code.js','gas/auth.js','gas/rewards.js','gas/money.js','gas/calendar.js','gas/tasks.js'].map(file=>fs.readFileSync(require.resolve('../../'+file),'utf8')).join('\n'),c);
   return { c, ss, sheets, calendar, calendarEvents, Sheet, failCalendar: () => { failCalendarAfter = true; }, write: (payload, email = 'marcuswongjw@gmail.com') => c.handleWrite({ ...payload, _verifiedEmail: email }) };
 }
 

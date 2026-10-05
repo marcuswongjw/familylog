@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 // Exercise the production drag handlers with controlled asynchronous API results.
-const source = fs.readFileSync(require.resolve('../js/app.js'), 'utf8');
+const source = require('./helpers/app-source.cjs').readAppSource();
 const handlers = source.slice(source.indexOf('    let draggedEventId = null;'), source.indexOf('    // ─── CALENDAR YEAR VIEW'));
 function setup(post) {
   const messages = [], errors = [], requests = [];

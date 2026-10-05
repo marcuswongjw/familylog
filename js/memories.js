@@ -65,3 +65,52 @@ async function loadOlderMemories(){
   }catch(_){if(account===currentUserEmail&&generation===sessionGeneration)showError('Could not load older memories. Try again when connected.');}
   finally{if(account===currentUserEmail&&generation===sessionGeneration){memoryLoadingOlder=false;renderMemories();}}
 }
+
+    // ─── MEMORIES ──────────────────────────────────────────────
+    function renderMemories() {
+      const mems = data.memories || [];
+      const el   = document.getElementById('mem-list');
+      if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>What would you like to remember about today?</div>'; return; }
+
+      const getIcon = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
+
+      el.innerHTML = `
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          ${mems.map(m => {
+            const icon = getIcon(m.type);
+            const isQuote = m.type.includes('Quote');
+
+            let contentHtml = '';
+            if (isQuote) {
+              contentHtml = `
+                <blockquote style="font-size:15px;font-style:italic;font-family:Georgia,serif;color:var(--primary);line-height:1.5;margin:8px 0;padding-left:14px;border-left:3px solid var(--primary);">
+                  “${escapeHtml(m.memory)}”
+                </blockquote>
+              `;
+            } else if (m.memory) {
+              contentHtml = `<div class="mem-text" style="font-size:14px;color:#1a1a2e;line-height:1.5;margin:8px 0;">${escapeHtml(m.memory)}</div>`;
+            }
+
+            const imageHtml = mediaImgHtml(m.imageUrl, 'max-width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin:8px 0;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.05);');
+
+            return `
+              <div class="card" style="padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03);border:1.5px solid #e4e6ef;background:var(--bg-card);border-radius:12px;margin-bottom:0;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <span class="badge ${getMemberBadgeClass(m.person)}" style="font-size:11px;">${escapeHtml(m.person)}</span>
+                  <span style="font-size:11px;font-weight:700;color:#a85f89;text-transform:uppercase;letter-spacing:0.5px;">${icon} ${escapeHtml(m.type)}</span>
+                </div>
+                ${contentHtml}
+                ${imageHtml}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;display:flex;justify-content:space-between;">
+                  <span>📅 ${escapeHtml(m.date)}</span>
+                  <span>Logged by <strong>${escapeHtml(m.loggedBy)}</strong></span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      if (memoryHasMore) {
+        const button=document.createElement('button');button.className='btn btn-s memory-load-more';button.textContent=memoryLoadingOlder?'Loading…':'Load older memories';button.disabled=memoryLoadingOlder;button.onclick=loadOlderMemories;el.appendChild(button);
+      }
+    }

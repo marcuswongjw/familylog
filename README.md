@@ -165,3 +165,9 @@ Open the header **bell** to enable a daily preparation, due-task and scheduled-h
 Task, event, expense, trip and birthday creates reuse an account-scoped operation ID until the server confirms success. Retrying an interrupted save returns the original record. Memory drafts retain their photo after a metadata failure, reuse one upload and document ID, and check the server before discarding an upload. **Load older memories** pages beyond the latest 50. A daily Firebase job removes unreferenced UUID uploads older than 48 hours, preserving legacy uploads and committed memories.
 
 Deployment includes Apps Script, Firebase Functions and Firestore/Storage rules, plus GitHub Pages. Actual device push delivery requires enabling reminders on a signed-in device with browser permission; automated tests use mocked delivery and do not send family test notifications.
+
+### Failure testing, recovery and releases
+
+Run `npm test`, `npm run test:browser`, and (with Java 21) `npm run test:rules`. CI runs these on pushes/PRs; production publishing is a separate manually dispatched workflow after verification. See [testing and deployment](docs/testing-and-deployment.md) for mock/emulator boundaries, failure traces and backend credential setup.
+
+Session reset, API requests, calendar/money views, memories and modal behavior now live in separate client modules. Apps Script has separate auth, calendar, tasks, money and rewards files under `gas/`; deploy them together. The header status shows offline/last-refreshed state, and offline reward writes are refused rather than queued. Generic modals trap keyboard focus, close with Escape/backdrop and return focus to their opener.
