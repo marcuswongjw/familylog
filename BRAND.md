@@ -1,135 +1,53 @@
-# Hearth Brand Guide & Design System
+# Wong’s Nest — brand & design system
 
-Version 1.0 — September 2026  
-**Descriptor**: *A private digital home for family life*  
-**Core Promise**: *Hearth gives each family a calm, private home for the plans, responsibilities, records, and memories they share.*
+Version 2.0 · October 2026
 
----
+**Promise:** Our family, together. A little place for plans, everyday wins and the memories we make.
 
-## 1. Brand Foundation
+Wong’s Nest is personal to the Wong household. It should feel like opening a familiar family scrapbook: warm, gently playful, practical, and easy for both children and parents to use. Keep functional labels clear even when page headings are conversational.
 
-### Purpose
-Help families keep the practical details and meaningful moments of life together in one trusted place.
+## Identity
 
-### Positioning
-For families managing life across chats, calendars, spreadsheets, notes, and photo libraries, Hearth provides one private home designed around the household rather than a workplace team or public social network.
+Use the original nest emblem in `assets/nest-mark.svg`: a woven nest, three softly coloured eggs, and two sprigs. It represents care and room to grow. `assets/nest-icon.svg` is the square icon master with safe padding for maskable app icons. The wordmark is **Wong’s Nest**; do not abbreviate it to a single letter or use the previous H-shaped mark.
 
-### Principles
-1. **Keep family life together**: Connect related information without forcing every feature into the same workflow.
-2. **Make privacy visible**: Show who can see sensitive information and give families understandable controls.
-3. **Reduce household friction**: Use clear defaults, reminders, and shared context instead of adding administrative work.
-4. **Preserve ordinary moments**: Treat everyday memories with the same care as major milestones.
-5. **Design for the whole family**: Support adults and children without making the product feel childish.
+The emblem appears at the family front door, in the desktop sidebar and mobile header, and in browser/installed app icons. The icon background is lavender paper. Keep the symbol’s proportions intact.
 
-### Personality & Tone
-| Trait | Meaning | What We Are Not |
+## Colour and surfaces
+
+`css/nest.css` owns the current semantic tokens and overrides the original component defaults in `css/styles.css`.
+
+| Token | Light theme | Purpose |
 |---|---|---|
-| **Warm** | Acknowledge people and relationships without sentimentality. | Cute or saccharine |
-| **Calm** | Simplify decisions; avoid visual or verbal urgency unless real. | Passive or vague |
-| **Dependable** | Explain status, permissions, and consequences clearly. | Cold or institutional |
-| **Thoughtful** | Use context and considerate defaults. | Overdesigned |
-| **Private** | Make audience and access immediately understandable. | Secretive or alarming |
-| **Human** | Write and design for ordinary family routines. | Childish or informal |
+| `--bg-body` | `#F8F6F2` | Soft paper canvas |
+| `--bg-card` | `#FFFFFF` | Lists, forms, family cards |
+| `--primary` | `#665080` | Lavender ink: buttons, selection, focus |
+| `--primary-light` / `--nest-lavender` | `#EEE8F6` | Companion moments and selected navigation |
+| `--nest-apricot` | `#FAE3D3` | Small wins and things needing a hand |
+| `--nest-sage` | `#E5EEDC` | Cooperative family garden |
+| `--text-primary` | `#34303D` | Headings and body text |
+| `--text-secondary` | `#67616D` | Supporting copy |
+| `--border-color` | `#E7E2EA` | Gentle separation |
 
----
+Dark mode uses plum surfaces, lavender highlights and light paper text. Use semantic tokens for all interactive surfaces. Illustrations may use fixed colours. Body text must meet WCAG AA contrast. Urgent or failed states still need distinct, understandable labels.
 
-## 2. Core Visual Identity
+## Type, shape and movement
 
-### The H-Arch Logo
-- **Symbol**: Combines a capital `H` with a rounded lower opening (doorway arch) and a squared upper opening.
-- **Rule**: Confirm that every logo instance uses the approved H-Arch rather than an arch-only mark.
-- **Lockup**: Horizontal symbol and wordmark lockup (`H Hearth`) for headers, marketing, and wide product surfaces. Standalone symbol for app icon, favicon, compact navigation, and avatars.
-- **Clear Space**: Maintain clear space equal to one vertical stem width on all sides.
-- **Color Treatments**:
-  - Deep Forest (`#1E3F30`) on Warm Cream (`#FDF4E1`) or White (`#FFFFFF`).
-  - Warm Cream (`#FDF4E1`) or White (`#FFFFFF`) on Deep Forest (`#1E3F30`).
+- **Nunito**, weight 800: welcoming headings and the wordmark.
+- **DM Sans**, weights 400–700: body copy, buttons, dates and financial details.
+- System fallbacks keep the app usable when fonts cannot load.
+- Page headings: 34px desktop, 28px phone. Body copy: 13–16px. Metadata: 11–12px.
+- White paper cards use 20–26px radii, thin borders and restrained shadows. Controls use 12px radii. Avoid glass effects.
+- Use outline SVG icons with rounded strokes for navigation and header controls. Personal avatars and habit choices may use emoji.
+- Companion celebrations use a single happy hop after a confirmed save or an explicit hello. Honour `prefers-reduced-motion`. No idle loops, competitive leaderboards or penalties for missed days.
 
-### Color Palette & Design Tokens
+## Layout and access
 
-#### Core Palette
-| Token | Hex | RGB | Role |
-|---|---|---|---|
-| `--hearth-deep-forest` | `#1E3F30` | `30, 63, 48` | Primary brand, navigation, buttons, headings, dark surfaces |
-| `--hearth-warm-cream` | `#FDF4E1` | `253, 244, 225` | Primary background (canvas) and reverse logo |
-| `--hearth-muted-terracotta` | `#BC6B5D` | `188, 107, 93` | Warm accent, highlights, illustration, selected moments |
-| `--hearth-warm-charcoal` | `#333333` | `51, 51, 51` | Body text, data, and high-contrast neutral content |
+At 1050px and above, use a permanent family sidebar grouped into Day to day, Make memories, and Parents’ corner. Below that, use five navigation buttons: Home, Plan, Tasks, Nest and More. The complete set of destinations remains available through More; the header drawer provides a second shortcut.
 
-#### Supporting & Module Accents
-| Module / Context | Accent Hex | Role & Visual Emphasis |
-|---|---|---|
-| **Family Week (Calendar)** | `#A9B7A4` (Soft Sage) | Routine, coordination, shared responsibilities |
-| **Memories** | `#C99185` (Dusty Rose) | Photography, dates, reflective prompts |
-| **Birthdays & Anniversaries** | `#C89B4A` (Warm Ochre) | Celebration without confetti-heavy styling |
-| **Travel** | `#6F9893` (Soft Teal) | Movement, maps, and trip planning |
-| **Fertility** | `#755766` (Muted Plum) | Discretion, clarity, explicit audience controls |
-| **Budgets** | `#1E3F30` (Deep Forest) | Totals, trends, and calm financial clarity |
-| **Recurring Expenses** | `#333333` (Warm Charcoal) | Predictability, due dates, and status |
+The parent home brings together a daily welcome, real activity counts, a companion/garden, the message-to-plan inbox, children’s plans, and the family overview. The child home focuses on their own plan and encouragement. The complete app retains the same paper surfaces and spacing, including calendars, habits, memories, money, travel and private parent tools.
 
-#### Interface Foundation Tokens
-- **Canvas**: Warm Cream `#FDF4E1`
-- **Surface**: White `#FFFFFF` (cards, sheets, menus, forms)
-- **Border**: `1px solid rgba(0, 0, 0, 0.12)`
-- **Card Radius**: `16px`
-- **Control Radius**: `10px` to `12px` (buttons, inputs, selectors)
-- **Focus Ring**: `2px solid #1E3F30` with `2px` offset
-- **Motion**: `150ms` to `250ms` quiet transitions (no bouncing, pulsing, or confetti)
+Only parents see expenses, budgets, recurring costs, cycle tracking or the couple space. Keep the existing server checks authoritative and show the audience clearly on sensitive screens. Changing appearance never grants access or changes data ownership.
 
----
+## Voice
 
-## 3. Typography & Typesetting
-
-**Primary Family**: **Source Sans 3** (open-source; fallback: `system-ui, sans-serif`).
-
-| Role | Weight | Size | Use |
-|---|---|---|---|
-| **Display** | 700 | 40 to 56 px | Marketing headlines and major product moments |
-| **Page title** | 700 | 28 to 36 px | Product and document titles |
-| **Section heading** | 600 | 20 to 24 px | Groups of related content |
-| **Body** | 400 | 16 to 18 px | Reading text and interface copy |
-| **Label** | 600 | 13 to 14 px | Controls, metadata, compact navigation |
-| **Data** | 400 or 600 | 14 to 32 px | Budgets, dates, quantities with tabular figures (`tabular-nums`) |
-
-### Typesetting Rules
-- Use **sentence case** for headings, buttons, menus, and labels.
-- Keep line length between 45 and 75 characters for sustained reading.
-- Use tabular numerals for budgets, totals, and aligned dates (`font-variant-numeric: tabular-nums`).
-- Avoid all-caps paragraphs and very light weights.
-
----
-
-## 4. Iconography & Graphic Language
-
-- **Grid**: 24 by 24 pixels.
-- **Stroke**: 2 pixels with rounded joins and caps (`stroke-linecap="round" stroke-linejoin="round"`).
-- **Style**: Simple outline icons; filled form only for selected state.
-- **Emoji Rule**: **Do not use emoji as permanent product navigation icons.** Reserve emojis only for personal user avatars, child nicknames, or conversational chat content.
-- **Shapes**: Softly rounded rectangles (`16px` cards, `10-12px` controls). Consistent radii within component families. Flat colour and subtle borders over heavy drop shadows or glass effects.
-
----
-
-## 5. Verbal Identity & Copy Standards
-
-- **Voice**: Thoughtful member of the household: direct, considerate, calm, and familiar.
-- **Action-led buttons**: *Add expense*, *Save memory*, *Invite member*, *Set budget*.
-- **Privacy Statements**: Replace legal or technical shorthand with concrete audience statements:
-  - `"Visible to all family members"`
-  - `"Visible only to selected adults"`
-- **Example Copy**:
-  - *Profile selection*: `"Who is using Hearth?"`
-  - *Dashboard*: `"Good evening, Marcus. Here is what is coming up."`
-  - *Empty budget*: `"No household budget yet. Add one when you are ready."`
-  - *Memory prompt*: `"What would you like to remember about today?"`
-  - *Save confirmation*: `"Saved to your family memories."`
-  - *Recoverable error*: `"We could not save that. Your changes are still here. Try again."`
-  - *Destructive action*: `"Delete this memory? It will be removed for everyone who can currently view it."`
-
----
-
-## 6. Development Governance
-
-All future pull requests, agent tasks, and features **must** comply with this guide:
-1. Verify colors use defined Hearth CSS variables (`var(--hearth-...)`).
-2. Verify all navigation elements use standard 24px SVG icons, not emojis.
-3. Verify typography uses Source Sans 3 and sentence case.
-4. Verify accessibility contrast meets WCAG 2.2 AA (minimum 4.5:1 for body copy).
-5. Verify sensitive modules clearly display their audience visibility context.
+Use familiar, helpful language. For example: “A message in. A plan out.”, “Little things, done”, “Small steps today. Good things ahead.” Use clear action labels: Add a message, Add event, Save companion, Add expense. Errors explain what happened and how to try again without claiming a failed save succeeded.

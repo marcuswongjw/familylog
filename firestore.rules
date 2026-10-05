@@ -1,5 +1,5 @@
 rules_version = '2';
-// Wong Family Log — Firestore security rules
+// Wong’s Nest — Firestore security rules
 // Only the four family emails may access chat / users / memories.
 service cloud.firestore {
   match /databases/{database}/documents {

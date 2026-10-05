@@ -436,11 +436,11 @@ function renderSchoolHome() {
     ${isAdultUser ? `
       <div class="school-intro">
         <div>
-          <span class="school-eyebrow">Notice reader</span>
-          <h2>Drop info to create dates and tasks</h2>
-          <p>Paste any message, circular, or text, or upload a screenshot to extract schedules and to-dos.</p>
+          <span class="school-eyebrow">THE FAMILY INBOX</span>
+          <h2>A message in. A plan out.</h2>
+          <p>School notices, activity messages, things to remember. Drop them here and we’ll help you make a plan.</p>
         </div>
-        <button class="btn btn-p" id="school-open">Drop info or message</button>
+        <button class="btn btn-p" id="school-open">Add a message</button>
       </div>
       ${pending.length ? `
         <div class="school-inbox">
@@ -457,7 +457,7 @@ function renderSchoolHome() {
 
     <div class="school-day-heading">
       <div>
-        <h2>${isAdultUser ? 'The children’s day' : (user === 'Mikaela' ? '⛵ Mikaela’s Day' : '🩰 Meaghan’s Day')}</h2>
+        <h2>${isAdultUser ? 'Little people, big days' : (user === 'Mikaela' ? 'Mikaela’s day' : 'Meaghan’s day')}</h2>
         <span class="school-day-sub">${dayLabel} · ${weekday}${!isAdultUser && user === 'Meaghan' ? ' · together with Mom & Dad' : !isAdultUser && user === 'Mikaela' ? ' · you’ve got this' : ''}</span>
       </div>
       <div class="school-day-pills">
@@ -523,17 +523,17 @@ function renderSchoolHome() {
               ${(data.habits || []).filter(h => h.member === child).map(h => {
                 const logged = (data.habitLogs || []).some(l => l.habitId === h.id && l.date === day);
                 return `
-                  <div class="school-habit-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--card-bg, #fff);border:1px solid var(--border-color, #e2e8f0);border-radius:8px;">
+                  <div class="school-habit-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border-color, #e2e8f0);border-radius:8px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                       <span style="font-size:18px;">${escapeHtml(h.emoji || '✨')}</span>
-                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}</span>
+                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}</span>
                     </div>
                     ${logged ? `
-                      <span style="font-size:12px;color:#16a34a;font-weight:600;display:flex;align-items:center;gap:4px;">
+                      <span style="font-size:12px;color:var(--success);font-weight:600;display:flex;align-items:center;gap:4px;">
                         ✓ Practiced
                       </span>
                     ` : `
-                      <button class="btn btn-s btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${escapeHtml(day)}')" style="font-size:12px;padding:4px 10px;">
+                      <button class="btn btn-s btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${escapeHtml(day)}')" ${pendingHabitLogs.has(h.id + ':' + day) ? 'disabled' : ''} style="font-size:12px;padding:4px 10px;">
                         Log practice
                       </button>
                     `}
@@ -564,7 +564,7 @@ function renderSchoolHome() {
         const parentEvents = (data.events || []).filter(e => e.dateRaw === day && (e.tags || []).some(t => t === 'Family' || t === 'Marcus' || t === 'Eleanor'));
         if (!parentEvents.length) return '';
         return `
-          <div class="school-parent-schedule" style="margin-top:20px;padding:16px;background:var(--card-bg, #fff);border:1px solid var(--border-color, #e2e8f0);border-radius:12px;">
+          <div class="school-parent-schedule" style="margin-top:20px;padding:16px;background:var(--bg-card);border:1px solid var(--border-color, #e2e8f0);border-radius:12px;">
             <h3 style="margin-top:0;font-size:15px;color:var(--text, #1e293b);display:flex;align-items:center;gap:6px;">📅 Family & Parent Schedule · ${dayLabel}</h3>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
               ${parentEvents.map(e => `
@@ -608,7 +608,7 @@ function schoolTaskCard(t, day) {
   return `
     <div class="school-task ${done ? 'school-task-done' : ''} ${needsHelp ? 'school-task-needs-help' : ''}">
       <div class="school-task-main" onclick="if(window.openEditTask)openEditTask('${escapeHtml(t.id)}')" style="cursor:pointer;" title="Click to edit task">
-        <strong>${escapeHtml(t.task)}</strong>
+        <strong>${escapeHtml(t.task)}${rewardBadge('task', t.id)}</strong>
         <div class="school-task-meta">
           <span class="school-task-owner">${escapeHtml(t.assignee)}</span>
           ${due ? `<span class="school-task-due">${escapeHtml(due)}</span>` : ''}
@@ -632,12 +632,16 @@ function schoolTaskCard(t, day) {
 }
 async function schoolTaskAction(id, action, button) {
   button.disabled = true;
+  const account = currentUserEmail;
   const result = await gPost({ note: action, todo_id: id });
+  if (account !== currentUserEmail) return;
   if (!result || result.status !== 'ok') { button.disabled = false; return; }
   const status = action === 'help_todo' ? 'Needs help' : 'Done';
   (data.schoolTasks || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
   (data.todos || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
   if (status === 'Done') data.todos = (data.todos || []).filter(t => t.id !== id);
+  if (result.rewards) data.rewards = result.rewards;
   renderHome(); renderTasks();
+  applyRewardResult(result);
   toast(status === 'Done' ? 'Task completed.' : 'Your parent can see that you need a hand.');
 }

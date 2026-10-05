@@ -7,7 +7,7 @@
       firebase: ['auth', 'memories', 'storage', 'fcm', 'schoolSourceImages'],
       sheets: [
         'events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
-        'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList'
+        'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs', 'rewards'
       ]
     };
 
@@ -97,16 +97,16 @@
       document.body.classList.toggle('dark-mode');
       const isDark = document.body.classList.contains('dark-mode');
       savePreference('darkMode', isDark ? 'dark' : 'light');
-      document.getElementById('darkToggle').textContent = isDark ? '☀️' : '🌙';
+      updateNestThemeIcon();
     }
     function applyDarkMode() {
       const pref = loadPreference('darkMode', 'light');
       if (pref === 'dark') {
         document.body.classList.add('dark-mode');
-        document.getElementById('darkToggle').textContent = '☀️';
+        updateNestThemeIcon();
       } else {
         document.body.classList.remove('dark-mode');
-        document.getElementById('darkToggle').textContent = '🌙';
+        updateNestThemeIcon();
       }
     }
 
@@ -271,7 +271,7 @@
       const grid = document.getElementById('mgrid');
       if(!grid) return;
       grid.innerHTML = MEMBERS.map(m =>
-        `<button class="member-btn" onclick="selectMember('${m.name}')"><span class="av">${m.emoji}</span>${m.name}</button>`
+        `<button class="member-btn" onclick="selectMember('${m.name}')"><span class="av">${rewardCompanionSVG({species:({Marcus:'bear',Eleanor:'cat',Mikaela:'fox',Meaghan:'rabbit'})[m.name],name:m.name},'small')}</span>${m.name}</button>`
       ).join('');
     }
     function selectMember(name) {
@@ -392,6 +392,7 @@
       }, { passive: true });
     }
     function logout() {
+      resetRewards();
       schoolReset(); schoolDay = '';
       stopMemoriesListener();
       firebase.auth().signOut().then(() => {
@@ -646,7 +647,7 @@
     // ─── NAVIGATION ───────────────────────────────────────────
     const NAV_SECONDARY = ['budgets','memories','habits','fertility','recurring','birthdays','schedules','travel'];
     const ADULT_SCREENS = ['us', 'fertility', 'expenses', 'budgets', 'recurring'];
-    const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'expenses', 'us'];
+    const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'rewards', 'more', 'expenses', 'us'];
 
     /** Read deep-link target from ?open= or #hash (iOS PWAs keep query more reliably). */
     function screenFromLocation() {
@@ -657,7 +658,7 @@
       if (location.hash && location.hash.length > 1) {
         const h = location.hash.replace(/^#\/?/, '');
         if (h === 'chat') return 'home';
-        if (PRIMARY_SCREENS.includes(h)) return h;
+        if (PRIMARY_SCREENS.includes(h) || NAV_SECONDARY.includes(h)) return h;
       }
       return null;
     }
@@ -705,6 +706,7 @@
         toast(id === 'us' || id === 'fertility' ? 'This space is visible only to parents.' : 'Budgets and expenses are visible only to parents.', true);
         id = 'home';
       }
+      if (!document.getElementById('s-' + id)) id = 'home';
       section = id;
       if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; }
 
@@ -734,30 +736,26 @@
       if(FAB_MAP[id]){ fab.classList.remove('hide'); fab._m = FAB_MAP[id]; } else fab.classList.add('hide');
       
       render(id);
+      updateNestShell();
     }
     function onFab() { if(document.getElementById('fab')._m) openM(document.getElementById('fab')._m); }
     function buildMore() {
       const el = document.getElementById('more-grid');
       if (!el) return;
       const tiles = [
-        ...(isAdultUser ? [{id:'budgets',icon:'📊',label:'Budgets'}] : []),
-        {id:'memories',icon:'💛',label:'Memories'},
-        {id:'habits',icon:'🌱',label:'Habits'},
-        {id:'birthdays',icon:'🎂',label:'Birthdays'},
-        ...(isAdultUser ? [{id:'fertility',icon:'🌸',label:'Fertility'},{id:'recurring',icon:'🔄',label:'Recurring'}] : []),
-        {id:'calendar',icon:'⛵',label:'Week'},
-        {id:'travel',icon:'✈️',label:'Travel'}
+        ['habits','Habits'],['memories','Memories'],['birthdays','Celebrations'],['travel','Adventures'],
+        ...(isAdultUser ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [])
       ];
-      el.innerHTML = tiles.map(t =>
-        `<div class="more-tile" onclick="goTo('${t.id}')"><div class="mi">${t.icon}</div><div class="ml">${t.label}</div></div>`
-      ).join('');
+      el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
     }
+
     function render(id) {
       switch(id) {
         case 'home': renderHome(); break;
         case 'calendar': renderCal(); break;
         case 'tasks': renderTasks(); break;
         case 'habits': renderHabits(); break;
+        case 'rewards': renderRewards(); break;
         case 'expenses': renderExpenses(); break;
         case 'budgets': renderBudgets(); break;
         case 'memories': renderMemories(); break;
@@ -849,10 +847,12 @@
 
     // ─── HOME (Dashboard) ────────────────────────────────────
     function renderHome() {
+      updateNestShell();
+      renderRewardHome();
       renderSchoolHome();
       const h = new Date().getHours();
       const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-      document.getElementById('greet').innerHTML = `<h2>${g}, ${escapeHtml(user)}. Here is what is coming up.</h2><p>${new Date().toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>`;
+      document.getElementById('greet').innerHTML = `<div class="nest-greeting-top"><div><span class="nest-kicker">${isAdultUser ? 'OUR FAMILY, TOGETHER' : 'YOUR LITTLE CORNER'}</span><h2>${g}, ${escapeHtml(user)}.</h2><p>${isAdultUser ? 'Let’s make a little room for a good day.' : 'Small steps today. Good things ahead.'}</p></div><span class="nest-date">${nestIcon('calendar')}${new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'long'})}</span></div>`;
 
       const summaryEl = document.getElementById('dash-summary');
       const membersEl = document.getElementById('dash-members');
@@ -885,9 +885,9 @@
         return false;
       });
       document.getElementById('dash-summary').innerHTML = `
-        <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Needs attention</span></div>
-        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsToday.length}</span><span class="lbl">Today</span></div>
-        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsTomorrow.length}</span><span class="lbl">Tomorrow</span></div>
+        <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Needs a hand</span><small>Little things to take care of</small></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsToday.length}</span><span class="lbl">On today</span><small>In the family calendar</small></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsTomorrow.length}</span><span class="lbl">Tomorrow</span><small>A little look ahead</small></div>
       `;
       const memberOrder = ['Mikaela', 'Meaghan', user, user === 'Marcus' ? 'Eleanor' : 'Marcus']
         .filter((m, i, arr) => m && m !== 'Everyone' && arr.indexOf(m) === i);
@@ -904,7 +904,7 @@
           </div>
         `;
       });
-      document.getElementById('dash-members').innerHTML = `<div style="font-size:13px;font-weight:700;margin:8px 0 4px;">Family members</div>${membersHtml}`;
+      document.getElementById('dash-members').innerHTML = `<span class="nest-kicker">THE WONG CREW</span>${membersHtml}`;
       const tksToday = todos.filter(t => t.dueRaw && t.dueRaw <= tod);
       document.getElementById('today-wrap').innerHTML = `
         <div class="card">
@@ -1361,7 +1361,7 @@
       el.innerHTML = `
         <div style="padding: 16px;">
           ${FAM.filter(m => g[m] && g[m].length).map(m => `
-            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid #a85f89;">${escapeHtml(m)}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid var(--primary);">${escapeHtml(m)}</div>
             <div style="display:flex;flex-direction:column;gap:8px;">
               ${g[m].map(t => {
                 const today = todayStr();
@@ -1381,9 +1381,9 @@
                 }
                 return `
                   <div class="task-row">
-                    <div class="chk" onclick="doneTask('${t.id}',this)"></div>
+                    <button type="button" class="chk" aria-label="Complete ${escapeHtml(t.task)}" onclick="doneTask('${t.id}',this)"></button>
                     <div class="task-main" onclick="openEditTask('${t.id}')" style="cursor:pointer;" title="Click to edit task">
-                      <div class="task-ttl">${escapeHtml(t.task)}</div>
+                      <div class="task-ttl">${escapeHtml(t.task)}${rewardBadge('task', t.id)}</div>
                       <div class="task-meta">
                         <span class="task-meta-badge ${dueClass}">${dueText}</span>
                       </div>
@@ -1574,7 +1574,7 @@
             let contentHtml = '';
             if (isQuote) {
               contentHtml = `
-                <blockquote style="font-size:15px;font-style:italic;font-family:Georgia,serif;color:#6b2d5c;line-height:1.5;margin:8px 0;padding-left:14px;border-left:3px solid #a85f89;">
+                <blockquote style="font-size:15px;font-style:italic;font-family:Georgia,serif;color:var(--primary);line-height:1.5;margin:8px 0;padding-left:14px;border-left:3px solid var(--primary);">
                   “${escapeHtml(m.memory)}”
                 </blockquote>
               `;
@@ -1715,7 +1715,7 @@
       if (f.symptoms && f.symptoms.length > 0) {
         symptomsHtml = `
           <div style="margin-top:16px;border-top:1px solid var(--border-color);padding-top:14px;">
-            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📝 Recent Symptoms Log</div>
+            <div style="font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📝 Recent Symptoms Log</div>
             <div style="position:relative;padding-left:14px;border-left:2px solid #fecdd3;display:flex;flex-direction:column;gap:12px;margin-left:6px;">
               ${f.symptoms.map(s => `
                 <div style="position:relative;font-size:13px;">
@@ -2463,7 +2463,7 @@
       const container = document.getElementById('us-container');
       if(!container) return;
       if(user !== 'Marcus' && user !== 'Eleanor'){
-        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">🔒</div><h2 style="color:#6b2d5c;font-weight:700;">Couple space</h2><p class="adults-only" style="margin-top:14px;color:#a85f89;">Visible only to selected adults.</p></div></div>`;
+        container.innerHTML = `<div class="us-card" style="text-align:center; margin-top:24px;"><div class="us-placeholder"><div class="us-placeholder-icon">🔒</div><h2 style="color:var(--primary);font-weight:700;">Couple space</h2><p class="adults-only" style="margin-top:14px;color:var(--text-secondary);">Visible only to selected adults.</p></div></div>`;
         return;
       }
       const partner = user === 'Marcus' ? 'Eleanor' : 'Marcus';
@@ -2481,10 +2481,10 @@
       let alignmentHtml = '';
       if(marcusCheckin || eleanorCheckin){
         let marcusInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
-        if(marcusCheckin) marcusInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(marcusCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(marcusCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(marcusCheckin.notes)||'No notes'}"</div>`;
+        if(marcusCheckin) marcusInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(marcusCheckin.battery)}</div><div style="font-size:10px;color:var(--text-secondary);">Mood: ${escapeHtml(marcusCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(marcusCheckin.notes)||'No notes'}"</div>`;
         let eleanorInfo = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">No check-in yet</div>';
-        if(eleanorCheckin) eleanorInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div><div style="font-size:10px;color:#a85f89;">Mood: ${escapeHtml(eleanorCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(eleanorCheckin.notes)||'No notes'}"</div>`;
-        alignmentHtml = `<div style="display:flex;gap:12px;margin-top:8px;"><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👨 Marcus</div>${marcusInfo}</div><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:#6b2d5c;font-size:12px;">👩 Eleanor</div>${eleanorInfo}</div></div>`;
+        if(eleanorCheckin) eleanorInfo = `<div style="font-size:18px;margin:4px 0;">${'❤️'.repeat(eleanorCheckin.battery)}</div><div style="font-size:10px;color:var(--text-secondary);">Mood: ${escapeHtml(eleanorCheckin.moods.join(', ')||'Normal')}</div><div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(eleanorCheckin.notes)||'No notes'}"</div>`;
+        alignmentHtml = `<div style="display:flex;gap:12px;margin-top:8px;"><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:var(--primary);font-size:12px;">👨 Marcus</div>${marcusInfo}</div><div style="flex:1;background:var(--bg-card);border-radius:12px;padding:10px;border:1px solid var(--border-color);text-align:center;"><div style="font-weight:700;color:var(--primary);font-size:12px;">👩 Eleanor</div>${eleanorInfo}</div></div>`;
       } else { alignmentHtml = '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:8px;">No check-ins logged yet. Add your check-in below.</div>'; }
       const historyCheckins = [...checkins].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
       let historyHtml = '';
@@ -2493,7 +2493,7 @@
         historyHtml = historyCheckins.slice(0,10).map(c => {
           const dateStr = fmtDate(c.timestamp.split(' ')[0]);
           const userEmoji = c.user==='Marcus'?'👨':'👩';
-          return `<div style="padding:6px 0;border-bottom:1px solid var(--border-color);"><div style="font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span><strong>${escapeHtml(dateStr)}</strong> · ${userEmoji} ${escapeHtml(c.user)}</span><span style="color:#ef4444;font-weight:700;">${'❤️'.repeat(c.battery)}</span></div>${c.moods&&c.moods.length?`<div style="font-size:10px;color:#a85f89;margin-left:14px;margin-top:2px;">Moods: ${escapeHtml(c.moods.join(', '))}</div>`:''}${c.notes?`<div style="font-size:10px;color:var(--text-muted);margin-left:14px;margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>`:''}${c.focus?`<div style="font-size:10px;color:#6b2d5c;margin-left:14px;margin-top:2px;font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>`:''}</div>`;
+          return `<div style="padding:6px 0;border-bottom:1px solid var(--border-color);"><div style="font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span><strong>${escapeHtml(dateStr)}</strong> · ${userEmoji} ${escapeHtml(c.user)}</span><span style="color:#ef4444;font-weight:700;">${'❤️'.repeat(c.battery)}</span></div>${c.moods&&c.moods.length?`<div style="font-size:10px;color:var(--text-secondary);margin-left:14px;margin-top:2px;">Moods: ${escapeHtml(c.moods.join(', '))}</div>`:''}${c.notes?`<div style="font-size:10px;color:var(--text-muted);margin-left:14px;margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>`:''}${c.focus?`<div style="font-size:10px;color:var(--primary);margin-left:14px;margin-top:2px;font-weight:500;">Next week focus: ${escapeHtml(c.focus)}</div>`:''}</div>`;
         }).join('');
       }
       let unlockedHtml = '';
@@ -2543,7 +2543,7 @@
               <div class="roulette-prompt" id="r-result-text">Pick a conversation topic</div>
               <div class="roulette-card-sub" id="r-result-sub">Tap to draw a card</div>
             </div>
-            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:#6b2d5c;">Pick another topic</button>
+            <button class="btn btn-sm btn-s" id="btn-spin-again" onclick="spinRoulette()" style="margin-top:8px;display:none;border-color:var(--border-color);color:var(--primary);">Pick another topic</button>
           </div>
         </div>
       `;
@@ -2560,7 +2560,7 @@
             <div style="font-size:18px;">💕</div>
             <div style="flex:1;min-width:0;">
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-                <strong style="color:#6b2d5c;">${escapeHtml(entry.date || '—')}</strong>
+                <strong style="color:var(--primary);">${escapeHtml(entry.date || '—')}</strong>
                 <span class="intimacy-hearts" style="font-size:12px;">${hearts}</span>
               </div>
               ${entry.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(entry.notes)}</div>` : ''}
@@ -2579,22 +2579,22 @@
       const intimacySection = `
         <div class="us-card">
           <div class="us-card-title">Intimacy log</div>
-          <div style="font-size:12px;color:#a85f89;margin-bottom:10px;">Visible only to selected adults · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
-          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:#be123c;color:#fff;border:none;width:100%;margin-bottom:12px;">Log intimate moment</button>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">Visible only to selected adults · ${thisMonthCount} this month · ${intimacyEntries.length} total</div>
+          <button class="btn btn-sm" onclick="openIntimacyModal()" style="background:var(--primary);color:var(--primary-text);border:none;width:100%;margin-bottom:12px;">Log intimate moment</button>
           <div id="intimacy-list">${intimacyHtml}</div>
         </div>
       `;
 
       container.innerHTML = `
         <div class="us-header"><h2>Couple space</h2><p>Visible only to selected adults</p></div>
-        <div class="us-card"><div class="us-card-title">Daily battery check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:#a85f89;color:#fff;border:none;">Save daily check-in</button>
-          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Past check-ins</span><span style="font-size:10px;color:#a85f89;" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
+        <div class="us-card"><div class="us-card-title">Daily battery check-in</div>${alignmentHtml}<button class="btn btn-sm" onclick="openLoveCheckinModal()" style="background:var(--primary);color:var(--primary-text);border:none;">Save daily check-in</button>
+          <div style="margin-top:12px;border-top:1px dashed var(--border-color);padding-top:10px;"><div style="font-size:12px;font-weight:700;color:var(--primary);display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleCheckinHistory()"><span>Past check-ins</span><span style="font-size:10px;color:var(--text-secondary);" id="history-toggle-icon">Show ▾</span></div><div id="checkin-history-list" style="display:none;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px;">${historyHtml}</div></div>
         </div>
         ${intimacySection}
         <div class="us-card"><div class="us-card-title">Appreciation jar</div>
-          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:#6b2d5c;font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:#a85f89;margin-top:2px;">Unlocks Friday at 6:00 PM.</div></div></div>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:#6b2d5c;color:#fff;border:none;">Write appreciation note</button></div>
-          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:#6b2d5c;margin-bottom:8px;">Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
+          <div class="jar-container" onclick="triggerJarFloat()"><div class="jar-graphic" id="jar-gfx"><div class="jar-lid"></div><div class="jar-neck"></div><div class="jar-label">Notes</div><div style="font-size:20px;margin-top:45px;">🍯</div></div><div style="text-align:center;margin-top:12px;"><strong style="color:var(--primary);font-size:14px;">${lockedCount} note(s) currently locked</strong><div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Unlocks Friday at 6:00 PM.</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"><button class="btn btn-sm" onclick="openAppreciationModal()" style="background:var(--primary);color:var(--primary-text);border:none;">Write appreciation note</button></div>
+          <div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:8px;">Notes from ${escapeHtml(partner)}</div><div style="display:flex;flex-direction:column;gap:8px;">${unlockedHtml}</div></div>
         </div>
         ${bucketSection}
         ${rouletteHtml}
@@ -3041,7 +3041,7 @@
       if (!el) return;
       const habits = data.habits || [];
       const habitLogs = data.habitLogs || [];
-      const today = todayStr();
+      const today = schoolToday();
 
       if (!habits.length) {
         el.innerHTML = `
@@ -3081,12 +3081,12 @@
       el.innerHTML = `
         <div style="padding:16px;">
           ${activeMembers.map(m => `
-            <div style="font-size:12px;font-weight:700;color:#6b2d5c;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid #a85f89;">
+            <div style="font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid var(--primary);">
               ${escapeHtml(m)}’s habits
             </div>
             <div style="display:flex;flex-direction:column;gap:12px;">
               ${byMember[m].map(h => {
-                const logsForHabit = habitLogs.filter(l => l.habitId === h.id);
+                const logsForHabit = habitLogs.filter(l => l.habitId === h.id && (h.member !== 'Everyone' || l.member === user));
                 const isLoggedToday = logsForHabit.some(l => l.date === today);
 
                 const daysDots = last7Days.map(day => {
@@ -3094,7 +3094,7 @@
                   return `
                     <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
                       <span style="font-size:10px;color:var(--text-muted);font-weight:${day.isToday ? '700' : '400'};">${escapeHtml(day.dayName)}</span>
-                      <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;${done ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac;' : day.isToday ? 'background:#fef3c7;color:#b45309;border:1px dashed #f59e0b;' : 'background:var(--bg-subtle, #f1f5f9);color:#94a3b8;'}">
+                      <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;${done ? 'background:var(--success-soft);color:var(--success);border:1px solid #86efac;' : day.isToday ? 'background:#fef3c7;color:#b45309;border:1px dashed #f59e0b;' : 'background:var(--bg-subtle, #f1f5f9);color:#94a3b8;'}">
                         ${done ? '✓' : '·'}
                       </div>
                     </div>
@@ -3104,22 +3104,22 @@
                 const recentLogs = logsForHabit.slice(0, 3);
 
                 return `
-                  <div class="card" style="padding:14px;border-radius:12px;border:1px solid var(--border-color);background:var(--card-bg, #fff);">
+                  <div class="card" style="padding:14px;border-radius:12px;border:1px solid var(--border-color);background:var(--bg-card);">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                       <div style="display:flex;align-items:center;gap:10px;">
                         <span style="font-size:24px;">${escapeHtml(h.emoji || '✨')}</span>
                         <div>
-                          <div style="font-size:15px;font-weight:600;">${escapeHtml(h.habit)}</div>
+                          <div style="font-size:15px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}</div>
                           <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(h.member)}</div>
                         </div>
                       </div>
                       <div style="display:flex;align-items:center;gap:8px;">
                         ${isLoggedToday ? `
-                          <span style="font-size:12px;font-weight:600;color:#16a34a;background:#dcfce7;padding:4px 10px;border-radius:999px;">
+                          <span style="font-size:12px;font-weight:600;color:var(--success);background:var(--success-soft);padding:4px 10px;border-radius:999px;">
                             ✓ Done today
                           </span>
                         ` : `
-                          <button class="btn btn-p btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${today}')" style="font-size:12px;padding:4px 12px;">
+                          <button class="btn btn-p btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${today}')" ${pendingHabitLogs.has(h.id + ':' + today) ? 'disabled' : ''} style="font-size:12px;padding:4px 12px;">
                             Log practice
                           </button>
                         `}
@@ -3158,58 +3158,44 @@
       `;
     }
 
+    const pendingHabitLogs = new Set();
     async function logHabitQuick(habitId, dateStr, notes) {
-      dateStr = dateStr || todayStr();
-      notes = notes || '';
+      dateStr = dateStr || schoolToday();
+      const key = habitId + ':' + dateStr;
+      if (pendingHabitLogs.has(key)) return false;
+      const account = currentUserEmail;
       const h = (data.habits || []).find(x => x.id === habitId);
-      const habitName = h ? h.habit : 'Habit';
-      const member = h ? h.member : user;
-      
-      const tempId = 'hl_' + Date.now();
-      const newLog = {
-        id: tempId,
-        habitId: habitId,
-        member: member,
-        habit: habitName,
-        date: dateStr,
-        notes: notes,
-        loggedBy: user || 'Unknown',
-        timestamp: new Date().toISOString()
-      };
-      data.habitLogs = data.habitLogs || [];
-      data.habitLogs.unshift(newLog);
-      renderHabits();
-      renderHome();
-
+      if (!h) { showError('Habit not found. Refresh before trying again.'); return false; }
+      pendingHabitLogs.add(key);
+      renderHabits(); renderHome();
       try {
-        const res = await gPost({
-          note: 'log_habit',
-          habit_id: habitId,
-          date: dateStr,
-          notes: notes
-        });
-        if (res && res.status === 'ok' && res.log) {
-          const idx = data.habitLogs.findIndex(l => l.id === tempId);
-          if (idx >= 0) data.habitLogs[idx] = res.log;
-          toast(`${habitName} logged! ${(h && h.emoji) || '✨'}`);
-        } else if (res && res.status === 'ok') {
-          toast(`${habitName} logged! ${(h && h.emoji) || '✨'}`);
-        } else {
-          toast((res && res.message) || 'Failed to save habit log', true);
-        }
-      } catch (e) {
-        toast('Error logging habit: ' + e.message, true);
+        const res = await gPost({ note: 'log_habit', habit_id: habitId, date: dateStr, notes: notes || '' });
+        if (account !== currentUserEmail) return false;
+        if (!res || res.status !== 'ok' || !res.log) { showError(res?.message || 'Could not save the habit. Try again when connected.'); return false; }
+        data.habitLogs = (data.habitLogs || []).filter(l => l.id !== res.log.id);
+        data.habitLogs.unshift(res.log);
+        if (res.rewards) data.rewards = res.rewards;
+        renderHabits(); renderHome();
+        applyRewardResult(res);
+        toast(res.duplicate ? 'Already logged for this day.' : `${h.habit} logged! ${h.emoji || '✨'}`);
+        return true;
+      } catch (e) { if (account === currentUserEmail) showError('Could not save the habit. Try again when connected.'); return false; }
+      finally {
+        pendingHabitLogs.delete(key);
+        if (account === currentUserEmail) { renderHabits(); renderSchoolHome(); }
       }
     }
     window.logHabitQuick = logHabitQuick;
 
     async function delHabitLog(logId) {
-      if (!confirm('Remove this habit entry?')) return;
-      data.habitLogs = (data.habitLogs || []).filter(l => l.id !== logId);
-      renderHabits();
-      renderHome();
+      if (!confirm('Remove this habit entry? Earned stars will stay with you.')) return;
+      const account = currentUserEmail;
       const res = await gPost({ note: 'delete_habit_log', log_id: logId });
-      if (res && res.status === 'ok') toast('Habit entry removed.');
+      if (account !== currentUserEmail) return;
+      if (!res || res.status !== 'ok') return;
+      data.habitLogs = (data.habitLogs || []).filter(l => l.id !== logId);
+      renderHabits(); renderHome();
+      toast('Habit entry removed.');
     }
     window.delHabitLog = delHabitLog;
 
@@ -3218,7 +3204,7 @@
       if (!h) return;
       document.getElementById('hl-habit-id').value = habitId;
       document.getElementById('hl-title').textContent = (h.emoji ? h.emoji + ' ' : '') + h.habit + ' (' + h.member + ')';
-      document.getElementById('hl-date').value = dateStr || todayStr();
+      document.getElementById('hl-date').value = dateStr || schoolToday();
       document.getElementById('hl-notes').value = '';
       document.getElementById('m-habit-log').classList.add('open');
     }
@@ -3229,10 +3215,9 @@
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const habitId = document.getElementById('hl-habit-id').value;
-        const dateStr = document.getElementById('hl-date').value || todayStr();
+        const dateStr = document.getElementById('hl-date').value || schoolToday();
         const notes = document.getElementById('hl-notes').value.trim();
-        await logHabitQuick(habitId, dateStr, notes);
-        closeM('m-habit-log');
+        if (await logHabitQuick(habitId, dateStr, notes)) closeM('m-habit-log');
       } finally {
         btn.disabled = false;
         btn.textContent = 'Save entry';
@@ -3293,4 +3278,4 @@
 
     // ─── APP INIT (already called above) ───────────────────────
 
-    console.log('Hearth app loaded.');
+    console.log('Wong’s Nest app loaded.');

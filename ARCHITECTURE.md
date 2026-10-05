@@ -1,6 +1,6 @@
 # Architecture — Sheets vs Firebase
 
-Wong Family Log uses **two backends on purpose**. Each owns a different kind of data. Do not dual-write the same feature to both.
+Wong’s Nest uses **two backends on purpose**. Each owns a different kind of data. Do not dual-write the same feature to both.
 
 ```mermaid
 flowchart TB
@@ -66,7 +66,9 @@ flowchart TB
 | Sheet / system | Feature | Why Sheets/GAS |
 |----------------|---------|----------------|
 | Expenses, Budgets, RecurringExpenses | Money ledger | Spreadsheet audit, formulas, bank-email import |
-| ToDo | Tasks | Simple rows + morning digest |
+| ToDo | Tasks | Simple rows + morning digest; Reward Member preserves the first completion recipient |
+| Habits, HabitLogs | Daily practice | Server-derived member and one log per habit/member/day |
+| RewardRules, RewardLedger, Companions | Companions and stars | Parent-selected rules, immutable earning/purchase IDs, authenticated member profiles |
 | Birthdays | Dates | Digest + calendar-style lists |
 | Travel | Trip log | Lat/lng list for map |
 | Fertility, Appreciations, LoveCheckins, IntimacyLog, BucketList | Us / parents | Private logs; adult allowlist in GAS |
@@ -142,19 +144,22 @@ Historical rows may still exist in the spreadsheet. The app no longer reads or w
 | `firestore.rules` / `storage.rules` | Firebase access control |
 | `index.js` | Chat → FCM |
 | `firebase-messaging-sw.js` | PWA cache + background push |
-| `BRAND.md` | Master design system & brand guidelines (Hearth Brand Guide 1.0) |
+| `BRAND.md` | Wong’s Nest brand and design system |
 | `css/styles.css` | Design tokens, typography, dark mode, responsive layout |
-| `assets/h-arch.svg` | Master vector logo mark |
+| `assets/nest-mark.svg`, `assets/nest-icon.svg` | Nest emblem and app icon masters |
+| `css/nest.css`, `js/nest.js` | Current visual tokens, responsive shell, icons and page headings |
 
 ---
 
 ## Brand & Design System Governance
 
-All UI development in Hearth must adhere strictly to [BRAND.md](BRAND.md) (Hearth Brand Guide Version 1.0, September 2026):
+All UI development follows [BRAND.md](BRAND.md), Wong’s Nest version 2.0. The responsive shell and navigation are in `js/nest.js`; theme and component styling are in `css/nest.css`, loaded after the original base components. The nest emblem replaces the previous H-shaped mark.
 
-1. **Logo & Identity:** Always use the official H-Arch symbol (`assets/h-arch.svg`, `assets/hearth-lockup.svg`). Never distort or alter the geometry (squared top, rounded arch bottom).
-2. **Color Tokens:** Use CSS variables defined in `css/styles.css` (`--bg-forest`, `--bg-cream`, `--accent-terracotta`, `--text-charcoal`, plus module accents: `--mod-week`, `--mod-birthdays`, `--mod-memories`, `--mod-travel`, `--mod-fertility`).
-3. **Iconography:** Never use emojis as permanent primary navigation or drawer icons. Use 24×24px outline SVG icons with 2px rounded strokes. Emojis are reserved for user avatars and chat content.
-4. **Typography:** Source Sans 3 across the entire application with explicit hierarchy (Display 700, Page title 700, Section 600, Body 400). Numbers, amounts, and dates must use `font-variant-numeric: tabular-nums`.
-5. **Verbal Voice:** Maintain a warm, calm household tone. Avoid tech jargon or blame-oriented error text. Sentence case for action buttons (`Add expense`, `Save memory`, `Set budget`).
+Use semantic colour tokens, Nunito headings, DM Sans body text, and accessible SVG navigation. Desktop groups destinations into family activities, memories and parent tools. Mobile provides Home, Plan, Tasks, Nest and More. Existing adult gates and server checks remain authoritative. Rebranding does not change Firebase project IDs, Apps Script URLs, storage paths, or saved preference keys.
 
+
+## Reward consistency
+
+Rewards are owned by Apps Script and Sheets, under the same script lock as task and habit writes. Save the completion before awarding stars. Deterministic earning IDs allow retries to recover missing awards without duplicating them; an Everyone task stores the first recipient alongside completion in ToDo column M. Habit rewards key on the definition ID, actual member and Singapore date, surviving log deletion.
+
+Purchases use the fixed server catalog, verified caller identity and current ledger balance. A deterministic member/item ID makes retrying a purchase harmless. Profiles can only equip owned accessories. Only parents can choose reward rules; client-supplied member, price or star values never control an award or purchase. Balances include spending; the cooperative garden uses lifetime earned stars. No rewards are stored in Firebase or granted offline.

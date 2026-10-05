@@ -283,7 +283,7 @@ function sendMorningDigest(now) {
   var dateStr = Utilities.formatDate(now, tz, 'EEEE, d MMMM yyyy');
   var body    = '';
 
-  body += _h('h2', 'Hearth — Morning Digest', 'color:#1E3F30;font-family:sans-serif;');
+  body += _h('h2', 'Wong’s Nest — Morning Digest', 'color:#1E3F30;font-family:sans-serif;');
   body += _h('p', dateStr, 'color:#666;font-family:sans-serif;font-size:14px;');
 
   var verse = getDailyVerse();
@@ -326,7 +326,7 @@ function sendMorningDigest(now) {
     }
   }
   body += _h('p', 'Have a blessed day! 🙏', 'font-family:sans-serif;color:#666;margin-top:24px;');
-  sendFamilyEmail('Hearth — Morning Digest — ' + dateStr, body);
+  sendFamilyEmail('Wong’s Nest — Morning Digest — ' + dateStr, body);
 }
 
 function nightlyNotifications() {
@@ -342,7 +342,7 @@ function sendNightBeforeDigest(now) {
   var tomorrowDisplay = Utilities.formatDate(tomorrow, tz, 'EEEE, d MMMM yyyy');
 
   var body = '';
-  body += _h('h2', 'Hearth — Night-Before Prep', 'color:#1E3F30;font-family:sans-serif;');
+  body += _h('h2', 'Wong’s Nest — Night-Before Prep', 'color:#1E3F30;font-family:sans-serif;');
   body += _h('p', 'Tomorrow: ' + tomorrowDisplay, 'color:#666;font-family:sans-serif;font-size:14px;');
 
   var tomorrowEvents = [];
@@ -413,7 +413,7 @@ function sendNightBeforeDigest(now) {
   }
 
   body += _h('p', 'Rest well! 🌙', 'font-family:sans-serif;color:#888;margin-top:24px;font-size:13px;');
-  sendFamilyEmail('Hearth — Night-Before Prep — ' + tomorrowDisplay, body);
+  sendFamilyEmail('Wong’s Nest — Night-Before Prep — ' + tomorrowDisplay, body);
 }
 
 function getDailyVerse() {
@@ -452,7 +452,7 @@ function sendExpenseSummary(now) {
   var accItems = '';
   for (var acc in byAccount) accItems += _li(acc + ': <strong>$' + byAccount[acc].toFixed(2) + '</strong>');
   body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + accItems + '</ul>';
-  sendFamilyEmail('Hearth — ' + monthName + ' Expense Summary', body);
+  sendFamilyEmail('Wong’s Nest — ' + monthName + ' Expense Summary', body);
 }
 
 function sendExpenseReport(now) {
@@ -493,7 +493,7 @@ function sendExpenseReport(now) {
     });
     body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + topItems + '</ul>';
   }
-  sendFamilyEmail('Hearth — ' + monthName + ' Full Report', body);
+  sendFamilyEmail('Wong’s Nest — ' + monthName + ' Full Report', body);
 }
 
 // new Date(year, 1, 29) silently rolls to Mar 1 in non-leap years;
@@ -541,7 +541,7 @@ function checkUpcomingBirthdays() {
   if (messages.length > 0) {
     var body = _h('h2', '🎂 Birthday & Anniversary Reminder', 'font-family:sans-serif;color:#333;');
     messages.forEach(function(m) { body += _h('p', m, 'font-family:sans-serif;font-size:15px;border-left:4px solid #f4a261;padding:8px 12px;margin:8px 0;background:#fff8f0;border-radius:4px;'); });
-    sendFamilyEmail('Hearth — Birthday Reminder', body);
+    sendFamilyEmail('Wong’s Nest — Birthday Reminder', body);
   }
 }
 
@@ -622,7 +622,7 @@ function sendBudgetAlerts(alerts) {
       'font-family:sans-serif;border:1px solid #eee;border-radius:6px;padding:12px;margin:8px 0;'
     );
   });
-  sendFamilyEmail('Hearth — Budget Alert', body);
+  sendFamilyEmail('Wong’s Nest — Budget Alert', body);
 }
 
 // ─── CYCLE ESTIMATION ──────────────────────────────────────
@@ -727,7 +727,7 @@ function processRecurringExpenses() {
     logged.forEach(function(r) { items += _li('<strong>' + r.name + '</strong> — $' + r.amount.toFixed(2) + ' (' + r.account + ')'); });
     body += '<ul style="font-family:sans-serif;color:#333;padding-left:20px;">' + items + '</ul>';
     body += _h('p', 'These have been automatically added to your expenses.', 'font-family:sans-serif;color:#888;font-size:13px;');
-    sendFamilyEmail('Hearth — Recurring Expenses Logged', body);
+    sendFamilyEmail('Wong’s Nest — Recurring Expenses Logged', body);
   }
 }
 
@@ -769,7 +769,7 @@ function doGet(e) {
       case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
       // Chat lives in Firestore only — Sheets chat endpoints removed
       case 'get_chat':
-        output = { status: 'error', message: 'Chat has been removed from Family Log.' };
+        output = { status: 'error', message: 'Chat has been removed from Wong’s Nest.' };
         break;
       case 'get_events':    output = getEvents();           break;
       case 'get_todos':     output = getTodos(null, verifiedEmail);            break;
@@ -875,6 +875,8 @@ function handleWriteInner_(data) {
   if (ADULT_ONLY_NOTES.indexOf(noteLower) !== -1 && !isAdultEmail_(verifiedEmail)) {
     return { status: 'error', message: 'This feature is only available to parents.' };
   }
+
+  if (['set_reward_rule', 'buy_reward_item', 'save_companion'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
 
   if (noteLower === 'save_school_draft' || noteLower === 'publish_school_draft') return schoolHandleWrite_(data, ss, verifiedEmail, user);
 
@@ -1029,9 +1031,17 @@ function handleWriteInner_(data) {
       var parent = isAdultEmail_(verifiedEmail);
       if (!parent && (taskRow[2] !== user && taskRow[2] !== 'Everyone' || ['consent', 'payment'].indexOf(taskRow[9]) !== -1 || noteLower === 'delete_todo')) return { status: 'error', message: 'Only a parent can change this task.' };
       if (taskRow[5] === 'Deleted') return { status: 'error', message: 'This task was deleted.' };
+      // A late help request cannot reopen a task that another device completed.
+      if (taskRow[5] === 'Done' && noteLower === 'help_todo') return { status: 'error', message: 'This task is already complete. Refresh your plan.' };
       var status = noteLower === 'delete_todo' ? 'Deleted' : noteLower === 'help_todo' ? 'Needs help' : 'Done';
-      tdSheet.getRange(rowIndex + 1, 6, 1, 2).setValues([[status, status === 'Done' ? new Date() : '']]);
-      return { status: 'ok' };
+      var recipient = toStr(taskRow[12]) || (taskRow[2] === 'Everyone' ? user : toStr(taskRow[2]));
+      tdSheet.getRange(rowIndex + 1, 6, 1, 8).setValues([[status, status === 'Done' ? (taskRow[6] || new Date()) : '',
+        taskRow[7], taskRow[8] || '', taskRow[9] || '', taskRow[10] || '', taskRow[11] || '',
+        status === 'Done' ? recipient : (taskRow[12] || '')]]);
+      SpreadsheetApp.flush();
+      // Save completion first. A retry can finish a missing award on a Done task.
+      var award = status === 'Done' ? rewardAward_(ss, 'task', taskId, recipient, 'once') : { stars: 0, member: recipient };
+      return { status: 'ok', award: award, rewards: getRewards_(ss) };
     }
 
     // ── TODO: edit ──
@@ -1092,7 +1102,7 @@ function handleWriteInner_(data) {
     if (noteLower === 'add_chat_message') {
       return {
         status: 'error',
-        message: 'Chat has been removed from Family Log.'
+        message: 'Chat has been removed from Wong’s Nest.'
       };
     }
 
@@ -1444,45 +1454,30 @@ function handleWriteInner_(data) {
 
     // ── HABIT: log completion ──
     if (noteLower === 'log_habit') {
-      var member = toStr(data.member) || user;
-      var habit = toStr(data.habit);
-      var habitId = toStr(data.habit_id);
-      var date = toStr(data.date);
-      var notes = toStr(data.notes);
       var sheets = ensureHabitSheets_(ss);
-      if (!habit && habitId) {
-        var hRows = sheets.habits.getDataRange().getValues();
-        for (var hr = 1; hr < hRows.length; hr++) {
-          if (toStr(hRows[hr][0]) === habitId) {
-            habit = toStr(hRows[hr][2]);
-            if (!data.member) member = toStr(hRows[hr][1]);
-            break;
-          }
-        }
-      }
-      if (!habit) return { status: 'error', message: 'Habit name required' };
-      if (!isAdultEmail_(verifiedEmail) && member !== user) {
-        return { status: 'error', message: 'You can only log habits for yourself.' };
-      }
-      var tz = Session.getScriptTimeZone();
-      var dateStr = (date && validateDate(date)) ? date : Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-      var logId = Utilities.getUuid();
-      sheets.logs.appendRow([logId, habitId, member, habit, dateStr, notes, user, new Date()]);
-      console.log('✅ Habit logged: ' + habit + ' for ' + member);
-      return {
-        status: 'ok',
-        id: logId,
-        date: dateStr,
-        log: {
-          id: logId,
-          habitId: habitId,
-          member: member,
-          habit: habit,
-          date: dateStr,
-          notes: notes,
-          loggedBy: user
-        }
-      };
+      var habitId = toStr(data.habit_id);
+      var definition = sheets.habits.getDataRange().getValues().find(function(r, i) { return i > 0 && r[0] === habitId; });
+      if (!definition) return { status: 'error', message: 'Choose an existing habit.' };
+      // The definition controls identity; caller-supplied member/habit cannot spoof rewards.
+      var member = definition[1] === 'Everyone' ? user : toStr(definition[1]);
+      var habit = toStr(definition[2]);
+      if (!isAdultEmail_(verifiedEmail) && member !== user) return { status: 'error', message: 'You can only log habits for yourself.' };
+      var today = Utilities.formatDate(new Date(), 'Asia/Singapore', 'yyyy-MM-dd');
+      var dateStr;
+      try { dateStr = schoolDate_(toStr(data.date) || today, false); } catch (e) { return { status: 'error', message: 'Choose a valid date.' }; }
+      if (dateStr > today) return { status: 'error', message: 'Log your habit after you have done it.' };
+      var notes = toStr(data.notes);
+      if (notes.length > 1000) return { status: 'error', message: 'Keep notes under 1,000 characters.' };
+      var existing = sheets.logs.getDataRange().getValues().find(function(r, i) {
+        var day = r[4] instanceof Date ? Utilities.formatDate(r[4], 'Asia/Singapore', 'yyyy-MM-dd') : toStr(r[4]);
+        return i > 0 && r[1] === habitId && r[2] === member && day === dateStr;
+      });
+      var logId = existing ? toStr(existing[0]) : Utilities.getUuid();
+      if (!existing) sheets.logs.appendRow([logId, habitId, member, habit, dateStr, schoolCell_(notes), user, new Date()]);
+      SpreadsheetApp.flush();
+      var award = dateStr === today ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
+      return { status: 'ok', id: logId, date: dateStr, duplicate: !!existing, award: award, rewards: getRewards_(ss),
+        log: { id: logId, habitId: habitId, member: member, habit: habit, date: dateStr, notes: existing ? toStr(existing[5]) : notes, loggedBy: existing ? toStr(existing[6]) : user } };
     }
 
     // ── HABIT: delete completion log ──
@@ -1577,6 +1572,7 @@ function getAllDashboardData(verifiedEmail) {
     bucketList:     adult ? getBucketList(ss) : [],
     habits:         habits,
     habitLogs:      habitLogs,
+    rewards:        getRewards_(ss),
     expenseGroups:  adult ? EXPENSE_GROUPS : {},
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || '',
@@ -1585,7 +1581,7 @@ function getAllDashboardData(verifiedEmail) {
     memories: null,
     dataSources: {
       sheets: ['events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
-               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs'],
+               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs', 'rewards'],
       firebase: ['memories', 'auth', 'fcmTokens']
     }
   };
@@ -3165,11 +3161,12 @@ function ensureTodoIds_(ss) {
   var sheet = ss.getSheetByName('ToDo');
   if (!sheet) {
     sheet = ss.insertSheet('ToDo');
-    sheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At', 'ID', 'Source ID', 'Kind', 'Child', 'Evidence']);
+    sheet.appendRow(['Date Added', 'Task', 'Assignee', 'Due Date', 'Added By', 'Status', 'Completed At', 'ID', 'Source ID', 'Kind', 'Child', 'Evidence', 'Reward Member']);
     return sheet;
   }
   var headers = ['ID', 'Source ID', 'Kind', 'Child', 'Evidence'];
   var rows = sheet.getDataRange().getValues();
+  if (rows[0] && rows[0][12] !== 'Reward Member') sheet.getRange(1, 13).setValue('Reward Member');
   if (!rows || rows.length === 0 || rows[0].length < 8 || rows[0][7] !== 'ID') {
     sheet.getRange(1, 8, 1, headers.length).setValues([headers]);
   }
@@ -3247,7 +3244,7 @@ function schoolPublishEvent_(p) {
   var eventId = 'fl' + schoolHash_(p.id);
   var url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(CALENDAR_ID) + '/events';
   var event = { id: eventId, summary: ev.title, location: ev.location,
-    description: 'Family Log plan: ' + p.title,
+    description: 'Wong’s Nest plan: ' + p.title,
     extendedProperties: { private: { familylogSourceId: p.id, child: p.child, member: p.child } }, reminders: { useDefault: false } };
   if (ev.time) {
     event.start = { dateTime: ev.date + 'T' + ev.time + ':00+08:00', timeZone: 'Asia/Singapore' };
@@ -3304,5 +3301,101 @@ function schoolHandleWrite_(data, ss, email, user) {
     sheet.getRange(rowIndex + 1, 2).setValue('published');
     sheet.getRange(rowIndex + 1, 6, 1, 2).setValues([[new Date(), user]]);
     return { status: 'ok', id: plan.id, state: 'published' };
+  } catch (e) { return { status: 'error', message: e.message }; }
+}
+
+// ============================================================
+// COMPANIONS & STARS — server-owned ledger, under handleWrite's lock.
+// Earn IDs survive edits/deletes; spending never reduces family progress.
+// ============================================================
+var REWARD_ITEMS_ = [
+  { id: 'glasses', name: 'Reading glasses', cost: 5, description: 'For a curious little companion.' },
+  { id: 'sailing-cap', name: 'Sailing cap', cost: 8, description: 'Ready for a little adventure.' },
+  { id: 'ballet-bow', name: 'Ballet bow', cost: 8, description: 'A bow for your next happy dance.' },
+  { id: 'backpack', name: 'Little backpack', cost: 12, description: 'Small steps, big adventures.' }
+];
+var REWARD_MEMBERS_ = ['Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
+var COMPANION_DEFAULTS_ = {
+  Marcus: { species: 'bear', name: 'Oak' }, Eleanor: { species: 'cat', name: 'Clover' },
+  Mikaela: { species: 'fox', name: 'Pip' }, Meaghan: { species: 'rabbit', name: 'Mochi' }
+};
+function rewardSheet_(ss, name, headers) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) { sheet = ss.insertSheet(name); sheet.appendRow(headers); }
+  return sheet;
+}
+function rewardRows_(ss, name) {
+  var sheet = ss.getSheetByName(name);
+  return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }) : [];
+}
+function getRewards_(ss) {
+  var ledger = rewardRows_(ss, 'RewardLedger');
+  var profiles = rewardRows_(ss, 'Companions');
+  var familyStars = 0;
+  var members = REWARD_MEMBERS_.map(function(member) {
+    var entries = ledger.filter(function(r) { return r[1] === member; });
+    var earned = entries.filter(function(r) { return r[2] === 'earn'; }).reduce(function(n, r) { return n + Number(r[3]); }, 0);
+    var balance = entries.reduce(function(n, r) { return n + Number(r[3]); }, 0);
+    familyStars += earned;
+    var owned = entries.filter(function(r) { return r[2] === 'purchase'; }).map(function(r) { return toStr(r[4]); });
+    var saved = profiles.find(function(r) { return r[0] === member; });
+    var defaults = COMPANION_DEFAULTS_[member];
+    return { member: member, earned: earned, balance: balance, owned: owned,
+      species: saved ? toStr(saved[1]) : defaults.species,
+      name: saved ? toStr(saved[2]) : defaults.name,
+      equipped: saved && owned.indexOf(saved[3]) !== -1 ? toStr(saved[3]) : '' };
+  });
+  return { members: members, catalog: REWARD_ITEMS_, family: { earned: familyStars, goal: 40, unlocked: familyStars >= 40, name: 'Our family garden' },
+    rules: rewardRows_(ss, 'RewardRules').map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
+}
+function rewardAward_(ss, type, sourceId, member, occurrence) {
+  var none = { stars: 0, member: member };
+  if (REWARD_MEMBERS_.indexOf(member) === -1) return none;
+  var rule = rewardRows_(ss, 'RewardRules').find(function(r) { return r[1] === type && r[2] === sourceId; });
+  if (!rule || Number(rule[3]) <= 0) return none;
+  var id = 'earn:' + type + ':' + sourceId + ':' + occurrence;
+  if (rewardRows_(ss, 'RewardLedger').some(function(r) { return r[0] === id; })) return none;
+  var stars = Number(rule[3]);
+  var sheet = rewardSheet_(ss, 'RewardLedger', ['ID', 'Member', 'Kind', 'Stars', 'Source or Item', 'Earned At']);
+  sheet.appendRow([id, member, 'earn', stars, type + ':' + sourceId, new Date()]);
+  SpreadsheetApp.flush();
+  return { stars: stars, member: member };
+}
+function rewardHandleWrite_(data, ss, email, user) {
+  try {
+    var note = toStr(data.note).toLowerCase().trim();
+    if (note === 'set_reward_rule') {
+      if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
+      var type = toStr(data.source_type), sourceId = toStr(data.source_id), stars = Number(data.stars);
+      if (['task', 'habit'].indexOf(type) === -1 || [0, 1, 3, 5].indexOf(stars) === -1) throw new Error('Choose 0, 1, 3 or 5 stars.');
+      var sheet = type === 'task' ? ensureTodoIds_(ss) : ensureHabitSheets_(ss).habits;
+      var source = sheet.getDataRange().getValues().find(function(r, i) { return i > 0 && toStr(r[type === 'task' ? 7 : 0]) === sourceId; });
+      if (!source || (type === 'task' && ['Done', 'Deleted'].indexOf(source[5]) !== -1)) throw new Error('Choose an existing open task or habit.');
+      var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
+      var id = type + ':' + sourceId;
+      var row = rules.getDataRange().getValues().findIndex(function(r) { return r[0] === id; });
+      var values = [id, type, sourceId, stars, user, new Date()];
+      if (row > 0) rules.getRange(row + 1, 1, 1, 6).setValues([values]); else rules.appendRow(values);
+    } else if (note === 'buy_reward_item') {
+      var item = REWARD_ITEMS_.find(function(i) { return i.id === data.item_id; });
+      if (!item) throw new Error('Accessory not found.');
+      var id = 'buy:' + user + ':' + item.id;
+      var ledger = rewardRows_(ss, 'RewardLedger');
+      if (!ledger.some(function(r) { return r[0] === id; })) {
+        var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
+        if (profile.balance < item.cost) throw new Error('Keep collecting stars to unlock this accessory.');
+        rewardSheet_(ss, 'RewardLedger', ['ID', 'Member', 'Kind', 'Stars', 'Source or Item', 'Earned At']).appendRow([id, user, 'purchase', -item.cost, item.id, new Date()]);
+      }
+    } else if (note === 'save_companion') {
+      var species = toStr(data.species), name = toStr(data.companion_name).trim(), equipped = toStr(data.equipped);
+      if (['fox', 'rabbit', 'bear', 'cat'].indexOf(species) === -1 || !name || name.length > 24) throw new Error('Choose a companion and a name of up to 24 characters.');
+      var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
+      if (equipped && profile.owned.indexOf(equipped) === -1) throw new Error('Unlock this accessory before wearing it.');
+      var sheet = rewardSheet_(ss, 'Companions', ['Member', 'Species', 'Name', 'Equipped', 'Updated At']);
+      var row = sheet.getDataRange().getValues().findIndex(function(r) { return r[0] === user; });
+      var values = [user, species, schoolCell_(name), equipped, new Date()];
+      if (row > 0) sheet.getRange(row + 1, 1, 1, 5).setValues([values]); else sheet.appendRow(values);
+    }
+    return { status: 'ok', rewards: getRewards_(ss) };
   } catch (e) { return { status: 'error', message: e.message }; }
 }

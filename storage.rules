@@ -1,5 +1,5 @@
 rules_version = '2';
-// Wong Family Log — Storage rules for chat & memory images
+// Wong’s Nest — Storage rules for chat & memory images
 // New uploads must live under chat/{email}/… or memories/{email}/…
 // Old Drive links are unchanged and not governed by these rules.
 service firebase.storage {

@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Hearth">
-  <meta name="theme-color" content="#1E3F30">
-  <title>Hearth — A private digital home for family life</title>
-  <link rel="manifest" href="manifest.json?v=18">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=18">
-  <link rel="shortcut icon" href="favicon.png?v=18" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=18">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=18">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=18">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=18">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=18">
+  <meta name="apple-mobile-web-app-title" content="Wong’s Nest">
+  <meta name="theme-color" content="#F8F6F2">
+  <title>Wong’s Nest — Our family, together</title>
+  <link rel="manifest" href="manifest.json?v=23">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=23">
+  <link rel="shortcut icon" href="favicon.png?v=23" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=23">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=23">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=23">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=23">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=23">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <!-- Firebase SDK + Firestore + Storage + Messaging -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -28,7 +28,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="css/styles.css?v=17">
+  <link rel="stylesheet" href="css/styles.css?v=23">
+  <link rel="stylesheet" href="css/nest.css?v=23">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -36,21 +37,19 @@
 
   <!-- LOGIN SCREEN -->
   <div id="login-screen" class="screen active">
-    <div class="login-box">
+    <div class="login-box"><span class="login-kicker">A LITTLE PLACE FOR US</span>
       <div class="login-logo">
         <div class="logo">
-          <svg viewBox="0 0 80 100" width="46" height="58" fill="#1E3F30" aria-label="Hearth H-Arch logo">
-            <path d="M 0 0 L 22 0 L 22 40 L 58 40 L 58 0 L 80 0 L 80 100 L 58 100 L 58 70 A 18 18 0 0 0 22 70 L 22 100 L 0 100 Z"/>
-          </svg>
+          <img src="assets/nest-mark.svg" alt="Wong’s Nest emblem">
         </div>
-        <h1>Hearth</h1>
-        <p>The shared home for family life</p>
+        <h1>Wong’s Nest</h1>
+        <p>Our family. Our little world.</p>
       </div>
-      <p class="pin-lbl" style="margin-top:16px;font-size:15px;font-weight:600;">Who is using Hearth?</p>
+      <p class="pin-lbl" style="margin-top:16px;font-size:15px;font-weight:600;">Who’s coming home?</p>
       <div class="member-grid" id="mgrid"></div>
       <div id="pinbox" style="display:none;">
         <p class="pin-lbl" id="pinlbl">Enter your password</p>
-        <input type="password" id="login-password" placeholder="Password">
+        <input type="password" id="login-password" placeholder="Password" aria-label="Password" autocomplete="current-password">
         <button id="login-btn" onclick="loginWithSelectedMember()" class="btn-login">Sign in</button>
         <div id="login-error" class="login-error"></div>
       </div>
@@ -58,15 +57,16 @@
   </div>
 
   <!-- APP SCREEN -->
-  <div id="app-screen" class="screen">
+  <div id="app-screen" class="screen"><aside id="nest-sidebar" class="nest-sidebar" aria-label="Family spaces"></aside>
     <!-- Header -->
     <div class="hdr">
       <div class="hdr-left">
-        <div class="hdr-brand-logo" title="Hearth">
-          <svg viewBox="0 0 80 100" width="22" height="28" fill="currentColor">
-            <path d="M 0 0 L 22 0 L 22 40 L 58 40 L 58 0 L 80 0 L 80 100 L 58 100 L 58 70 A 18 18 0 0 0 22 70 L 22 100 L 0 100 Z"/>
-          </svg>
+        <div class="hdr-brand-logo" title="Wong’s Nest">
+          <img src="assets/nest-mark.svg" alt="Wong’s Nest emblem">
         </div>
+        <span class="nest-mobile-wordmark">Wong’s Nest</span><span id="nest-current-page" class="nest-header-crumb">Our nest</span>
+      </div>
+      <div class="nest-header-right"><div class="nest-user">
         <div class="hdr-av" id="hav"></div>
         <div>
           <div class="hdr-name" id="hname"></div>
@@ -75,25 +75,25 @@
       </div>
       <div class="hdr-actions">
         <button class="hdr-btn" onclick="toggleDarkMode()" id="darkToggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-        <span class="notif-bell" id="notifBell" onclick="toggleNotifications()" title="Notifications">
-          🔔
+        <button class="notif-bell hdr-btn" aria-label="Notifications" id="notifBell" onclick="toggleNotifications()" title="Notifications">
           <span class="badge-dot" id="notifDot"></span>
-        </span>
+        </button>
         <button class="hdr-btn" id="menu-btn" onclick="toggleMenuDrawer(true)" aria-label="Menu" title="Menu" style="font-size:20px;padding:4px 8px;cursor:pointer;">☰</button>
-      </div>
+      </div></div>
     </div>
 
     <!-- Content -->
     <div class="content">
       <div id="ptr-indicator" class="ptr-indicator" aria-hidden="true"></div>
+      <div id="reward-celebration" role="status" aria-live="polite" hidden></div>
       <!-- HOME -->
       <div class="section active" id="s-home">
         <div class="sec-body">
           <div class="greet" id="greet"></div>
-          <div id="school-home"></div>
           <div id="dash-summary" class="dash-summary"></div>
-          <div id="dash-members"></div>
-          <div id="today-wrap"></div>
+          <div id="reward-home"></div>
+          <div id="school-home"></div>
+          <div class="nest-home-lower"><div id="dash-members"></div><div id="today-wrap"></div></div>
         </div>
       </div>
 
@@ -281,12 +281,14 @@
         <div class="sec-body" id="us-container"></div>
       </div>
 
-      <!-- HABITS -->
+      <!-- COMPANIONS -->
+      <div class="section" id="s-rewards"><div class="sec-body" id="rewards-container"></div></div>
+
       <div class="section" id="s-habits">
         <div class="sec-hdr">
           <div>
-            <div class="sec-title">Habits</div>
-            <div class="sec-sub">Track daily practices and routines</div>
+            <div class="sec-title">Everyday rhythms</div>
+            <div class="sec-sub">Small routines that help us grow.</div>
           </div>
           <button class="btn btn-s btn-sm" onclick="openAddHabitModal()">+ New habit</button>
         </div>
@@ -294,29 +296,14 @@
       </div>
     </div>
 
-    <!-- Bottom Nav -->
-    <div class="bot-nav">
-      <div class="nav-it act" id="nav-home" onclick="goTo('home')">
-        <svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H4.5A1.5 1.5 0 0 1 3 20v-9.5z"/><path d="M9 21v-6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6"/></svg>
-        <div>Home</div>
-      </div>
-      <div class="nav-it" id="nav-tasks" onclick="goTo('tasks')">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg>
-        <div>Tasks</div>
-      </div>
-      <div class="nav-it" id="nav-calendar" onclick="goTo('calendar')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <div>Week</div>
-      </div>
-      <div class="nav-it adult-only" id="nav-expenses" onclick="goTo('expenses')">
-        <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><circle cx="16" cy="15" r="1"/></svg>
-        <div>Expenses</div>
-      </div>
-      <div class="nav-it adult-only" id="nav-us" onclick="goTo('us')">
-        <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-        <div>Us</div>
-      </div>
-    </div>
+    <!-- Mobile navigation; full family spaces live in the desktop sidebar. -->
+    <nav class="bot-nav" aria-label="Mobile navigation">
+      <button class="nav-it act" id="nav-home" data-nest-route="home" data-label="Home" onclick="goTo('home')"></button>
+      <button class="nav-it" id="nav-calendar" data-nest-route="calendar" data-label="Plan" onclick="goTo('calendar')"></button>
+      <button class="nav-it" id="nav-tasks" data-nest-route="tasks" data-label="Tasks" onclick="goTo('tasks')"></button>
+      <button class="nav-it" id="nav-rewards" data-nest-route="rewards" data-label="Nest" onclick="goTo('rewards')"></button>
+      <button class="nav-it" id="nav-more" data-nest-route="more" data-label="More" onclick="goTo('more')"></button>
+    </nav>
   </div>
 
   <!-- FAB -->
@@ -329,10 +316,12 @@
   <div class="drawer-overlay" id="drawer-overlay" onclick="toggleMenuDrawer(false)"></div>
   <div class="drawer" id="menu-drawer">
     <div class="drawer-hdr">
-      <span class="drawer-title">More spaces</span>
+      <span class="drawer-title">Around the nest</span>
       <button class="drawer-close" onclick="toggleMenuDrawer(false)" aria-label="Close menu">✕</button>
     </div>
     <div class="drawer-body">
+      <div class="drawer-item adult-only" onclick="navigateDrawer('expenses')"><span class="di-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-6 5h3"/></svg></span><span class="di-lbl">Expenses</span></div>
+      <div class="drawer-item adult-only" onclick="navigateDrawer('us')"><span class="di-icon"><svg viewBox="0 0 24 24"><path d="M20 5c-3-3-6-1-8 1-2-2-5-4-8-1-4 4 2 10 8 15 6-5 12-11 8-15Z"/></svg></span><span class="di-lbl">Just us</span></div>
       <div class="drawer-item adult-only" onclick="navigateDrawer('budgets')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span>
         <span class="di-lbl">Budgets</span>
@@ -341,6 +330,7 @@
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
         <span class="di-lbl">Memories</span>
       </div>
+      <div class="drawer-item" onclick="navigateDrawer('rewards')"><span class="di-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/></svg></span><span class="di-lbl">Companions & stars</span></div>
       <div class="drawer-item" onclick="navigateDrawer('habits')">
         <span class="di-icon"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
         <span class="di-lbl">Habits</span>
@@ -777,7 +767,10 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/school.js?v=21"></script>
-  <script src="js/app.js?v=21"></script>
+  <script src="js/rewards-art.js?v=23"></script>
+  <script src="js/rewards.js?v=23"></script>
+  <script src="js/school.js?v=23"></script>
+  <script src="js/nest.js?v=23"></script>
+  <script src="js/app.js?v=23"></script>
 </body>
 </html>

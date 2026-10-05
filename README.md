@@ -1,6 +1,6 @@
-# 🏡 Wong Family Log
+# Wong’s Nest
 
-A private family hub PWA: school + daily/weekly logistics, budgets & expenses, calendar/tasks, travel map, memories, and a parents-only **Us** sanctuary.
+A personal family hub PWA: school + daily/weekly logistics, budgets & expenses, calendar/tasks, travel map, memories, and a parents-only **Us** sanctuary.
 
 **Live app:** [GitHub Pages](https://marcuswongjw.github.io/familylog/)  
 **Repo:** [marcuswongjw/familylog](https://github.com/marcuswongjw/familylog)
@@ -134,3 +134,19 @@ Intimacy log and fertility data are:
 - Stored in Google Sheets tabs `IntimacyLog` / `Fertility` (same Google account as the spreadsheet)
 
 Treat the spreadsheet ACL carefully (share only with parents if preferred).
+
+## Companions & stars
+
+Home now includes an original animal companion and a shared family garden. Open **Nest → Companions & stars** to choose a fox, rabbit, bear or cat, name it, and spend earned stars on accessories. Parents use **Choose what earns stars** to select an existing task or habit and set 0, 1, 3 or 5 stars. Activities start with no rewards until a parent selects them.
+
+Tasks reward the assignee once; an Everyone task rewards its first completer. Habits reward once per member per Singapore calendar day, after the save succeeds. Older entries earn no stars. Removing an entry keeps earned stars, and logging it again cannot earn more. Spending stars keeps lifetime family progress toward the 40-star garden. Animations are brief and respect reduced-motion settings.
+
+Deploy the updated `Code.js` web app **before** publishing the frontend. `RewardRules`, `RewardLedger` and `Companions` sheets are created automatically on their first write; the ToDo sheet gains a `Reward Member` column for reliable completion retries. No Firebase rules or functions change is needed. A frontend connected to the old backend shows an update message on the companions screen.
+
+Validation: `npm test`. For an isolated browser preview, run `node tests/preview-server.cjs --rewards-demo` and open `http://127.0.0.1:4173`. The preview uses the real frontend and Apps Script handlers with in-memory Sheets and mocked external services; it never writes production family data.
+
+## Wong’s Nest redesign
+
+The app now uses a nest emblem, lavender/apricot paper surfaces, Nunito headings and DM Sans body text. Desktop has a permanent sidebar; phones have Home, Plan, Tasks, Nest and More. More includes every additional family destination and the adult-only parent tools. Login, page headings, cards, forms, dark mode, companions, app icons, notification defaults and email digest names share the new identity.
+
+`css/nest.css` is the current design layer, and `js/nest.js` owns icons, headings and navigation presentation. See `BRAND.md`. Existing family accounts, backend addresses, stored preferences, permissions and reward rules are retained. Publish the Apps Script changes before the frontend. The new PWA cache version refreshes the app shell; operating systems may refresh an already installed home-screen icon separately.

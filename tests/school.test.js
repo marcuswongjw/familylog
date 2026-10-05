@@ -99,9 +99,9 @@ test('child can request help and complete own task, cannot alter others or delet
 });
 test('children cannot read or write money', () => {
   const h = harness();
-  const added = h.write({ note: 'add_expense', ex_desc: 'Family lunch', ex_amount: 12, ex_date: '20 Sep 2026', ex_category: 'Eating Out - Lunch', ex_account: 'Family' });
+  const added = h.write({ note: 'add_expense', ex_desc: 'Family lunch', ex_amount: 12, ex_date: h.c.Utilities.formatDate(new Date(), 'Asia/Singapore', 'dd MMM yyyy'), ex_category: 'Eating Out - Lunch', ex_account: 'Family' });
   assert.equal(added.status, 'ok');
-  assert.equal(h.write({ note: 'add_expense', ex_desc: 'Snack', ex_amount: 3, ex_date: '20 Sep 2026' }, child).status, 'error');
+  assert.equal(h.write({ note: 'add_expense', ex_desc: 'Snack', ex_amount: 3, ex_date: h.c.Utilities.formatDate(new Date(), 'Asia/Singapore', 'dd MMM yyyy') }, child).status, 'error');
   assert.equal(h.write({ note: 'set_budget', group: 'Eating Out', amount: 100, account: 'Family' }, child).status, 'error');
   assert.equal(h.write({ note: 'add_recurring', rec_name: 'Netflix', rec_amount: 15, rec_day: 1, rec_category: 'Entertainment - Subscriptions', rec_account: 'Family' }, child).status, 'error');
   const kidDash = h.c.getAllDashboardData(child);

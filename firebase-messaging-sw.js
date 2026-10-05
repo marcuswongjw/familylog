@@ -1,20 +1,24 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'hearth-v18';
+const CACHE_NAME = 'wongs-nest-v23';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
+  './css/nest.css',
+  './js/nest.js',
+  './assets/nest-mark.svg',
   './js/app.js',
   './js/school.js',
+  './js/rewards-art.js',
+  './js/rewards.js',
   './manifest.json',
   './icon.png',
   './icon-192.png',
   './apple-touch-icon.png',
   './apple-touch-icon-precomposed.png',
   './favicon.png',
-  './favicon.svg',
-  './assets/h-arch.svg'
+  './favicon.svg'
 ];
 
 self.addEventListener('install', event => {
@@ -48,8 +52,8 @@ self.addEventListener('fetch', event => {
       path.endsWith('/') ||
       path.endsWith('.html') ||
       path.endsWith('/familylog') ||
-      path.endsWith('/app.js') || path.endsWith('/school.js') ||
-      path.endsWith('/styles.css') ||
+      path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
+      path.endsWith('/styles.css') || path.endsWith('/nest.css') || path.endsWith('/nest.js') ||
       path.includes('manifest.json') ||
       path.endsWith('.png') || path.endsWith('.svg') ||
       path.endsWith('firebase-messaging-sw.js')
@@ -150,7 +154,7 @@ messaging.onBackgroundMessage((payload) => {
 
   const n = payload.notification || {};
   const d = payload.data || {};
-  const title = n.title || d.title || 'Hearth';
+  const title = n.title || d.title || 'Wong’s Nest';
   const body = n.body || d.body || '';
   const screen = d.screen || 'home';
   const scope = self.registration.scope;
@@ -161,7 +165,7 @@ messaging.onBackgroundMessage((payload) => {
     icon: scope + 'favicon.png',
     badge: scope + 'favicon.png',
     data: Object.assign({ screen: screen, url: url, open: screen }, d),
-    tag: d.tag || 'hearth',
+    tag: d.tag || 'wongs-nest',
     renotify: true,
     requireInteraction: false
   };

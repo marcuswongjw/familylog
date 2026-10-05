@@ -1,4 +1,4 @@
-# Firebase setup — Wong Family Log
+# Firebase setup — Wong’s Nest
 
 Firebase is the **sole owner** of authentication, live chat, memories, photo storage, and push notifications.  
 Google Sheets + Apps Script own money, tasks, calendar, travel, and Us/fertility logs — **not** chat or memories.
@@ -124,7 +124,7 @@ Without these, chat/users may be open or uploads may fail after path changes.
 Follow this checklist to verify that screenshot upload → Gemini → Sheets → Calendar operates cleanly:
 
 1. **Screenshot Upload & AI Extraction**:
-   - Open Family Log as a parent (Marcus or Eleanor).
+   - Open Wong’s Nest as a parent (Marcus or Eleanor).
    - Tap **School Copilot** → choose a photo or paste text → tap **Read with Gemini AI**.
    - *Verification:* Spinner should resolve within 2–5 seconds with an extracted draft (Title, Child, Event date/times, Tasks).
 2. **Review & Task Owner Defaulting**:
