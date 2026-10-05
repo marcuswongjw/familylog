@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wong's Nest</title>
+  <style>
+    :root { --ink:#5c3b32; --cream:#fff6ea; --card:#fffdf8; --berry:#e25b4a; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Nunito, system-ui, sans-serif; background:#f3d7b5; color:var(--ink); }
+    .phone { max-width:420px; margin:0 auto; min-height:100vh; background:linear-gradient(#fff1dc,#f7e2c4); padding:16px 16px 96px; }
+    header { display:flex; align-items:center; justify-content:space-between; }
+    h1 { font-size:22px; margin:0; }
+    .berries { background:#fff; border-radius:999px; padding:6px 12px; font-weight:700; }
+    .stage { margin-top:12px; background:#fff8ee; border-radius:28px; padding:16px; text-align:center; box-shadow:0 8px 0 #efd3b0; }
+    .cottage { font-size:42px; }
+    .jar { margin:8px 0; height:14px; background:#f0e0cc; border-radius:99px; overflow:hidden; }
+    .jar > div { height:100%; background:linear-gradient(90deg,#f0b429,#e25b4a); width:0; transition:width .4s; }
+    .family { display:flex; justify-content:space-around; margin-top:12px; }
+    .kid { cursor:pointer; border:0; background:transparent; }
+    .fig { width:72px; height:88px; border-radius:36px 36px 28px 28px; margin:0 auto; position:relative; }
+    .fig.hop { animation:hop .45s; }
+    @keyframes hop { 50% { transform:translateY(-10px); } }
+    .face { font-size:22px; padding-top:18px; }
+    .hat,.scarf { position:absolute; left:50%; transform:translateX(-50%); }
+    .hat { top:-8px; } .scarf { bottom:18px; } .bag { position:absolute; right:-6px; top:30px; }
+    .card { background:var(--card); border-radius:20px; padding:12px; margin-top:12px; }
+    button.item, button.check { width:100%; text-align:left; border:0; background:#fff7ee; border-radius:14px; padding:10px; margin-top:8px; font:inherit; }
+    nav { position:fixed; left:50%; transform:translateX(-50%); bottom:0; width:min(420px,100%); display:flex; background:#fff; }
+    nav button { flex:1; border:0; background:transparent; padding:12px 0; font:inherit; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <header><h1>Wong's Nest</h1><div class="berries">berries <span id="pocket">12</span></div></header>
+    <div id="view-home">
+      <div class="stage">
+        <div class="cottage" id="house">⛺</div>
+        <strong id="house-name">Tent</strong>
+        <div class="jar"><div id="fill"></div></div>
+        <div id="jar-label">0 of 20 cottage berries</div>
+        <div class="family" id="family"></div>
+      </div>
+      <div class="card"><strong>Today</strong><div id="quests"></div></div>
+    </div>
+    <div id="view-shop" class="hidden card"><strong id="shop-title">Wardrobe</strong><div id="shop"></div></div>
+    <nav>
+      <button onclick="show('home')">Nest</button>
+      <button onclick="show('clothes')">Clothes</button>
+      <button onclick="show('pets')">Pets</button>
+      <button onclick="show('cottage')">Cottage</button>
+    </nav>
+  </div>
+  <script>
+    const members=[{id:'marcus',name:'Marcus',color:'#7dbe8a'},{id:'jo',name:'Jo',color:'#f3a48a'},{id:'eden',name:'Eden',color:'#f2d56b'},{id:'noah',name:'Noah',color:'#7eb8c9'}];
+    const clothes=[{id:'hat',name:'Sunny rain hat',slot:'hat',price:12,icon:'👒'},{id:'scarf',name:'Striped scarf',slot:'scarf',price:12,icon:'🧣'},{id:'bag',name:'Tiny backpack',slot:'bag',price:12,icon:'🎒'}];
+    const pets=[{id:'bird',name:'Bird',price:20,icon:'🐦'},{id:'cat',name:'Cat',price:40,icon:'🐱'},{id:'pup',name:'Puppy',price:80,icon:'🐶'}];
+    const cottages=[{id:'tent',name:'Tent',cost:0,icon:'⛺'},{id:'cabin',name:'Cabin',cost:20,icon:'🏡'},{id:'tree',name:'Treehouse',cost:40,icon:'🌳'}];
+    const state={me:'jo',pocket:12,jar:0,owned:{jo:['hat']},worn:{jo:{hat:true}},pet:{jo:'bird'},house:'tent'};
+    const quests=[{id:'bag',label:'School bag packed'},{id:'read',label:'Read together'},{id:'plants',label:'Water the plants'}];
+    const done={};
+    function show(tab){document.getElementById('view-home').classList.toggle('hidden',tab!=='home');document.getElementById('view-shop').classList.toggle('hidden',tab==='home');if(tab==='clothes')renderShop('Clothes',clothes,buyCloth);if(tab==='pets')renderShop('Pets',pets,buyPet);if(tab==='cottage')renderShop('Cottage',cottages,buyHouse);}
+    function renderShop(title,items,fn){document.getElementById('shop-title').textContent=title;document.getElementById('shop').innerHTML=items.map(item=>'<button class="item" onclick="'+fn.name+'(\''+item.id+'\')">'+item.icon+' '+item.name+'</button>').join('');}
+    function buyCloth(id){const item=clothes.find(c=>c.id===id);const me=state.me;state.owned[me]=state.owned[me]||[];if(!state.owned[me].includes(id)){if(state.pocket<item.price)return alert('Not enough pocket berries');state.pocket-=item.price;state.owned[me].push(id);}state.worn[me]=state.worn[me]||{};state.worn[me][item.slot]=!state.worn[me][item.slot];paint();}
+    function buyPet(id){const item=pets.find(p=>p.id===id);if(state.pet[state.me]!==id&&state.pocket<item.price)return alert('Not enough pocket berries');if(state.pet[state.me]!==id)state.pocket-=item.price;state.pet[state.me]=id;paint();}
+    function buyHouse(id){const item=cottages.find(c=>c.id===id);if(state.jar<item.cost)return alert('The cottage jar is not full enough yet');state.house=id;paint();}
+    function check(id){done[id]=!done[id];state.pocket+=done[id]?1:-1;state.jar+=done[id]?1:-1;paint(true);}
+    function paint(hop){document.getElementById('pocket').textContent=state.pocket;document.getElementById('fill').style.width=Math.min(100,state.jar/20*100)+'%';document.getElementById('jar-label').textContent=state.jar+' of 20 cottage berries';const house=cottages.find(c=>c.id===state.house);document.getElementById('house').textContent=house.icon;document.getElementById('house-name').textContent=house.name;document.getElementById('family').innerHTML=members.map(m=>{const worn=state.worn[m.id]||{};return '<button class="kid" onclick="state.me=\''+m.id+'\';paint()"><div class="fig '+(hop&&m.id===state.me?'hop':'')+'" style="background:'+m.color+'">'+(worn.hat?'<span class="hat">👒</span>':'')+'<div class="face">✿</div>'+(worn.scarf?'<span class="scarf">🧣</span>':'')+(worn.bag?'<span class="bag">🎒</span>':'')+'</div><div>'+m.name+'</div><div>'+(state.pet[m.id]?pets.find(p=>p.id===state.pet[m.id]).icon:'')+'</div></button>';}).join('');document.getElementById('quests').innerHTML=quests.map(q=>'<button class="check" onclick="check(\''+q.id+'\')">'+(done[q.id]?'\u2713':'\u25cb')+' '+q.label+'</button>').join('');}
+    paint();
+  </script>
+</body>
+</html>
