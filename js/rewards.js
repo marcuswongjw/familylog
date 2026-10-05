@@ -4,6 +4,7 @@ function rewardGoalArt(family) {
 }
 /* Companions, accessory collection and a cooperative family goal. */
 const rewardPending = new Set();
+const rewardChecking = new Set();
 const rewardHabitDrafts = new Map();
 let rewardCelebrationTimer;
 let rewardLoadState = { loading:false, error:'' };
@@ -55,29 +56,40 @@ function applyRewardResult(result, celebrate = true) {
 }
 function resetRewards() {
   rewardHabitDrafts.clear();
+  rewardPending.clear();
+  rewardChecking.clear();
   rewardLoadState={loading:false,error:''};
   clearTimeout(rewardCelebrationTimer);
   document.getElementById('reward-celebration').hidden = true;
   document.getElementById('reward-home').innerHTML = '';
   document.getElementById('rewards-container').innerHTML = '';
 }
+function habitRewardSaveMatches(payload,result){
+  return result?.status==='ok'&&Array.isArray(result.rewards?.rules)&&payload.rules.every(rule=>result.rewards.rules.some(saved=>saved.type==='habit'&&saved.sourceId===rule.source_id&&saved.stars===rule.stars));
+}
 async function rewardMutation(key, payload, success) {
   if (rewardPending.has(key)) return;
-  const account = currentUserEmail;
+  const account = currentUserEmail, generation=sessionGeneration;
+  const active=()=>account===currentUserEmail&&generation===sessionGeneration;
   rewardPending.add(key);
   renderRewards();
   try {
-    const result = await gPost(payload);
-    if (account !== currentUserEmail) return;
-    if (!result || result.status !== 'ok') { showError(result?.message || 'Could not save. Try again when connected.'); return; }
+    let result = await gPost(payload);
+    if (!active()) return;
+    if ((!result || result.status !== 'ok') && key === 'habit-rules') {
+      rewardChecking.add(key);renderRewards();
+      const checked=await gasRequest({action:'get_rewards'});
+      if(!active())return;
+      if(habitRewardSaveMatches(payload,checked))result=checked;
+    }
+    if (!result || result.status !== 'ok') { showError('Save was not confirmed. Your star choices are still here. Please try saving again.'); return; }
     if (key === 'habit-rules') rewardHabitDrafts.clear();
     applyRewardResult(result, false);
     toast(success);
   } catch (error) {
-    if (account === currentUserEmail) showError("Could not save. Try again when connected.");
+    if (active()) showError("Could not save. Try again when connected.");
   } finally {
-    rewardPending.delete(key);
-    if (account === currentUserEmail && section === 'rewards') renderRewards();
+    if(active()){rewardChecking.delete(key);rewardPending.delete(key);if(section==='rewards')renderRewards();}
   }
 }
 function renderRewards() {
@@ -157,7 +169,7 @@ function rewardHabitRulesHTML() {
     ${habits.length ? `<form id="reward-habit-form"><fieldset ${rewardPending.has('habit-rules') ? 'disabled' : ''}>
       <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(h.member)} · ${escapeHtml(habitScheduleLabel(h))}${h.state&&h.state!=='active'?' · '+escapeHtml(h.state):''}</small></div>
         <label>Stars<input type="number" data-habit-stars="${escapeHtml(h.id)}" value="${escapeHtml(rewardHabitDrafts.get(currentUserEmail + ':' + h.id) ?? rewardStars('habit',h.id))}" min="0" max="100" step="1" required aria-label="Stars for ${escapeHtml(h.habit)} (${escapeHtml(h.member)})"></label></div>`).join('')}</div>
-      <div class="reward-habit-save"><button type="submit" class="btn btn-p">${rewardPending.has('habit-rules') ? 'Saving…' : 'Save habit stars'}</button><small>Whole numbers from 0 to 100. Earned once per member each day.</small></div>
+      <div class="reward-habit-save"><button type="submit" class="btn btn-p">${rewardChecking.has('habit-rules') ? 'Checking save…' : rewardPending.has('habit-rules') ? 'Saving…' : 'Save habit stars'}</button><small>Whole numbers from 0 to 100. Earned once per member each day.</small></div>
     </fieldset></form>` : '<p class="reward-muted">Add a habit in Habits to choose its star reward here.</p>'}
   </section>`;
 }

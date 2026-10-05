@@ -508,7 +508,7 @@
       try {
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) { showError('Please log in'); return null; }
-        const signal = AbortSignal.timeout(45000);
+        const signal = AbortSignal.timeout(body.action === 'write' ? 120000 : 45000);
         const idToken = await currentUser.getIdToken();
         if (!active()) return null;
         lastIdToken = idToken;

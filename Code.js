@@ -829,6 +829,10 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === 'get_rewards') {
+      return ContentService.createTextOutput(JSON.stringify({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())})).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Default: write (note field). Explicit action=write also accepted.
     data._verifiedEmail = verified;
     var result = handleWrite(data);
@@ -862,7 +866,6 @@ function handleWrite(data) {
 
 function handleWriteInner_(data) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet  = ss.getSheetByName('Log') || ss.insertSheet('Log');
   var note      = toStr(data.note);
   var noteLower = note.toLowerCase().trim();
 
@@ -882,6 +885,8 @@ function handleWriteInner_(data) {
   if (['set_reward_rule', 'set_habit_rewards', 'buy_reward_item', 'save_companion', 'set_family_goal'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
 
   if (noteLower === 'save_school_draft' || noteLower === 'publish_school_draft') return schoolHandleWrite_(data, ss, verifiedEmail, user);
+
+  var logSheet = ss.getSheetByName('Log') || ss.insertSheet('Log');
 
   // ---- Helper validation functions ----
   function validateDate(d) {
@@ -3384,7 +3389,7 @@ function rewardRows_(ss, name) {
   var sheet = ss.getSheetByName(name);
   return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }) : [];
 }
-function getRewards_(ss) {
+function getRewards_(ss, savedRules) {
   var ledger = rewardRows_(ss, 'RewardLedger');
   var profiles = rewardRows_(ss, 'Companions');
   var familyStars = 0;
@@ -3404,7 +3409,7 @@ function getRewards_(ss) {
   var selected = rewardRows_(ss,'FamilyGoal')[0];
   var goal = REWARD_GOALS_.find(function(g){return selected && g.id === selected[0];}) || REWARD_GOALS_[0];
   return { members: members, catalog: REWARD_ITEMS_, goals: REWARD_GOALS_, family: { earned: familyStars, goal: goal.stars, unlocked: familyStars >= goal.stars, name: goal.name, goalId:goal.id, emoji:goal.emoji },
-    rules: rewardRows_(ss, 'RewardRules').map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
+    rules: (savedRules || rewardRows_(ss, 'RewardRules')).filter(function(r){return r[0];}).map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
 }
 function rewardAward_(ss, type, sourceId, member, occurrence) {
   var none = { stars: 0, member: member };
@@ -3429,10 +3434,12 @@ function rewardHandleWrite_(data, ss, email, user) {
     } else if (note === 'set_habit_rewards') {
       if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
       if (!Array.isArray(data.rules) || !data.rules.length || data.rules.length > 500) throw new Error('Choose the habits to update.');
-      var habits = getHabits(ss), seen = {};
+      var habitSheet=ss.getSheetByName('Habits');
+      var habitIds=habitSheet?habitSheet.getDataRange().getValues().slice(1).map(function(r){return toStr(r[0]);}):[];
+      var seen = {};
       var updates = data.rules.map(function(rule) {
         var sourceId = toStr(rule.source_id), stars = rule.stars;
-        if (!habits.some(function(h) { return h.id === sourceId; }) || seen[sourceId]) throw new Error('A habit changed. Refresh before saving stars.');
+        if (habitIds.indexOf(sourceId) === -1 || seen[sourceId]) throw new Error('A habit changed. Refresh before saving stars.');
         if (typeof stars !== 'number' || !Number.isInteger(stars) || stars < 0 || stars > 100) throw new Error('Enter a whole number from 0 to 100 stars for each habit.');
         seen[sourceId] = true;
         return ['habit:' + sourceId, 'habit', sourceId, stars, user, new Date()];
@@ -3446,6 +3453,7 @@ function rewardHandleWrite_(data, ss, email, user) {
       });
       rules.getRange(2, 1, rows.length, 6).setValues(rows.map(function(row) { return row.slice(0, 6); }));
       SpreadsheetApp.flush();
+      return {status:'ok',rewards:getRewards_(ss,rows)};
     } else if (note === 'set_reward_rule') {
       if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
       var type = toStr(data.source_type), sourceId = toStr(data.source_id), stars = Number(data.stars);
