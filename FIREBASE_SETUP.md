@@ -1,6 +1,6 @@
 # Firebase setup — Wong’s Nest
 
-Firebase is the **sole owner** of authentication, live chat, memories, photo storage, and push notifications.  
+Firebase is the **sole owner** of authentication, memories, photo storage, and opt-in reminders.  
 Google Sheets + Apps Script own money, tasks, calendar, travel, and Us/fertility logs — **not** chat or memories.
 
 See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the full ownership map. Do not dual-write the same feature to both backends.
@@ -74,8 +74,8 @@ Rules live in the repo and must be deployed:
 
 | File | Purpose |
 |------|---------|
-| [firestore.rules](firestore.rules) | Only the 4 family emails; chat R/W family, **delete own**; `users/{email}` write own only; memories own write |
-| [storage.rules](storage.rules) | Images under `chat/{email}/` and `memories/{email}/` only |
+| [firestore.rules](firestore.rules) | Only the 4 family emails; historical Chat read-only; own-account settings read, server-only settings/device writes; memories own write |
+| [storage.rules](storage.rules) | New images under `memories/{email}/`; historical Chat images read-only |
 
 ```bash
 cd /path/to/familylog
@@ -85,7 +85,7 @@ firebase use familylog-86db6
 firebase deploy --only firestore:rules,storage
 ```
 
-Without these, chat/users may be open or uploads may fail after path changes.
+Deploy both rule sets with the reminder functions so account preferences and device bindings are server-validated.
 
 ---
 
@@ -180,7 +180,7 @@ Recommended Script property: `APPROVAL_SECRET` (expense approval link signing).
 
 1. Deploy site via GitHub Pages  
 2. On phone: open site → **Add to Home Screen**  
-3. Sign in → allow notifications  
+3. Sign in → header bell → enable reminders → allow browser notifications. A parent must enable once to connect the family plan. Login does not prompt.  
 4. iOS: home-screen PWA + iOS 16.4+ for web push; force-refresh after SW cache bumps  
 
 Service worker: **`firebase-messaging-sw.js` only** (legacy `sw.js` removed).
@@ -192,9 +192,9 @@ Service worker: **`firebase-messaging-sw.js` only** (legacy `sw.js` removed).
 | Symptom | Check |
 |---------|--------|
 | Invalid email or password | Email matches `MEMBERS` exactly; PIN is **6 digits** |
-| permission-denied on chat/upload | Signed in; rules deployed; path is `chat/{yourEmail}/…` |
-| No push | FCM token saved under `users/{email}`; function deployed; notification permission |
-| Push but no Chat on tap | Latest SW (`wong-family-v*`); deep link `?open=chat`; reinstall PWA if needed |
+| permission-denied on memory upload | Signed in; rules deployed; path is `memories/{yourEmail}/…` |
+| No push | Reminders enabled; browser permission; `notificationDevices` current account; parent bridge setup; chosen Singapore hour outside quiet hours |
+| Notification does not open Home | Latest SW (`wongs-nest-v27`); same account still signed in; reminder targets `?open=home` |
 | GAS Unauthorized | Token present; email on allowlist; redeployed `Code.js` |
 | Shopee only first item | Redeploy latest `Code.js` with multi-item `parseShopee` |
 
@@ -210,3 +210,9 @@ firebase deploy --only firestore:rules,storage,functions
 
 # Backend API / scanners: paste Code.js → Apps Script → New version
 ```
+
+## Reminder deployment
+
+The live reminder services are `updateReminderSettings`, `sendFamilyReminders` (every 15 minutes, Singapore time) and `cleanupAbandonedMemoryUploads` (03:00 Singapore time). Configure a 64-character hexadecimal `REMINDER_BRIDGE_SECRET` in Firebase Secret Manager before deploying the first two functions. Parent opt-in passes it server-to-server into GAS Script Properties using the parent's verified identity; never put it in browser assets. Deploy `Code.js` and Firestore/Storage rules with the functions. `sendChatNotification` is retired and must not be redeployed.
+
+Live delivery is opt-in. Automated tests validate targeting, quiet hours, duplicate receipts and worker account checks with mock FCM; actual phone receipt requires an enabled, signed-in device.
