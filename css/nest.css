@@ -1,0 +1,32 @@
+/* Wong's Nest shell. Family tools keep their layout; this is the front door. */
+:root {
+  --bg-cream: #fff3e2;
+  --bg-forest: #8a4b3c;
+  --accent-terracotta: #e25b4a;
+  --text-charcoal: #5c3b32;
+  --primary: #c45c4a;
+  --primary-light: #ffe8d8;
+  --bg: #fff6ea;
+  --bg-card: #fffdf8;
+  --border-color: #f0d8c4;
+}
+body { background: #f6d7b4; }
+.login-box, .hdr, .card, .drawer { border-radius: 22px; }
+.login-logo h1, .hdr-name { letter-spacing: -0.03em; }
+.bot-nav { border-top: 1px solid #f0d8c4; background: #fffdf8; }
+.nest-stage { background: #fff8ee; border-radius: 28px; padding: 16px; text-align: center; box-shadow: 0 8px 0 #efd3b0; }
+.nest-jar { height: 14px; background: #f0e0cc; border-radius: 99px; overflow: hidden; margin: 8px 0; }
+.nest-jar > div { height: 100%; width: 0; background: linear-gradient(90deg, #f0b429, #e25b4a); transition: width .35s; }
+.nest-family { display: flex; justify-content: space-around; gap: 6px; margin-top: 12px; }
+.nest-kid { border: 0; background: transparent; font: inherit; color: inherit; }
+.nest-fig { width: 68px; height: 84px; border-radius: 34px 34px 26px 26px; margin: 0 auto; position: relative; }
+.nest-fig.hop { animation: nest-hop .45s; }
+@keyframes nest-hop { 50% { transform: translateY(-10px); } }
+.nest-face { padding-top: 22px; font-size: 20px; }
+.nest-hat, .nest-scarf { position: absolute; left: 50%; transform: translateX(-50%); }
+.nest-hat { top: -8px; }
+.nest-scarf { bottom: 16px; }
+.nest-bag { position: absolute; right: -4px; top: 28px; }
+.nest-actions, .nest-shop { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.nest-actions button, .nest-shop button, .nest-check { border: 0; background: #fff7ee; border-radius: 14px; padding: 10px 12px; font: inherit; color: inherit; }
+.nest-check { display: block; width: 100%; text-align: left; margin-top: 8px; }
