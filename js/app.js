@@ -508,6 +508,7 @@
       try {
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) { showError('Please log in'); return null; }
+        const signal = AbortSignal.timeout(45000);
         const idToken = await currentUser.getIdToken();
         if (!active()) return null;
         lastIdToken = idToken;
@@ -518,7 +519,8 @@
         const response = await fetch(GAS_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal
         });
         if (!active()) return null;
         let r;
@@ -536,8 +538,10 @@
         }
         return r;
       } catch (err) {
-        if (active()) showError('Network error: ' + err.message);
-        return null;
+        if (!active()) return null;
+        const message = err.name === 'TimeoutError' || err.name === 'AbortError' ? 'The server took too long to respond. Please try again.' + (body.action === 'write' ? ' Any save is unconfirmed.' : '') : 'Could not connect to the family server. Please try again.';
+        showError(message);
+        return {status:'error',message};
       } finally {
         finishProgressBar();
       }
@@ -593,11 +597,27 @@
     /** Sheets-backed dashboard only (not memories). */
     async function loadData() {
       const account = currentUserEmail, session = sessionGeneration, request = ++dashboardGeneration;
-      const r = await gasRequest({ action: 'get_all' });
-      if (account !== currentUserEmail || session !== sessionGeneration || request !== dashboardGeneration) return false;
-      if (!r || r.status === 'error') return false;
-      applyDashboardPayload(r);
-      return true;
+      const active=()=>account===currentUserEmail&&session===sessionGeneration&&request===dashboardGeneration;
+      if(typeof setRewardLoadState==='function')setRewardLoadState(true);
+      let timer;
+      try {
+        const timeout=new Promise(resolve=>{timer=setTimeout(()=>resolve({status:'error',message:'The family server took too long to respond. Please try again.'}),45000);});
+        const r=await Promise.race([gasRequest({action:'get_all'}),timeout]);
+        if(!active())return false;
+        if(!r||r.status==='error') {
+          if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');
+          return false;
+        }
+        if(typeof setRewardLoadState==='function')setRewardLoadState(false,r.rewards?.members?.some(p=>p.member===user)?'':'The server did not return your companion data. Please try again.');
+        applyDashboardPayload(r);
+        return true;
+      } catch(err) {
+        if(active()) {
+          if(typeof setRewardLoadState==='function')setRewardLoadState(false,'Could not load your companions. Please try again.');
+          showError('Could not refresh the family plan. Please try again.');
+        }
+        return false;
+      } finally { clearTimeout(timer); }
     }
 
     async function saveConfirmed(payload) {

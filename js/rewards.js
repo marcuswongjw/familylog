@@ -6,6 +6,11 @@ function rewardGoalArt(family) {
 const rewardPending = new Set();
 const rewardHabitDrafts = new Map();
 let rewardCelebrationTimer;
+let rewardLoadState = { loading:false, error:'' };
+function setRewardLoadState(loading,error='') {
+  rewardLoadState={loading,error};
+  if(section==='rewards')renderRewards();
+}
 function rewardProfile() { return data.rewards?.members?.find(p => p.member === user); }
 function rewardStars(type, id) { return data.rewards?.rules?.find(r => r.type === type && r.sourceId === id)?.stars || 0; }
 function rewardBadge(type, id) {
@@ -50,6 +55,7 @@ function applyRewardResult(result, celebrate = true) {
 }
 function resetRewards() {
   rewardHabitDrafts.clear();
+  rewardLoadState={loading:false,error:''};
   clearTimeout(rewardCelebrationTimer);
   document.getElementById('reward-celebration').hidden = true;
   document.getElementById('reward-home').innerHTML = '';
@@ -77,7 +83,13 @@ async function rewardMutation(key, payload, success) {
 function renderRewards() {
   const root = document.getElementById('rewards-container'); if (!root) return;
   const p = rewardProfile();
-  if (!p) { root.innerHTML = '<div class="empty">Refresh to load companions. This feature needs the updated family backend.</div>'; return; }
+  if (!p) {
+    const loading=rewardLoadState.loading;
+    const message=loading?'Loading your companions…':rewardLoadState.error||'Your companion data has not loaded yet. Please try again.';
+    root.innerHTML=`<div class="empty" role="${loading?'status':'alert'}" aria-live="polite"><p>${escapeHtml(message)}</p>${loading?'':'<button type="button" class="btn btn-p" id="reward-retry">Try again</button>'}</div>`;
+    root.querySelector('#reward-retry')?.addEventListener('click',()=>loadData());
+    return;
+  }
   const family = data.rewards.family;
   const saving = rewardPending.has('profile');
   root.innerHTML = `<div class="reward-page-heading"><div><span class="reward-eyebrow">OUR LITTLE NEST</span><h2>Companions & stars</h2><p>Celebrate the small things. Build something together.</p></div><span class="reward-wallet">★ ${p.balance}<small>your stars</small></span></div>
