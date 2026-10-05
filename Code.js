@@ -85,7 +85,7 @@ var ADULT_ONLY_NOTES = [
   'add_appreciation', 'add_love_checkin', 'add_fertility',
   'add_bucket_item', 'toggle_bucket_item', 'delete_bucket_item',
   'add_intimacy', 'delete_intimacy', 'add_event', 'delete_event', 'update_event_date',
-  'add_expense', 'delete_expense', 'set_budget', 'delete_budget', 'add_recurring', 'delete_recurring'
+  'configure_reminder_bridge', 'add_expense', 'delete_expense', 'set_budget', 'delete_budget', 'add_recurring', 'delete_recurring'
 ];
 
 var EXPENSE_GROUPS = {
@@ -352,11 +352,13 @@ function sendNightBeforeDigest(now) {
     var tomorrowEnd = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate() + 1);
     var events = calendar.getEvents(tomorrowStart, tomorrowEnd);
     var schoolLinks = schoolEventLinks_();
+    var manualMembers = manualEventMembers_();
     events.forEach(function(ev) {
       var timeStr = ev.isAllDayEvent() ? 'All day' : Utilities.formatDate(ev.getStartTime(), tz, 'h:mm a');
       var explicitTag = '';
       try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
       if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
+      if (!explicitTag) explicitTag = manualMembers[ev.getId()] || '';
       var title = ev.getTitle();
       if (title.indexOf('EYE') !== -1) title += ' (End Year Exams)';
       tomorrowEvents.push({
@@ -810,6 +812,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+    if (data.action === 'reminder_snapshot') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
     // The token is mandatory. The old check only ran `if (data.idToken)`,
     // so omitting the token skipped verification entirely — an
     // unauthenticated write path for anyone who knew the URL.
@@ -898,6 +901,13 @@ function handleWriteInner_(data) {
   }
 
   try {
+    var operation = operationContext_(ss,data,verifiedEmail,noteLower);
+    if (operation && operation.cached) return operation.cached;
+    if (noteLower === 'configure_reminder_bridge') {
+      if (!/^[a-f0-9]{64}$/.test(toStr(data.bridge_secret))) return {status:'error',message:'Invalid bridge configuration.'};
+      PropertiesService.getScriptProperties().setProperty('REMINDER_BRIDGE_SECRET',data.bridge_secret);
+      return {status:'ok'};
+    }
     // ── EVENT: add ──
     if (noteLower === 'add_event') {
       var title = toStr(data.event_title) || 'Untitled Event';
@@ -928,11 +938,12 @@ function handleWriteInner_(data) {
       else { endDate = new Date(startDate.getTime() + 60 * 60 * 1000); }
 
       var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
-      var createdEvent = isAllDay
+      var member = toStr(data.event_member) || toStr(data.event_child) || '';
+      if (member && FAMILY_MEMBERS.indexOf(member) === -1) return {status:'error',message:'Choose a valid family member.'};
+      var createdEvent = operation ? operationCalendar_(operation,title,startDate,endDate,isAllDay,eventNotes,eventLocation,member) : isAllDay
         ? calendar.createAllDayEvent(title, startDate, { description: eventNotes || '', location: eventLocation || '' })
         : calendar.createEvent(title, startDate, endDate, { description: eventNotes || '', location: eventLocation || '' });
 
-      var member = toStr(data.event_member) || toStr(data.event_child) || '';
       if (member && FAMILY_MEMBERS.indexOf(member) !== -1 && member !== 'Everyone') {
         try { if (typeof createdEvent.setTag === 'function') createdEvent.setTag('familylogMember', member); } catch (te) {}
       }
@@ -941,9 +952,10 @@ function handleWriteInner_(data) {
       if (!calSheet) { calSheet = ss.insertSheet('Calendar'); calSheet.appendRow(['Title', 'Date', 'Time', 'Added By', 'Notes', 'Google Event ID']); }
       var calNotes = eventNotes;
       if (eventLocation) calNotes = (calNotes ? calNotes + '\n' : '') + 'Location: ' + eventLocation;
-      calSheet.appendRow([title, startDate, timeStr, user, calNotes, createdEvent.getId()]);
+      var calendarRows = calSheet.getDataRange().getValues();
+      if (!calendarRows.some(function(r,i){return i>0 && r[5]===createdEvent.getId();})) calSheet.appendRow([schoolCell_(title), startDate, timeStr, user, schoolCell_(calNotes), createdEvent.getId(), operation ? operation.fingerprint : '', member]);
       console.log('✅ Event added: ' + title + (member ? ' [' + member + ']' : ''));
-      return { status: 'ok', id: createdEvent.getId() };
+      return operationFinish_(ss,operation,{ status: 'ok', id: createdEvent.getId() });
     }
 
     // ── EVENT: delete ──
@@ -1016,9 +1028,10 @@ function handleWriteInner_(data) {
       if (FAMILY_MEMBERS.indexOf(assignee) === -1 || (!isAdultEmail_(verifiedEmail) && assignee !== user)) return { status: 'error', message: 'You can only create tasks for yourself.' };
       var tdSheet = ensureTodoIds_(ss);
       var parsedDue = due ? parseEventDate(due, '') : '';
-      var taskId = Utilities.getUuid();
-      tdSheet.appendRow([new Date(), schoolCell_(task), assignee, parsedDue, user, 'Open', '', taskId]);
-      return { status: 'ok', id: taskId };
+      var existing = operationRecover_(ss,operation,tdSheet,7,13); if (existing) return existing;
+      var taskId = operation ? operation.id : Utilities.getUuid();
+      tdSheet.appendRow([new Date(), schoolCell_(task), assignee, parsedDue, user, 'Open', '', taskId, '', '', '', '', '', operation ? operation.fingerprint : '']);
+      return operationFinish_(ss,operation,{ status: 'ok', id: taskId });
     }
 
     if (['complete_todo', 'delete_todo', 'help_todo'].indexOf(noteLower) !== -1) {
@@ -1088,14 +1101,15 @@ function handleWriteInner_(data) {
       var expSheet = ss.getSheetByName('Expenses');
       if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
       var parsedDate = parseEventDate(date, '');
-      expSheet.appendRow([new Date(), parsedDate, account, category, amount, desc]);
+      var existing = operationRecover_(ss,operation,expSheet,6,7); if (existing) return existing;
+      expSheet.appendRow([new Date(), parsedDate, account, category, amount, schoolCell_(desc), operation ? operation.id : '', operation ? operation.fingerprint : '']);
       // NOTE: the sheet is intentionally NOT re-sorted here. Sorting on
       // every insert shuffled every row number, so a delete sent from a
       // client that loaded before someone else's add could remove the
       // wrong expense. Date ordering is applied in getExpensesData()
       // instead, so the app still shows newest-first.
-      console.log('✅ Expense added: ' + desc + ' $' + amount);
-      return { status: 'ok' };
+      console.log('✅ Expense added');
+      return operationFinish_(ss,operation,{ status: 'ok', id: operation ? operation.id : '' });
     }
 
     // ── CHAT: Firebase-owned — never write to Sheets ──
@@ -1157,9 +1171,10 @@ function handleWriteInner_(data) {
 
       var bdSheet = ss.getSheetByName('Birthdays');
       if (!bdSheet) { bdSheet = ss.insertSheet('Birthdays'); bdSheet.appendRow(['Name', 'Type', 'Date (MM-DD)', 'Year (optional)', 'Notes', 'Added By']); }
-      bdSheet.appendRow([name, type, date, year, notes, user]);
-      console.log('✅ Birthday added: ' + name);
-      return { status: 'ok' };
+      var existing = operationRecover_(ss,operation,bdSheet,6,7); if (existing) return existing;
+      bdSheet.appendRow([schoolCell_(name), type, date, year, schoolCell_(notes), user, operation ? operation.id : '', operation ? operation.fingerprint : '']);
+      console.log('✅ Birthday added');
+      return operationFinish_(ss,operation,{ status:'ok',id:operation ? operation.id : '' });
     }
 
     // ── BUDGET: set ──
@@ -1266,11 +1281,11 @@ function handleWriteInner_(data) {
         travelSheet = ss.insertSheet('Travel');
         travelSheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
       }
-      var tripId = 'tr_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      var existing = operationRecover_(ss,operation,travelSheet,0,9); if (existing) return existing;
+      var tripId = operation ? operation.id : 'tr_' + Date.now() + '_' + Math.floor(Math.random()*1000);
       var parsed = parseEventDate(tripDate, '');
-      travelSheet.appendRow([tripId, parsed, city, country, lat, lng, members, notes, new Date()]);
-      console.log('✅ Trip added: ' + city + ', ' + country);
-      return { status: 'ok' };
+      travelSheet.appendRow([tripId, parsed, schoolCell_(city), schoolCell_(country), lat, lng, members, schoolCell_(notes), new Date(), operation ? operation.fingerprint : '']);
+      return operationFinish_(ss,operation,{ status:'ok',id:tripId });
     }
 
     // ── TRAVEL: delete ──
@@ -1771,6 +1786,7 @@ function getEvents() {
     var thirtyDaysAgo   = new Date(); thirtyDaysAgo.setDate(now.getDate() - 30);
     var thirtyDaysLater = new Date(); thirtyDaysLater.setFullYear(now.getFullYear() + 1);
     var schoolLinks = schoolEventLinks_();
+    var manualMembers = manualEventMembers_();
     var events          = calendar.getEvents(thirtyDaysAgo, thirtyDaysLater);
     var tz              = Session.getScriptTimeZone();
     var result          = [];
@@ -1782,6 +1798,7 @@ function getEvents() {
       var explicitTag = '';
       try { if (typeof ev.getTag === 'function') explicitTag = ev.getTag('familylogMember'); } catch (te) {}
       if (!explicitTag && schoolLinks[ev.getId()]) explicitTag = schoolLinks[ev.getId()].child;
+      if (!explicitTag) explicitTag = manualMembers[ev.getId()] || '';
       var tags;
       if (explicitTag === 'Family' || explicitTag === 'Everyone') {
         tags = ['Family', 'Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
@@ -3463,4 +3480,60 @@ function rewardHandleWrite_(data, ss, email, user) {
     }
     return { status: 'ok', rewards: getRewards_(ss) };
   } catch (e) { return { status: 'error', message: e.message }; }
+}
+
+// Retry-safe creates. Keys are scoped to verified account + action, never row numbers.
+function operationContext_(ss,data,email,note) {
+  if (['add_todo','add_event','add_expense','add_trip','add_birthday'].indexOf(note)<0 || !data.operation_id) return null;
+  if (!/^[A-Za-z0-9-]{16,80}$/.test(data.operation_id)) throw new Error('Invalid operation ID.');
+  var fields={};Object.keys(data).sort().forEach(function(k){if(k[0]!=='_' && ['idToken','user','action','operation_id'].indexOf(k)<0) fields[k]=data[k];});
+  var op={id:'op'+schoolHash_(email+'|'+note+'|'+data.operation_id),fingerprint:schoolHash_(JSON.stringify(fields)),note:note,email:email};
+  var sheet=ss.getSheetByName('Operations');
+  var row=sheet && sheet.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});
+  if(row){if(row[1]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');op.cached=JSON.parse(row[4]);}
+  return op;
+}
+function operationFinish_(ss,op,result) {
+  if(op){var sheet=ss.getSheetByName('Operations');if(!sheet){sheet=ss.insertSheet('Operations');sheet.appendRow(['ID','Fingerprint','Action','Email','Result','At']);}sheet.appendRow([op.id,op.fingerprint,op.note,op.email,JSON.stringify(result),new Date()]);SpreadsheetApp.flush();}
+  return result;
+}
+function operationRecover_(ss,op,sheet,idColumn,hashColumn) {
+  if(!op)return null;
+  var row=sheet.getDataRange().getValues().slice(1).find(function(r){return r[idColumn]===op.id;});
+  if(!row)return null;if(row[hashColumn]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');
+  return operationFinish_(ss,op,{status:'ok',id:op.id});
+}
+function operationCalendar_(op,title,start,end,allDay,notes,location,member) {
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CALENDAR_ID)+'/events';
+  var event={id:op.id,summary:title,description:notes||'',location:location||'',extendedProperties:{private:{familylogMember:member,member:member,operationFingerprint:op.fingerprint}}};
+  if(allDay){event.start={date:Utilities.formatDate(start,'Asia/Singapore','yyyy-MM-dd')};event.end={date:Utilities.formatDate(end,'Asia/Singapore','yyyy-MM-dd')};}
+  else {event.start={dateTime:start.toISOString(),timeZone:'Asia/Singapore'};event.end={dateTime:end.toISOString(),timeZone:'Asia/Singapore'};}
+  var headers={Authorization:'Bearer '+ScriptApp.getOAuthToken()};
+  var response=UrlFetchApp.fetch(url+'?sendUpdates=none',{method:'post',contentType:'application/json',headers:headers,payload:JSON.stringify(event),muteHttpExceptions:true});
+  if(response.getResponseCode()===409)response=UrlFetchApp.fetch(url+'/'+op.id,{headers:headers,muteHttpExceptions:true});
+  if(response.getResponseCode()<200 || response.getResponseCode()>=300)throw new Error('Calendar save interrupted. Retry the same entry.');
+  var saved=JSON.parse(response.getContentText());
+  if(saved.status==='cancelled' || saved.extendedProperties.private.operationFingerprint!==op.fingerprint)throw new Error('This calendar request was changed or deleted. Start a new entry.');
+  var id=saved.iCalUID||op.id+'@google.com';
+  var calendar=CalendarApp.getCalendarById(CALENDAR_ID);
+  var nativeEvent=typeof calendar.getEventById==='function'?calendar.getEventById(id):null;
+  return nativeEvent||{getId:function(){return id;}};
+}
+function reminderSnapshot_(data) {
+  var secret=PropertiesService.getScriptProperties().getProperty('REMINDER_BRIDGE_SECRET');
+  var timestamp=Number(data.timestamp);
+  if(!secret || !Number.isFinite(timestamp) || Math.abs(Date.now()-timestamp)>300000)return {status:'error',message:'Unauthorized'};
+  var bytes=Utilities.computeHmacSha256Signature('reminder_snapshot|'+timestamp,secret);
+  var expected=bytes.map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');
+  var supplied=toStr(data.signature);var difference=expected.length^supplied.length;
+  for(var i=0;i<expected.length;i++)difference|=expected.charCodeAt(i)^(supplied.charCodeAt(i)||0);
+  if(difference)return {status:'error',message:'Unauthorized'};
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  return {status:'ok',todos:getTodos(ss,null,false),habits:getHabits(ss),habitLogs:getHabitLogs(ss),events:getEvents()};
+}
+
+function manualEventMembers_(){
+  var sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar'),members={};
+  if(sheet)sheet.getDataRange().getValues().slice(1).forEach(function(r){if(r[5]&&FAMILY_MEMBERS.indexOf(r[7])!==-1)members[toStr(r[5])]=r[7];});
+  return members;
 }

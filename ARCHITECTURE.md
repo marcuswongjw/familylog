@@ -56,7 +56,7 @@ flowchart TB
 | Login | Auth | Family accounts, PIN passwords |
 | Memories metadata | Firestore `memories/` | Realtime album; images already in Storage |
 | Memory images | Storage `memories/{email}/` | Large blobs; not Sheets |
-| FCM tokens | Firestore `users/{email}` | Push targeting |
+| Reminder settings / device tokens | Firestore `users/{email}` / `notificationDevices/{hashedDeviceId}` | Account preferences / current device targeting |
 
 **Client:** write/read via Firebase SDK + security rules.  
 **GAS:** must **not** create memories. Reject `add_chat_message` / `add_memory`. `get_all` must **not** return chat or memories. Chat has been removed from the app.
@@ -98,14 +98,14 @@ gPost(note)    → POST { action: "write", note, idToken, … } → GAS → Shee
 submitMemory   → Storage (optional image) + Firestore only
 ```
 
-`applyDashboardPayload` **must preserve** `data.chat` and `data.memories` from Firestore listeners and ignore any legacy GAS fields for those keys.
+`applyDashboardPayload` **must preserve** `data.memories` from Firestore listeners and ignore any legacy GAS fields for those keys.
 
 ---
 
 ## Security layers
 
 1. **Firebase Auth** — who is signed in.  
-2. **Firestore / Storage rules** — family email allowlist; memories/chat sender checks.  
+2. **Firestore / Storage rules** — family email allowlist; memory owner checks; historical Chat reads only.
 3. **GAS** — verify ID token + `ALLOWED_EMAILS` + `ADULT_EMAILS` for Us/fertility/intimacy.  
 4. **Spreadsheet ACL** — who can open the sheet in Google Drive (especially IntimacyLog / Fertility).
 
@@ -139,10 +139,10 @@ Historical rows may still exist in the spreadsheet. The app no longer reads or w
 
 | File | Backend role |
 |------|----------------|
-| `js/app.js` | UI; Firebase SDK for chat/memories/auth; GAS client for everything else |
+| `js/app.js` | UI; Firebase SDK for memories/auth/reminders; GAS client for everything else |
 | `Code.js` | Sheets + Calendar + Gmail; token verify; **no** chat/memories persistence |
 | `firestore.rules` / `storage.rules` | Firebase access control |
-| `index.js` | Chat → FCM |
+| `index.js`, `reminder-functions.js`, `reminder-plan.js` | AI extraction, validated reminder settings, scheduled FCM reminders and upload cleanup |
 | `firebase-messaging-sw.js` | PWA cache + background push |
 | `BRAND.md` | Wong’s Nest brand and design system |
 | `css/styles.css` | Design tokens, typography, dark mode, responsive layout |
@@ -177,3 +177,11 @@ Forms clear and report success only after a confirmed backend save. Refresh retu
 Habits columns G–K store Schedule, Weekdays, WeeklyTarget, State and UpdatedAt. Blank legacy values mean daily/active. Habit IDs and logs survive edits, pausing and archiving; the legacy delete endpoint now archives. Shared completions use the verified child identity or a parent-validated `log_member`. Server schedule checks control reward eligibility; weeks run Monday–Sunday in Singapore, counting distinct completion dates. The client helpers are in `js/habits.js`.
 
 Dashboard `completedTasks` retains ordinary completed tasks for the child’s day view and uses the same verified-member filter as open tasks. The family milestone selection is owned by the `FamilyGoal` Sheet; its fixed server catalog does not alter the earning ledger or balances.
+
+## Reminders and recovery
+
+`updateReminderSettings` validates family identity, account preferences and device bindings. One installation/token binds to one active account. A parent-authenticated opt-in provisions a matching secret in GAS Script Properties; scheduled snapshot requests use timestamped HMAC signatures. `sendFamilyReminders` checks Singapore time and quiet hours every 15 minutes, filters assignments and habit schedules, then claims one account/day delivery receipt transactionally. FCM uses data-only payloads; the service worker checks its persistent active account, serializes delivery, suppresses repeated IDs and checks the account again on notification click. `users` preferences and device/receipt collections are server-written; historical Chat is read-only.
+
+`js/operations.js` retains only a payload digest and UUID until confirmation. GAS scopes the key to verified email/action, validates its fingerprint under the script lock, and recovers from resource or operation-ledger response loss. Calendar uses a deterministic native event ID and recovers HTTP 409 conflicts; other creates store their ID/fingerprint in appended columns. Legacy requests without operation IDs remain supported.
+
+`js/memories.js` keeps the draft/upload on metadata failure and confirms uncertain writes by reading its stable document ID. Photo retries renew object metadata; cleanup uses object generation and metageneration preconditions after checking for a committed document. Latest memories stay live and older pages use Firestore cursors with deduplication. Draft state and listeners reset on account changes.

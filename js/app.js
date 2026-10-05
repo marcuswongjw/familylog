@@ -117,7 +117,7 @@
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
       storage = firebase.storage();
-      messaging = firebase.messaging();
+      try { messaging = firebase.messaging(); } catch (_) { messaging = null; }
 
       // Enable offline persistence (optional)
       db.enablePersistence().catch(() => {});
@@ -312,8 +312,7 @@
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(() => {
           btn.disabled = false;
-          // After login, request FCM permission and get token
-          requestFCMToken();
+
         })
         .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
     }
@@ -333,9 +332,9 @@
       // Sheets dashboard (GAS) + Firebase realtime (memories)
       loadData();
       startMemoriesListener();
-      requestNotificationPermission();
-      // Request FCM token after login
-      requestFCMToken();
+
+      // Bind this device without prompting for permission
+      initReminders();
       setupPullToRefresh();
     }
 
@@ -408,6 +407,8 @@
       sessionGeneration++; dashboardGeneration++;
       if (_pendingUndo) { clearTimeout(_pendingUndo.timer); _pendingUndo = null; }
       resetRewards(); schoolReset(); schoolDay = '';
+      resetMemorySession();
+      resetReminders();
       stopMemoriesListener();
       if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
       user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
@@ -444,53 +445,6 @@
         goTo('home');
       }
     }
-
-    // ─── FCM TOKEN REQUEST ────────────────────────────────────
-    async function requestFCMToken() {
-      if (!messaging) return;
-      
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          console.warn('Notification permission denied');
-          return;
-        }
-        
-        const registration = await navigator.serviceWorker.ready;
-        const token = await messaging.getToken({
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: registration
-        });
-        if (!token) {
-          console.warn('No FCM token received');
-          return;
-        }
-        
-        console.log('✅ FCM token:', token);
-        
-        // Save token to Firestore
-        const currentUser = firebase.auth().currentUser;
-        if (!currentUser) {
-          console.warn('No authenticated user – cannot save token');
-          return;
-        }
-        
-        const userEmail = currentUser.email;
-        const userRef = db.collection('users').doc(userEmail);
-        
-        await userRef.set({
-          email: userEmail,
-          name: user || 'Unknown',
-          fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
-        }, { merge: true });
-        
-        console.log('✅ FCM token saved to Firestore');
-        
-      } catch (err) {
-        console.warn('❌ FCM token error:', err);
-      }
-    }
-    
 
     // ─── XSS ESCAPE / URL SAFETY ─────────────────────────────
     function escapeHtml(text) {
@@ -664,9 +618,12 @@
           message: note + ' is not available'
         });
       }
-      const result = await gasRequest(Object.assign({ action: 'write' }, payload || {}));
+      payload = await retrySafePayload(payload || {},account);
+      if (account !== currentUserEmail || session !== sessionGeneration) return null;
+      const result = await gasRequest(Object.assign({ action: 'write' }, payload));
       if (account !== currentUserEmail || session !== sessionGeneration) return null;
       dashboardGeneration++;
+      if (result?.status === 'ok') confirmOperation(payload);
       return result;
     }
 
@@ -1652,6 +1609,9 @@
           }).join('')}
         </div>
       `;
+      if (memoryHasMore) {
+        const button=document.createElement('button');button.className='btn btn-s memory-load-more';button.textContent=memoryLoadingOlder?'Loading…':'Load older memories';button.disabled=memoryLoadingOlder;button.onclick=loadOlderMemories;el.appendChild(button);
+      }
     }
 
     // ─── FERTILITY ──────────────────────────────────────────────
@@ -2108,60 +2068,18 @@
       }
     }
     async function submitMemory(btn) {
-      if(!btn) btn = document.getElementById('mem-submit');
-      const account = currentUserEmail, generation = sessionGeneration;
-      const active = () => account === currentUserEmail && generation === sessionGeneration;
-      btn.disabled = true; btn.textContent = 'Saving…';
+      btn=btn||document.getElementById('mem-submit');
+      const account=currentUserEmail,generation=sessionGeneration;
+      const active=()=>account===currentUserEmail&&generation===sessionGeneration;
+      btn.disabled=true;btn.textContent='Saving…';
+      document.querySelector('#m-memory .modal-body').inert=true;
       try {
-        const text = v('mem-text');
-        if(!text && !memImageBase64){ toast('Please write a note or attach a photo.'); return; }
-        
-        let imageUrl = '';
-        
-        // Upload image to Firebase Storage (path: memories/{email}/…)
-        if (memImageBase64) {
-          try {
-            const authUser = firebase.auth().currentUser;
-            const emailKey = ((authUser && authUser.email) || currentUserEmail || 'unknown').toLowerCase();
-            const blob = dataURItoBlob(memImageBase64);
-            const ref = storage.ref(`memories/${emailKey}/${Date.now()}.jpg`);
-            const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
-            imageUrl = await snapshot.ref.getDownloadURL();
-            if (!active()) return;
-          } catch (err) {
-            if (!active()) return;
-            toast('Image upload failed: ' + err.message, true);
-            return;
-          } finally {
-            if (active()) clearMemoryFilePreview();
-          }
-        }
-        
-        // Firebase-only: Firestore metadata (+ Storage image above). No GAS/Sheets.
-        if (!active()) return;
-        const authUser = firebase.auth().currentUser;
-        await db.collection('memories').add({
-          loggedBy: user || 'Unknown',
-          loggedByEmail: (authUser && authUser.email) || currentUserEmail || '',
-          date: v('mem-date') || new Date().toISOString().slice(0,10),
-          type: gc('mt') || 'Moment',
-          person: gc('mp') || 'Everyone',
-          memory: text,
-          imageUrl: imageUrl,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        
-        if (!active()) return;
-        closeM('m-memory');
-        clr('mem-text');
-        toast('Saved to your family memories.');
-        // Listener updates data.memories; no loadData() needed
-      } catch (err) {
-        if (!active()) return;
-        toast('We could not save that. Your changes are still here. Try again.', true);
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save';
-      }
+        const text=v('mem-text');if(!text&&!memImageBase64&&!memoryDraft?.imageUrl){toast('Write a note or attach a photo.');return;}
+        await saveMemoryDraft({text,date:v('mem-date')||schoolToday(),type:gc('mt')||'Moment',person:gc('mp')||'Everyone',member:user,email:account,image:memImageBase64},active);
+        if(!active())return;
+        memoryDraft=null;clearMemoryFilePreview();closeM('m-memory');clr('mem-text');toast('Saved to your family memories.');
+      } catch(err){if(active())showError(err.message||'Could not save. Your note and photo are still here. Try again.');}
+      finally{if(active()){document.querySelector('#m-memory .modal-body').inert=false;btn.disabled=false;btn.textContent='Save memory';}}
     }
     async function submitBirthday(btn) {
       if(!btn) btn = document.getElementById('bd-submit');
@@ -2874,105 +2792,7 @@
       }
     }
 
-    // ══ NOTIFICATIONS ══
-    let notificationPermissionGranted = false;
-
-    function requestNotificationPermission() {
-      if (!('Notification' in window)) return;
-      if (Notification.permission === 'granted') {
-        notificationPermissionGranted = true;
-        document.getElementById('notifBell').classList.add('on');
-        return;
-      }
-      if (Notification.permission === 'denied') return;
-      Notification.requestPermission().then(perm => {
-        notificationPermissionGranted = (perm === 'granted');
-        if (notificationPermissionGranted) {
-          document.getElementById('notifBell').classList.add('on');
-          toast('Notifications turned on.');
-        } else {
-          document.getElementById('notifBell').classList.remove('on');
-        }
-      });
-    }
-
-    function toggleNotifications() {
-      if (!('Notification' in window)) {
-        toast('Notifications are not supported in this browser.');
-        return;
-      }
-      if (Notification.permission === 'denied') {
-        toast('Notifications are blocked by your browser. Please allow them in settings.');
-        return;
-      }
-      if (Notification.permission === 'granted') {
-        // Toggle on/off for this session
-        notificationPermissionGranted = !notificationPermissionGranted;
-        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
-        toast(notificationPermissionGranted ? 'Notifications turned on.' : 'Notifications turned off.');
-        return;
-      }
-      // Request permission
-      Notification.requestPermission().then(perm => {
-        notificationPermissionGranted = (perm === 'granted');
-        document.getElementById('notifBell').classList.toggle('on', notificationPermissionGranted);
-        toast(notificationPermissionGranted ? 'Notifications turned on.' : 'Notifications blocked.');
-      });
-    }
-
-    // ─── FIRESTORE MEMORIES LISTENER ──────────────────────────
-    function startMemoriesListener() {
-      if (memoriesUnsubscribe) return;
-      if (!db) {
-        toast('Could not connect to database.', true);
-        return;
-      }
-      const account = currentUserEmail, generation = sessionGeneration;
-      memoriesUnsubscribe = db.collection('memories')
-        .orderBy('timestamp', 'desc')
-        .limit(100)
-        .onSnapshot((snapshot) => {
-          if (account !== currentUserEmail || generation !== sessionGeneration) return;
-          const memories = [];
-          snapshot.forEach((doc) => {
-            const d = doc.data();
-            
-            let formattedDate = '';
-            if (d.date) {
-              const dateObj = new Date(d.date);
-              if (!isNaN(dateObj.getTime())) {
-                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                formattedDate = String(dateObj.getDate()).padStart(2, '0') + ' ' + months[dateObj.getMonth()] + ' ' + dateObj.getFullYear();
-              }
-            }
-            
-            memories.push({
-              id: doc.id,
-              loggedBy: d.loggedBy || 'Unknown',
-              date: formattedDate,
-              dateRaw: d.date || '',
-              type: d.type || 'Moment',
-              person: d.person || 'Everyone',
-              memory: d.memory || '',
-              imageUrl: d.imageUrl || '',
-              timestamp: d.timestamp?.toDate?.() || new Date()
-            });
-          });
-          data.memories = memories;
-          if (section === 'memories') renderMemories();
-        }, (error) => {
-          if (account !== currentUserEmail || generation !== sessionGeneration) return;
-          console.error('Memories listener error:', error);
-          toast('Could not load memories.', true);
-        });
-    }
-
-    function stopMemoriesListener() {
-      if (memoriesUnsubscribe) {
-        memoriesUnsubscribe();
-        memoriesUnsubscribe = null;
-      }
-    }
+    // Memory listeners and archive pagination are in js/memories.js.
 
     // Helper: convert dataURI to Blob
     function dataURItoBlob(dataURI) {
@@ -2993,10 +2813,14 @@
         return;
       }
       
+      const account=currentUserEmail,generation=sessionGeneration;
       const reader = new FileReader();
       reader.onload = function(e) {
+        if(account!==currentUserEmail||generation!==sessionGeneration)return;
         const img = new Image();
         img.onload = function() {
+          if(account!==currentUserEmail||generation!==sessionGeneration)return;
+          discardMemoryUpload();
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
@@ -3035,6 +2859,7 @@
     }
 
     function clearMemoryFilePreview() {
+      discardMemoryUpload();
       memImageBase64 = null;
       const fileInput = document.getElementById('mem-file-input');
       if (fileInput) fileInput.value = '';

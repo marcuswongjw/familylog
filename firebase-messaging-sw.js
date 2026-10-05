@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v26';
+const CACHE_NAME = 'wongs-nest-v27';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,9 @@ const ASSETS = [
   './js/nest.js',
   './assets/nest-mark.svg',
   './js/app.js',
+  './js/notifications.js',
+  './js/memories.js',
+  './js/operations.js',
   './js/school.js',
   './js/habits.js',
   './js/rewards-art.js',
@@ -53,7 +56,7 @@ self.addEventListener('fetch', event => {
       path.endsWith('/') ||
       path.endsWith('.html') ||
       path.endsWith('/familylog') ||
-      path.endsWith('/habits.js') || path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
+      path.endsWith('/notifications.js') || path.endsWith('/memories.js') || path.endsWith('/operations.js') || path.endsWith('/habits.js') || path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
       path.endsWith('/styles.css') || path.endsWith('/nest.css') || path.endsWith('/nest.js') ||
       path.includes('manifest.json') ||
       path.endsWith('.png') || path.endsWith('.svg') ||
@@ -129,7 +132,7 @@ function openAppFromNotification(data) {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const data = event.notification.data || {};
-  event.waitUntil(openAppFromNotification(data));
+  event.waitUntil(notificationStore('get','account').then(email=>email===data.recipient?openAppFromNotification({screen:'home',url:appDeepLink('home')}):undefined));
 });
 
 // Some platforms fire this when the user opens the app from a notification action
@@ -150,29 +153,20 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Background message payload:', payload);
-
-  const n = payload.notification || {};
-  const d = payload.data || {};
-  const title = n.title || d.title || 'Wong’s Nest';
-  const body = n.body || d.body || '';
-  const screen = d.screen || 'home';
-  const scope = self.registration.scope;
-  const url = d.url || appDeepLink(screen);
-
-  const options = {
-    body: body,
-    icon: scope + 'favicon.png',
-    badge: scope + 'favicon.png',
-    data: Object.assign({ screen: screen, url: url, open: screen }, d),
-    tag: d.tag || 'wongs-nest',
-    renotify: true,
-    requireInteraction: false
-  };
-  if (n.image || d.image) {
-    options.image = n.image || d.image;
-  }
-
-  return self.registration.showNotification(title, options);
+function notificationStore(action,key,value){
+ return new Promise((resolve,reject)=>{const open=indexedDB.open('wongs-nest-notifications',1);open.onupgradeneeded=()=>open.result.createObjectStore('meta');open.onerror=()=>reject(open.error);open.onsuccess=()=>{const db=open.result,tx=db.transaction('meta',action==='get'?'readonly':'readwrite'),store=tx.objectStore('meta');const req=action==='get'?store.get(key):store.put(value,key);tx.oncomplete=()=>{resolve(req.result);db.close();};tx.onerror=()=>{reject(tx.error);db.close();};};});
+}
+let notificationQueue=Promise.resolve();
+function queueNotification(work){notificationQueue=notificationQueue.catch(()=>{}).then(work);return notificationQueue;}
+async function deliverReminder(d){
+ if(!d||!d.recipient||!/^[a-f0-9]{64}$/.test(d.reminderId||''))return;
+ const email=await notificationStore('get','account');if(email!==d.recipient)return;
+ const key='seen:'+d.recipient;const seen=await notificationStore('get',key)||[];if(seen.includes(d.reminderId))return;
+ await self.registration.showNotification(d.title||'Wong’s Nest',{body:d.body||'',icon:self.registration.scope+'favicon.png',tag:d.reminderId,data:{recipient:d.recipient,screen:'home'}});
+ await notificationStore('put',key,[...seen.slice(-13),d.reminderId]);
+}
+self.addEventListener('message',event=>{
+ if(event.data?.type==='NOTIFICATION_ACCOUNT')event.waitUntil(queueNotification(async()=>{await notificationStore('put','account',event.data.email||null);const notifications=await self.registration.getNotifications();notifications.forEach(n=>{if(n.data?.recipient!==event.data.email)n.close();});}));
+ if(event.data?.type==='REMINDER_MESSAGE')event.waitUntil(queueNotification(()=>deliverReminder(event.data.data)));
 });
+messaging.onBackgroundMessage(payload=>queueNotification(()=>deliverReminder(payload.data)));

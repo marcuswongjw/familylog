@@ -16,12 +16,12 @@ function harness() {
       } };
     }
   }
-  const sheets = {};
+  const sheets = {}, properties = {};
   const ss = { getSheetByName: name => sheets[name] || null, insertSheet: name => sheets[name] = new Sheet() };
   const calendar = new Map();
   const calendarEvents = [];
   let failCalendarAfter = false;
-  const c = vm.createContext({ console: { log() {} }, Date, JSON, PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({}) }) },
+  const c = vm.createContext({ console: { log() {} }, Date, JSON, PropertiesService: { getScriptProperties: () => ({ getProperties: () => properties, getProperty:key=>properties[key], setProperty:(key,value)=>properties[key]=value }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Session: { getScriptTimeZone: () => 'Asia/Singapore' }, ScriptApp: { getOAuthToken: () => 'test-token' },
@@ -41,6 +41,7 @@ function harness() {
       })
     },
     Utilities: { getUuid: () => crypto.randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' },
+      computeHmacSha256Signature:(value,key)=>[...crypto.createHmac('sha256',key).update(value).digest()],
       computeDigest: (_, value) => [...crypto.createHash('sha256').update(value).digest()],
       formatDate: (date, zone, format) => {
         const d = new Date(date);

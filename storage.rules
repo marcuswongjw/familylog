@@ -46,10 +46,7 @@ service firebase.storage {
     // chat/{ownerEmail}/{fileName}
     match /chat/{ownerEmail}/{fileName} {
       allow read: if isFamily();
-      allow write: if isFamily()
-        && ownerEmail.lower() == callerEmail()
-        && isImageUnder5mb();
-      allow delete: if isFamily() && ownerEmail.lower() == callerEmail();
+      allow write: if false;
     }
 
     // memories/{ownerEmail}/{fileName}

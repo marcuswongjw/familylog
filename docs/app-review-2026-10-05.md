@@ -70,3 +70,9 @@ The current 62 tests are useful, especially ownership, publishing and reward ret
 6. Photo recovery, archive pagination, CI and incremental module extraction.
 
 The existing backend identity verification, parent-only calendar/money/private-feature gates, reviewed school publishing, deterministic reward ledger and reduced-motion celebrations are useful foundations to retain.
+
+## Findings 9–10 implemented
+
+- Opt-in, account-scoped daily reminders for preparation, due/overdue actions and scheduled habits; parent/child targeting, quiet hours, account/day server receipts and device deduplication. Parent first opt-in connects the signed GAS bridge. The live Chat push trigger was removed and its write rules retired.
+- Stable create IDs recover retries for tasks, Calendar events, expenses, trips and birthdays, including lost responses after resource/ledger writes. Memory retries retain and reuse photos; discard checks prevent deleting committed photos; scheduled orphan cleanup uses generation preconditions. The archive loads older pages beyond the latest 50.
+- Verification covers recipient privacy, quiet hours, schedule completion, lost responses, upload reuse, uncertain metadata, account reset and archive pagination. Browser fixture confirmed saved reminder hour, child-only controls and 50→80 memories with no errors. Actual personal-device push receipt remains an opt-in device check.

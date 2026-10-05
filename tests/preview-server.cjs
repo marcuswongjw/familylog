@@ -16,12 +16,13 @@ if (process.argv.includes('--rewards-demo')) {
 const root = path.resolve(__dirname, '..');
 const bootstrap = `
 <script>
+window.fixtureMemories=Array.from({length:80},(_,i)=>({id:String(80-i),data:()=>({memory:'Memory '+(80-i),date:'2026-10-05',loggedBy:'Marcus',timestamp:{toDate:()=>new Date(2026,0,80-i)}})}));
 window.firebase = {
  initializeApp(){},
- firestore: () => ({enablePersistence:()=>Promise.resolve(),collection:()=>({where(){return this},orderBy(){return this},limit(){return this},onSnapshot(cb){cb({docs:[],forEach(){}});return ()=>{}},doc:()=>({set:async()=>{},delete:async()=>{}})})}),
+ firestore: () => ({enablePersistence:()=>Promise.resolve(),collection:()=>({where(){return this},orderBy(){return this},limit(){return this},startAfter(){return this},get:async()=>({docs:fixtureMemories.slice(50)}),onSnapshot(cb){cb({docs:fixtureMemories.slice(0,50),forEach(){}});return ()=>{}},doc:()=>({get:async()=>({exists:false}),set:async()=>{},delete:async()=>{}})})}),
  storage: () => ({}),
- messaging: () => ({useServiceWorker(){}}),
- functions: () => ({httpsCallable:()=>async()=>({data:{title:'Science Learning Journey',child:'Mikaela',sourceText:'',warnings:['The year is missing. Confirm the date.','End time not provided.'],event:{title:'Science Learning Journey',date:'',time:'07:15',endTime:'',location:'School',evidence:'Report at 7:15am on 23 September.'},tasks:[{title:'Pack water bottle',kind:'packing',due:'',evidence:'Bring a water bottle.'}]}})}),
+ messaging: () => ({useServiceWorker(){},onMessage(){}}),
+ functions: () => ({httpsCallable:name=>async payload=>name==='updateReminderSettings'?({data:{settings:payload?.settings||{enabled:false,packing:true,habits:true,overdue:true,includeChildren:false,hour:19,quietStart:21,quietEnd:7},bridgeReady:true}}):({data:{title:'Science Learning Journey',child:'Mikaela',sourceText:'',warnings:['The year is missing. Confirm the date.','End time not provided.'],event:{title:'Science Learning Journey',date:'',time:'07:15',endTime:'',location:'School',evidence:'Report at 7:15am on 23 September.'},tasks:[{title:'Pack water bottle',kind:'packing',due:'',evidence:'Bring a water bottle.'}]}})}),
  auth: () => ({currentUser:{email:'marcuswongjw@gmail.com'},onAuthStateChanged(cb){cb(null)}})
 };
 window.fixtureErrors=[]; window.addEventListener('error',e=>fixtureErrors.push(e.message));
@@ -30,7 +31,7 @@ window.addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reas
 const setup = `<script>
 window.addEventListener('DOMContentLoaded', async()=>{
  gasRequest=async body=>{const r=await fetch('/api',{method:'POST',body:JSON.stringify({...body,email:currentUserEmail})});return r.json()};
- window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData()};
+ window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData();startMemoriesListener()};
  if (!location.search.includes('login-preview')) await fixtureLogin('Marcus');
 });
 </script>`;
