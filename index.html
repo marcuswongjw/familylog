@@ -8,14 +8,14 @@
   <meta name="apple-mobile-web-app-title" content="Wong’s Nest">
   <meta name="theme-color" content="#F8F6F2">
   <title>Wong’s Nest — Our family, together</title>
-  <link rel="manifest" href="manifest.json?v=25">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=25">
-  <link rel="shortcut icon" href="favicon.png?v=25" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=25">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=25">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=25">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=25">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=25">
+  <link rel="manifest" href="manifest.json?v=26">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=26">
+  <link rel="shortcut icon" href="favicon.png?v=26" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=26">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=26">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=26">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=26">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=26">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -28,8 +28,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <link rel="stylesheet" href="css/styles.css?v=25">
-  <link rel="stylesheet" href="css/nest.css?v=25">
+  <link rel="stylesheet" href="css/styles.css?v=26">
+  <link rel="stylesheet" href="css/nest.css?v=26">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -719,11 +719,14 @@
   <div class="overlay" id="m-habit">
     <div class="modal">
       <div class="modal-handle"></div>
-      <div class="modal-hdr"><span class="modal-title">Add habit</span><button class="modal-close" onclick="closeM('m-habit')" aria-label="Close modal">✕</button></div>
+      <div class="modal-hdr"><span class="modal-title" id="hab-modal-title">Add habit</span><button class="modal-close" onclick="closeM('m-habit')" aria-label="Close modal">✕</button></div>
       <div class="modal-body">
-        <div class="field"><label>Habit</label><input type="text" id="hab-name" placeholder="e.g. Violin practice, Reading, Swimming"></div>
-        <div class="field"><label>Family member</label><div class="chips" id="hab-member-chips"></div></div>
-        <div class="field"><label>Emoji icon</label><input type="text" id="hab-emoji" value="✨" placeholder="e.g. 🎻, 📚, ⛵"></div>
+        <div class="field"><label>Habit</label><input type="hidden" id="hab-id"><input type="text" maxlength="80" id="hab-name" placeholder="e.g. Violin practice, Reading, Swimming"></div>
+        <div class="field"><label>Family member</label><select id="hab-member"></select></div>
+        <div class="field"><label>Emoji icon</label><input type="text" id="hab-emoji" maxlength="12" value="✨" placeholder="e.g. 🎻, 📚, ⛵"></div>
+        <div class="field"><label for="hab-schedule">Schedule</label><select id="hab-schedule" onchange="updateHabitScheduleFields()"><option value="daily">Every day</option><option value="weekdays">Selected weekdays</option><option value="weekly">Weekly target</option></select></div>
+        <div class="field" id="hab-days-field" hidden><fieldset><legend>Days to practise</legend><div id="hab-days" class="habit-days-picker"></div></fieldset></div>
+        <div class="field" id="hab-target-field" hidden><label for="hab-target">Days each week</label><input type="number" id="hab-target" min="1" max="7" step="1" value="3"><p>Choose any days. Rest when your weekly goal is reached.</p></div>
       </div>
       <div class="modal-foot">
         <button class="btn btn-s" onclick="closeM('m-habit')">Cancel</button>
@@ -740,7 +743,7 @@
       <div class="modal-body">
         <input type="hidden" id="hl-habit-id">
         <div class="field"><label>Habit</label><div id="hl-title" style="font-size:15px;font-weight:600;padding:6px 0;"></div></div>
-        <div class="field"><label>Date</label><input type="date" id="hl-date"></div>
+        <div class="field"><label for="hl-member">Log for</label><select id="hl-member"></select></div><div class="field"><label>Date</label><input type="date" id="hl-date"></div>
         <div class="field"><label>Notes (opt)</label><textarea id="hl-notes" placeholder="e.g. Suzuki Book 2 pieces, 30 mins practice…"></textarea></div>
       </div>
       <div class="modal-foot">
@@ -767,10 +770,11 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/rewards-art.js?v=25"></script>
-  <script src="js/rewards.js?v=25"></script>
-  <script src="js/school.js?v=25"></script>
-  <script src="js/nest.js?v=25"></script>
-  <script src="js/app.js?v=25"></script>
+  <script src="js/rewards-art.js?v=26"></script>
+  <script src="js/rewards.js?v=26"></script>
+  <script src="js/habits.js?v=26"></script>
+  <script src="js/school.js?v=26"></script>
+  <script src="js/nest.js?v=26"></script>
+  <script src="js/app.js?v=26"></script>
 </body>
 </html>

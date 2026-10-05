@@ -876,7 +876,7 @@ function handleWriteInner_(data) {
     return { status: 'error', message: 'This feature is only available to parents.' };
   }
 
-  if (['set_reward_rule', 'set_habit_rewards', 'buy_reward_item', 'save_companion'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
+  if (['set_reward_rule', 'set_habit_rewards', 'buy_reward_item', 'save_companion', 'set_family_goal'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
 
   if (noteLower === 'save_school_draft' || noteLower === 'publish_school_draft') return schoolHandleWrite_(data, ss, verifiedEmail, user);
 
@@ -1459,7 +1459,9 @@ function handleWriteInner_(data) {
       var definition = sheets.habits.getDataRange().getValues().find(function(r, i) { return i > 0 && r[0] === habitId; });
       if (!definition) return { status: 'error', message: 'Choose an existing habit.' };
       // The definition controls identity; caller-supplied member/habit cannot spoof rewards.
-      var member = definition[1] === 'Everyone' ? user : toStr(definition[1]);
+      var member = definition[1] === 'Everyone' ? (isAdultEmail_(verifiedEmail) ? (toStr(data.log_member) || user) : user) : toStr(definition[1]);
+      if (REWARD_MEMBERS_.indexOf(member) === -1) return { status: 'error', message: 'Choose a family member to log for.' };
+      if (definition[9] === 'paused' || definition[9] === 'archived') return { status: 'error', message: 'This habit is paused or archived.' };
       var habit = toStr(definition[2]);
       if (!isAdultEmail_(verifiedEmail) && member !== user) return { status: 'error', message: 'You can only log habits for yourself.' };
       var today = Utilities.formatDate(new Date(), 'Asia/Singapore', 'yyyy-MM-dd');
@@ -1475,7 +1477,8 @@ function handleWriteInner_(data) {
       var logId = existing ? toStr(existing[0]) : Utilities.getUuid();
       if (!existing) sheets.logs.appendRow([logId, habitId, member, habit, dateStr, schoolCell_(notes), user, new Date()]);
       SpreadsheetApp.flush();
-      var award = dateStr === today ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
+      var eligible = habitScheduled_(definition, dateStr, member, sheets.logs.getDataRange().getValues());
+      var award = dateStr === today && eligible ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
       return { status: 'ok', id: logId, date: dateStr, duplicate: !!existing, award: award, rewards: getRewards_(ss),
         log: { id: logId, habitId: habitId, member: member, habit: habit, date: dateStr, notes: existing ? toStr(existing[5]) : notes, loggedBy: existing ? toStr(existing[6]) : user } };
     }
@@ -1497,37 +1500,37 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
-    // ── HABIT: add definition ──
-    if (noteLower === 'add_habit') {
-      var member = toStr(data.member) || user;
-      var habit = toStr(data.habit);
-      var emoji = toStr(data.emoji) || '⭐';
-      if (!habit) return { status: 'error', message: 'Habit name required' };
-      if (!isAdultEmail_(verifiedEmail) && member !== user) {
-        return { status: 'error', message: 'You can only add habits for yourself.' };
+    // Habit lifecycle preserves IDs, logs and the immutable reward ledger.
+    if (noteLower === 'add_habit' || noteLower === 'edit_habit') {
+      var sheets = ensureHabitSheets_(ss), parent = isAdultEmail_(verifiedEmail);
+      var habitId = toStr(data.habit_id), rows = sheets.habits.getDataRange().getValues();
+      var index = rows.findIndex(function(r,i){return i > 0 && r[0] === habitId;});
+      var editing = noteLower === 'edit_habit';
+      if (editing && index < 1) return { status:'error', message:'Habit not found. Refresh before editing.' };
+      var member = editing ? toStr(rows[index][1]) : (toStr(data.member) || user);
+      if (FAMILY_MEMBERS.indexOf(member) < 0 || (!parent && member !== user)) return { status:'error', message:'You can only manage habits for yourself.' };
+      var habit = toStr(data.habit).trim(), emoji = toStr(data.emoji).trim() || '⭐';
+      if (!habit || habit.length > 80 || emoji.length > 12) return { status:'error', message:'Use a habit name up to 80 characters and a short emoji.' };
+      var schedule = habitScheduleInput_(data);
+      var state = editing ? (toStr(rows[index][9]) || 'active') : 'active';
+      if (editing) {
+        sheets.habits.getRange(index+1,3,1,2).setValues([[schoolCell_(habit),schoolCell_(emoji)]]);
+        sheets.habits.getRange(index+1,7,1,5).setValues([[schedule.mode,schedule.days.join(','),schedule.target,state,new Date()]]);
+      } else {
+        habitId = Utilities.getUuid();
+        sheets.habits.appendRow([habitId,member,schoolCell_(habit),schoolCell_(emoji),user,new Date(),schedule.mode,schedule.days.join(','),schedule.target,'active',new Date()]);
       }
-      var sheets = ensureHabitSheets_(ss);
-      var habitId = Utilities.getUuid();
-      sheets.habits.appendRow([habitId, member, habit, emoji, user, new Date()]);
-      console.log('✅ Habit added: ' + habit + ' for ' + member);
-      return { status: 'ok', id: habitId };
+      return {status:'ok',id:habitId};
     }
-
-    // ── HABIT: delete definition ──
-    if (noteLower === 'delete_habit') {
-      var habitId = toStr(data.id || data.habit_id);
-      if (!habitId) return { status: 'error', message: 'Habit ID required' };
-      var sheets = ensureHabitSheets_(ss);
-      var rows = sheets.habits.getDataRange().getValues();
-      var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[0] === habitId; });
-      if (rowIndex < 1) return { status: 'error', message: 'Habit not found' };
-      var parent = isAdultEmail_(verifiedEmail);
-      if (!parent) {
-        return { status: 'error', message: 'Only a parent can delete a habit.' };
-      }
-      sheets.habits.deleteRow(rowIndex + 1);
-      console.log('✅ Habit deleted: ' + habitId);
-      return { status: 'ok' };
+    if (noteLower === 'set_habit_state' || noteLower === 'delete_habit') {
+      if (!isAdultEmail_(verifiedEmail)) return {status:'error',message:'Only parents can pause or archive habits.'};
+      var sheets = ensureHabitSheets_(ss), habitId = toStr(data.habit_id || data.id);
+      var index = sheets.habits.getDataRange().getValues().findIndex(function(r,i){return i > 0 && r[0] === habitId;});
+      if (index < 1) return {status:'error',message:'Habit not found.'};
+      var state = noteLower === 'delete_habit' ? 'archived' : toStr(data.state);
+      if (['active','paused','archived'].indexOf(state) < 0) return {status:'error',message:'Choose active, paused or archived.'};
+      sheets.habits.getRange(index+1,10,1,2).setValues([[state,new Date()]]);
+      return {status:'ok',id:habitId,state:state};
     }
 
     // ── Unknown note ──
@@ -1557,6 +1560,7 @@ function getAllDashboardData(verifiedEmail) {
   return {
     events:    memberEvents_(events, verifiedEmail),
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
+    completedTasks: allTodos.filter(function(t) { return t.status.toLowerCase() === 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
     expenses:  adult ? getExpensesData(ss) : emptyExpensesPayload_(),
@@ -1620,12 +1624,32 @@ function ensureHabitSheets_(ss) {
     hSheet.appendRow(['ID', 'Member', 'Habit', 'Emoji', 'CreatedBy', 'CreatedAt']);
     hSheet.appendRow(['default_meaghan_violin', 'Meaghan', 'Violin practice', '🎻', 'System', new Date()]);
   }
+  if (hSheet.getDataRange().getValues()[0][6] !== 'Schedule') hSheet.getRange(1, 7, 1, 5).setValues([['Schedule', 'Weekdays', 'WeeklyTarget', 'State', 'UpdatedAt']]);
   var hlSheet = ss.getSheetByName('HabitLogs');
   if (!hlSheet) {
     hlSheet = ss.insertSheet('HabitLogs');
     hlSheet.appendRow(['ID', 'HabitID', 'Member', 'Habit', 'Date', 'Notes', 'LoggedBy', 'Timestamp']);
   }
   return { habits: hSheet, logs: hlSheet };
+}
+
+function habitScheduleInput_(data) {
+  var mode = toStr(data.schedule) || 'daily', days = data.weekdays || [], target = data.weekly_target == null ? 3 : data.weekly_target;
+  if (['daily','weekdays','weekly'].indexOf(mode) < 0) throw new Error('Choose a valid habit schedule.');
+  if (mode === 'weekdays' && (!Array.isArray(days) || !days.length || days.length > 7 || days.some(function(d){return typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 6;}) || new Set(days).size !== days.length)) throw new Error('Choose at least one day of the week.');
+  if (mode === 'weekly' && (typeof target !== 'number' || !Number.isInteger(target) || target < 1 || target > 7)) throw new Error('Choose a weekly target from 1 to 7.');
+  return {mode:mode,days:mode === 'weekdays' ? days : [],target:mode === 'weekly' ? target : 3};
+}
+function habitScheduled_(definition, date, member, logs) {
+  var mode = toStr(definition[6]) || 'daily', day = new Date(date+'T00:00:00Z').getUTCDay();
+  if (mode === 'weekdays') return toStr(definition[7]).split(',').map(Number).indexOf(day) >= 0;
+  if (mode !== 'weekly') return true;
+  var monday = new Date(date+'T00:00:00Z'); monday.setUTCDate(monday.getUTCDate() - ((day+6)%7));
+  var start = monday.toISOString().slice(0,10); monday.setUTCDate(monday.getUTCDate()+7); var end = monday.toISOString().slice(0,10);
+  // Exclude this occurrence so a retry can recover its reward. Count distinct days.
+  var days = {};
+  logs.slice(1).forEach(function(r){var d = r[4] instanceof Date ? Utilities.formatDate(r[4],'Asia/Singapore','yyyy-MM-dd') : toStr(r[4]); if (r[1] === definition[0] && r[2] === member && d >= start && d < end && d !== date) days[d]=true;});
+  return Object.keys(days).length < (Number(definition[8]) || 3);
 }
 
 function getHabits(ss, verifiedEmail) {
@@ -1636,13 +1660,16 @@ function getHabits(ss, verifiedEmail) {
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (!r[0] || !r[2]) continue;
+    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[9] === 'archived') continue;
     if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[1] !== memberNameFromEmail_(verifiedEmail) && r[1] !== 'Everyone') continue;
     result.push({
       id: toStr(r[0]),
       member: toStr(r[1]),
       habit: toStr(r[2]),
       emoji: toStr(r[3]) || '⭐',
-      createdBy: toStr(r[4])
+      createdBy: toStr(r[4]),
+      schedule: toStr(r[6]) || 'daily', weekdays: toStr(r[7]).split(',').filter(function(x){return x !== '';}).map(Number),
+      weeklyTarget: Number(r[8]) || 3, state: toStr(r[9]) || 'active'
     });
   }
   return result;
@@ -3321,6 +3348,11 @@ var REWARD_ITEMS_ = [
   { id: 'ballet-bow', name: 'Ballet bow', cost: 8, description: 'A bow for your next happy dance.' },
   { id: 'backpack', name: 'Little backpack', cost: 12, description: 'Small steps, big adventures.' }
 ];
+var REWARD_GOALS_ = [
+  {id:'garden',name:'Our family garden',stars:40,emoji:'🌷'},
+  {id:'reading',name:'Our cosy reading corner',stars:80,emoji:'📚'},
+  {id:'picnic',name:'Our family picnic',stars:120,emoji:'🧺'}
+];
 var REWARD_MEMBERS_ = ['Marcus', 'Eleanor', 'Mikaela', 'Meaghan'];
 var COMPANION_DEFAULTS_ = {
   Marcus: { species: 'bear', name: 'Oak' }, Eleanor: { species: 'cat', name: 'Clover' },
@@ -3352,7 +3384,9 @@ function getRewards_(ss) {
       name: saved ? toStr(saved[2]) : defaults.name,
       equipped: saved && owned.indexOf(saved[3]) !== -1 ? toStr(saved[3]) : '' };
   });
-  return { members: members, catalog: REWARD_ITEMS_, family: { earned: familyStars, goal: 40, unlocked: familyStars >= 40, name: 'Our family garden' },
+  var selected = rewardRows_(ss,'FamilyGoal')[0];
+  var goal = REWARD_GOALS_.find(function(g){return selected && g.id === selected[0];}) || REWARD_GOALS_[0];
+  return { members: members, catalog: REWARD_ITEMS_, goals: REWARD_GOALS_, family: { earned: familyStars, goal: goal.stars, unlocked: familyStars >= goal.stars, name: goal.name, goalId:goal.id, emoji:goal.emoji },
     rules: rewardRows_(ss, 'RewardRules').map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
 }
 function rewardAward_(ss, type, sourceId, member, occurrence) {
@@ -3371,7 +3405,11 @@ function rewardAward_(ss, type, sourceId, member, occurrence) {
 function rewardHandleWrite_(data, ss, email, user) {
   try {
     var note = toStr(data.note).toLowerCase().trim();
-    if (note === 'set_habit_rewards') {
+    if (note === 'set_family_goal') {
+      if (!isAdultEmail_(email)) throw new Error('Only parents can choose the family goal.');
+      if (!REWARD_GOALS_.some(function(g){return g.id === data.goal_id;})) throw new Error('Choose an existing family goal.');
+      rewardSheet_(ss,'FamilyGoal',['Goal','UpdatedBy','UpdatedAt']).getRange(2,1,1,3).setValues([[data.goal_id,user,new Date()]]);
+    } else if (note === 'set_habit_rewards') {
       if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
       if (!Array.isArray(data.rules) || !data.rules.length || data.rules.length > 500) throw new Error('Choose the habits to update.');
       var habits = getHabits(ss), seen = {};

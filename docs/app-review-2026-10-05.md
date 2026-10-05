@@ -4,7 +4,7 @@ Reviewed the client shell, dashboard, tasks, habits, rewards, calendar/schedules
 
 ## High-priority remediation
 
-The four high-priority findings below have been addressed in the client: account/session and request guards, immediate private-state clearing, authoritative private lists, confirmed-save checks, and deferred calendar deletion with failure recovery. Regression tests cover the original failure cases. The medium-priority recommendations remain future work.
+The four high-priority findings below have been addressed in the client: account/session and request guards, immediate private-state clearing, authoritative private lists, confirmed-save checks, and deferred calendar deletion with failure recovery. Regression tests cover the original failure cases. Findings 6–8 have also been implemented: scheduled/editable habits with archive and restore, individual shared progress and parent-assisted logging, a compact child checklist with next steps, completion persistence and parent-selected family milestones. Other recommendations remain future work.
 
 ## Original findings
 

@@ -122,8 +122,9 @@ test('family milestone uses lifetime earnings and survives spending', () => {
 function client(gPost) {
   const source = fs.readFileSync(require.resolve('../js/app.js'),'utf8');
   const block = source.slice(source.indexOf('    const pendingHabitLogs'),source.indexOf('    async function delHabitLog'));
-  const c = vm.createContext({window:{},Set,currentUserEmail:child,data:{habits:[{id:'h',habit:'Read'}],habitLogs:[]},schoolToday:()=> '2026-10-05',gPost,
+  const c = vm.createContext({window:{},Set,user:'Mikaela',sessionGeneration:0,currentUserEmail:child,data:{habits:[{id:'h',habit:'Read',member:'Mikaela'}],habitLogs:[]},schoolToday:()=> '2026-10-05',gPost,
     renderHabits(){},renderHome(){},renderSchoolHome(){},applyRewardResult(){c.celebrations++},toast(){},showError(){c.errors++},celebrations:0,errors:0});
+  vm.runInContext(fs.readFileSync(require.resolve('../js/habits.js'),'utf8'),c);
   vm.runInContext(block,c); return c;
 }
 test('habit UI waits for confirmed save and blocks duplicate pending clicks', async () => {

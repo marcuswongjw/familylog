@@ -1,3 +1,7 @@
+function rewardGoalArt(family) {
+  if (!family.goalId || family.goalId === 'garden') return rewardHomeSVG(family.unlocked);
+  return `<div class="reward-goal-art ${family.unlocked?'unlocked':''}" role="img" aria-label="${escapeHtml(family.name)}${family.unlocked?' unlocked':''}"><span>${family.emoji}</span><small>${family.unlocked?'Made possible together':'A little dream, shared'}</small></div>`;
+}
 /* Companions, accessory collection and a cooperative family goal. */
 const rewardPending = new Set();
 const rewardHabitDrafts = new Map();
@@ -20,8 +24,8 @@ function renderRewardHome() {
       <div><span class="reward-eyebrow">SMALL WINS, BIG HEART</span><h2>${escapeHtml(profile.name)} is cheering you on.</h2>
       <p>${isAdultUser ? 'A few little wins. A happier family nest.' : 'One small step at a time. You’ve got this.'}</p>
       <button class="btn btn-s btn-sm reward-open" type="button">★ ${profile.balance} stars · Visit companions</button></div></div>
-    <div class="reward-home-preview">${rewardHomeSVG(family.unlocked)}<div class="reward-goal-caption"><strong>${family.unlocked ? 'Our garden is blooming' : 'Let’s grow our family garden'}</strong><span>${family.unlocked ? 'Everyone helped make this happen.' : family.earned + ' / ' + family.goal + ' stars earned together'}</span></div>
-      <div class="reward-progress" role="progressbar" aria-label="Family garden progress" aria-valuenow="${Math.min(family.goal, family.earned)}" aria-valuemin="0" aria-valuemax="${family.goal}"><span style="width:${progress}%"></span></div></div>
+    <div class="reward-home-preview">${rewardGoalArt(family)}<div class="reward-goal-caption"><strong>${family.unlocked ? 'We reached our goal!' : escapeHtml(family.name || 'Our family garden')}</strong><span>${family.unlocked ? 'Everyone helped make this happen.' : family.earned + ' / ' + family.goal + ' stars earned together'}</span></div>
+      <div class="reward-progress" role="progressbar" aria-label="Family goal progress" aria-valuenow="${Math.min(family.goal, family.earned)}" aria-valuemin="0" aria-valuemax="${family.goal}"><span style="width:${progress}%"></span></div></div>
   </section>`;
   root.querySelector('.reward-open').addEventListener('click', () => goTo('rewards'));
   root.querySelector('.reward-hello').addEventListener('click', e => rewardAnimate(e.currentTarget));
@@ -35,6 +39,7 @@ function applyRewardResult(result, celebrate = true) {
   if (result.rewards) data.rewards = result.rewards;
   renderRewardHome();
   if (section === 'rewards') renderRewards();
+  if (celebrate && (result.log || result.award)) document.querySelectorAll('#reward-home .reward-hello, #rewards-container .reward-hero-art').forEach(rewardAnimate);
   if (!celebrate || !result.award?.stars) return;
   const { stars, member } = result.award;
   const message = `${member === user ? 'You earned' : member + ' earned'} ${stars} ${stars === 1 ? 'star' : 'stars'}! A little step for our family nest.`;
@@ -42,7 +47,6 @@ function applyRewardResult(result, celebrate = true) {
   notice.textContent = message; notice.hidden = false;
   clearTimeout(rewardCelebrationTimer);
   rewardCelebrationTimer = setTimeout(() => { notice.hidden = true; }, 4500);
-  document.querySelectorAll('#reward-home .reward-hello, #rewards-container .reward-hero-art').forEach(rewardAnimate);
 }
 function resetRewards() {
   rewardHabitDrafts.clear();
@@ -96,12 +100,14 @@ function renderRewards() {
       }).join('')}</div>
       ${p.equipped ? `<button type="button" class="btn btn-s btn-sm" id="reward-remove-accessory" ${saving ? 'disabled' : ''}>Take accessory off</button>` : ''}
     </section>
-    <section class="reward-family"><div><span class="reward-eyebrow">EVERYONE CONTRIBUTES</span><h3>${family.unlocked ? 'Our garden is blooming.' : 'Our first family garden'}</h3><p>${family.unlocked ? 'A little garden, grown by all of us.' : 'Earn ' + family.goal + ' stars together to bring flowers to our home.'}</p><p class="reward-muted">Spending your stars keeps the family progress growing.</p></div>${rewardHomeSVG(family.unlocked)}
+    <section class="reward-family"><div><span class="reward-eyebrow">EVERYONE CONTRIBUTES</span><h3>${escapeHtml(family.name || 'Our family garden')}</h3><p>${family.unlocked ? 'You reached this goal together. Celebrate your little wins.' : 'Earn ' + family.goal + ' stars together. Every little win helps.'}</p><p class="reward-muted">Spending your stars keeps the family progress growing.</p></div>${rewardGoalArt(family)}
       <div class="reward-family-members">${data.rewards.members.map(m => `<div>${rewardCompanionSVG(m, 'small')}<strong>${escapeHtml(m.member)}</strong><span>${m.earned} stars contributed</span></div>`).join('')}</div>
-      <div class="reward-progress" role="progressbar" aria-label="Family garden progress" aria-valuenow="${Math.min(family.goal, family.earned)}" aria-valuemin="0" aria-valuemax="${family.goal}"><span style="width:${Math.min(100, family.earned / family.goal * 100)}%"></span></div><p class="reward-muted">${family.earned} / ${family.goal} stars earned together</p>
+      <div class="reward-progress" role="progressbar" aria-label="Family goal progress" aria-valuenow="${Math.min(family.goal, family.earned)}" aria-valuemin="0" aria-valuemax="${family.goal}"><span style="width:${Math.min(100, family.earned / family.goal * 100)}%"></span></div><p class="reward-muted">${family.earned} / ${family.goal} stars earned together</p>
     </section>
+    ${isAdultUser ? `<section class="reward-rule-settings"><h3>Our next family goal</h3><p class="reward-muted">A shared milestone in our nest. Earned stars carry forward; choosing a goal does not spend them.</p><form id="family-goal-form"><label for="family-goal">Choose a goal</label><select id="family-goal">${(data.rewards.goals||[]).map(g=>`<option value="${g.id}" ${family.goalId===g.id?'selected':''}>${g.emoji} ${escapeHtml(g.name)} · ${g.stars} stars</option>`).join('')}</select><button class="btn btn-p" ${rewardPending.has('family-goal')?'disabled':''}>Save family goal</button></form></section>` : ''}
     ${isAdultUser ? rewardRulesHTML() : ''}
     <p class="reward-footnote">One reward per task, or per habit each day. Older habit entries can be recorded but earn no stars. Earned stars and accessories stay with you when a log is removed.</p>`;
+  root.querySelector('#family-goal-form')?.addEventListener('submit', e => {e.preventDefault();rewardMutation('family-goal',{note:'set_family_goal',goal_id:root.querySelector('#family-goal').value},'Family goal updated.');});
   root.querySelector('#reward-profile-form').addEventListener('submit', e => {
     e.preventDefault();
     const species = root.querySelector('[name="reward-species"]:checked').value;
@@ -135,9 +141,9 @@ function renderRewards() {
 }
 function rewardHabitRulesHTML() {
   const habits = data.habits || [];
-  return `<section class="reward-habit-settings"><h3>Stars for every habit</h3><p class="reward-muted">Choose the stars each family member earns for a daily habit. Set 0 to turn its reward off.</p>
+  return `<section class="reward-habit-settings"><h3>Stars for every habit</h3><p class="reward-muted">Choose the stars each family member earns on a scheduled habit day. Set 0 to turn its reward off.</p>
     ${habits.length ? `<form id="reward-habit-form"><fieldset ${rewardPending.has('habit-rules') ? 'disabled' : ''}>
-      <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(h.member)}</small></div>
+      <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(h.member)} · ${escapeHtml(habitScheduleLabel(h))}${h.state&&h.state!=='active'?' · '+escapeHtml(h.state):''}</small></div>
         <label>Stars<input type="number" data-habit-stars="${escapeHtml(h.id)}" value="${escapeHtml(rewardHabitDrafts.get(currentUserEmail + ':' + h.id) ?? rewardStars('habit',h.id))}" min="0" max="100" step="1" required aria-label="Stars for ${escapeHtml(h.habit)} (${escapeHtml(h.member)})"></label></div>`).join('')}</div>
       <div class="reward-habit-save"><button type="submit" class="btn btn-p">${rewardPending.has('habit-rules') ? 'Saving…' : 'Save habit stars'}</button><small>Whole numbers from 0 to 100. Earned once per member each day.</small></div>
     </fieldset></form>` : '<p class="reward-muted">Add a habit in Habits to choose its star reward here.</p>'}

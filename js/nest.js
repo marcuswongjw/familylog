@@ -98,13 +98,14 @@ function updateNestThemeIcon() {
 window.addEventListener('DOMContentLoaded',initNest);
 
 function nestVisibleHabits() {
-  return (data.habits || []).filter(h => isAdultUser || h.member === user || h.member === 'Everyone');
+  return (data.habits || []).filter(h => isAdultUser || (h.state !== 'archived' && (h.member === user || h.member === 'Everyone')));
 }
 function nestFilterChildData() {
   if (isAdultUser) return;
   const related = t => t.assignee === user || t.assignee === 'Everyone';
   data.todos = (data.todos || []).filter(related);
   data.schoolTasks = (data.schoolTasks || []).filter(related);
+  data.completedTasks = (data.completedTasks || []).filter(related);
   data.events = (data.events || []).filter(e => (e.tags || []).some(tag => [user,'Everyone','Family'].includes(tag)));
   data.habits = nestVisibleHabits();
   data.habitLogs = (data.habitLogs || []).filter(l => l.member === user);

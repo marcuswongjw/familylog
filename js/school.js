@@ -403,6 +403,7 @@ function renderSchoolHome() {
   const pending = plans.filter(p => p.status !== 'published');
   const taskMap = new Map((data.todos || []).map(t => [t.id, t]));
   (data.schoolTasks || []).forEach(t => taskMap.set(t.id, t));
+  (data.completedTasks || []).forEach(t => taskMap.set(t.id, t));
   const tasks = [...taskMap.values()];
 
   const helpTasks = isAdultUser ? tasks.filter(t => t.status === 'Needs help') : [];
@@ -509,8 +510,10 @@ function renderSchoolHome() {
       });
       const packingTasks = childTasks.filter(t => t.kind === 'packing');
       const otherTasks = childTasks.filter(t => t.kind !== 'packing');
-      const done = childTasks.filter(t => t.status === 'Done').length;
-      const total = childTasks.length;
+      const habits = habitForMember(child,day);
+      const done = childTasks.filter(t => t.status === 'Done').length + habits.filter(h => habitDone(h,child,day)).length;
+      const total = childTasks.length + habits.length;
+      const next = childNextStep(childTasks,habits,child,day);
       const pct = total > 0 ? Math.round((done / total) * 100) : 100;
 
       return `
@@ -518,10 +521,11 @@ function renderSchoolHome() {
           <div class="school-day-title">
             <span>${child === 'Mikaela' ? '⛵' : '🩰'}</span>
             <div>
-              <h3>${escapeHtml(child)}’s plan</h3>
+              <h3>${escapeHtml(child)}’s ${isAdultUser?'plan':'day'}</h3>
               <p>${child === 'Meaghan' ? 'Together with Mom & Dad' : 'Independent prep'}</p>
             </div>
           </div>
+          ${!isAdultUser ? `<div class="child-next-step" aria-live="polite"><span class="nest-kicker">${day>schoolToday()?'A LOOK AHEAD':child==='Meaghan'?'LET’S DO THIS TOGETHER':'ONE SMALL STEP'}</span><h3>${escapeHtml(next?.title || 'Your checklist is clear')}</h3><p>${next ? child==='Meaghan'?'Ask Mom or Dad for a hand whenever you like.':'Choose one thing. You can always ask for help.' : 'Enjoy some breathing room. Your companion is cheering you on.'}</p>${next&&day<=schoolToday()?next.type==='task'?`<button class="btn btn-p child-complete" data-school-done="${next.id}">✓ ${next.kind==='packing'?'I packed it':'I did it'}</button>`:`<button class="btn btn-p child-complete" onclick="logHabitQuick('${next.id}','${day}','','${child}')" ${pendingHabitLogs.has(habitPendingKey(next.id,child,day))?'disabled':''}>✓ I did it</button>`:''}</div>` : ''}
           ${total > 0 ? `
             <div class="school-progress-card">
               <div class="school-progress-meta">
@@ -540,24 +544,24 @@ function renderSchoolHome() {
               </div>`).join('')}
           ` : ''}
 
-          ${(data.habits || []).filter(h => h.member === child).length ? `
-            <div class="school-section-hdr">🌱 Daily habits</div>
+          ${habits.length ? `
+            <div class="school-section-hdr">🌱 Habits for this day</div>
             <div class="school-habits-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
-              ${(data.habits || []).filter(h => h.member === child).map(h => {
-                const logged = (data.habitLogs || []).some(l => l.habitId === h.id && l.date === day);
+              ${habits.map(h => {
+                const logged = habitDone(h,child,day);
                 return `
                   <div class="school-habit-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border-color, #e2e8f0);border-radius:8px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                       <span style="font-size:18px;">${escapeHtml(h.emoji || '✨')}</span>
-                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}</span>
+                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}<small class="habit-home-meta">${escapeHtml(habitProgressLabel(h,child,day))}${h.member==='Everyone'?' · shared':''}</small></span>
                     </div>
                     ${logged ? `
                       <span style="font-size:12px;color:var(--success);font-weight:600;display:flex;align-items:center;gap:4px;">
                         ✓ Practiced
                       </span>
                     ` : `
-                      <button class="btn btn-s btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${escapeHtml(day)}')" ${pendingHabitLogs.has(h.id + ':' + day) ? 'disabled' : ''} style="font-size:12px;padding:4px 10px;">
-                        Log practice
+                      <button class="btn btn-s btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${escapeHtml(day)}', '', '${child}')" ${day>schoolToday()||pendingHabitLogs.has(habitPendingKey(h.id,child,day)) ? 'disabled' : ''} style="font-size:12px;padding:4px 10px;">
+                        ✓ Done
                       </button>
                     `}
                   </div>
@@ -576,7 +580,7 @@ function renderSchoolHome() {
             ${otherTasks.map(t => schoolTaskCard(t, day)).join('')}
           ` : ''}
 
-          ${!events.length && !childTasks.length && !(data.habits || []).filter(h => h.member === child).length ? `
+          ${!events.length && !childTasks.length && !habits.length ? `
             <p class="school-empty">Clear day ahead! Enjoy the breathing room 🎉</p>
           ` : ''}
         </section>`;
@@ -662,7 +666,11 @@ async function schoolTaskAction(id, action, button) {
   const status = action === 'help_todo' ? 'Needs help' : 'Done';
   (data.schoolTasks || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
   (data.todos || []).forEach(t => { if (t.id === id) { t.status = status; if (status === 'Done') t.completedRaw = schoolToday(); } });
-  if (status === 'Done') data.todos = (data.todos || []).filter(t => t.id !== id);
+  if (status === 'Done') {
+    const completed = (data.todos || []).find(t=>t.id===id) || (data.schoolTasks || []).find(t=>t.id===id);
+    if (completed) { data.completedTasks = (data.completedTasks || []).filter(t=>t.id!==id); data.completedTasks.push({...completed,status:'Done',completedRaw:schoolToday()}); }
+    data.todos = (data.todos || []).filter(t => t.id !== id);
+  }
   if (result.rewards) data.rewards = result.rewards;
   renderHome(); renderTasks();
   applyRewardResult(result);

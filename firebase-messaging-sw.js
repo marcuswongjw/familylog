@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v25';
+const CACHE_NAME = 'wongs-nest-v26';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './assets/nest-mark.svg',
   './js/app.js',
   './js/school.js',
+  './js/habits.js',
   './js/rewards-art.js',
   './js/rewards.js',
   './manifest.json',
@@ -52,7 +53,7 @@ self.addEventListener('fetch', event => {
       path.endsWith('/') ||
       path.endsWith('.html') ||
       path.endsWith('/familylog') ||
-      path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
+      path.endsWith('/habits.js') || path.endsWith('/app.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
       path.endsWith('/styles.css') || path.endsWith('/nest.css') || path.endsWith('/nest.js') ||
       path.includes('manifest.json') ||
       path.endsWith('.png') || path.endsWith('.svg') ||

@@ -411,6 +411,7 @@
       stopMemoriesListener();
       if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
       user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
+      habitViewDate = ''; habitShowArchived = false; pendingHabitLogs.clear();
       data = { memories: [] }; GROUPS = {}; bucketList = []; memImageBase64 = null;
       document.body.classList.add('is-child');
       document.querySelectorAll('.overlay').forEach(el => el.classList.remove('open'));
@@ -3093,245 +3094,111 @@
     }
 
     // ─── HABITS ────────────────────────────────────────────────
+    let habitViewDate = '';
+    let habitShowArchived = false;
     function renderHabits() {
-      const el = document.getElementById('habits-container');
-      if (!el) return;
-      const habits = nestVisibleHabits();
-      const habitLogs = data.habitLogs || [];
-      const today = schoolToday();
-
-      if (!habits.length) {
-        el.innerHTML = `
-          <div class="empty" style="padding:40px 16px;text-align:center;">
-            <div class="ei" style="font-size:36px;margin-bottom:8px;">🌱</div>
-            <div style="font-size:15px;font-weight:600;margin-bottom:4px;">No habits set up yet</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">Track practices, routines, and daily activities for the family.</div>
-            <button class="btn btn-p btn-sm" onclick="openAddHabitModal()">+ Add first habit</button>
-          </div>
-        `;
-        return;
-      }
-
-      // Group habits by member
-      const byMember = {};
-      FAM.forEach(m => { byMember[m] = []; });
-      habits.forEach(h => {
-        const m = h.member || 'Everyone';
-        if (!byMember[m]) byMember[m] = [];
-        byMember[m].push(h);
-      });
-
-      // Past 7 days
-      const last7Days = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        last7Days.push({
-          dateStr: localDateStr(d),
-          dayName: d.toLocaleDateString('en-SG', { weekday: 'narrow' }),
-          isToday: i === 0
-        });
-      }
-
-      const activeMembers = FAM.filter(m => byMember[m] && byMember[m].length);
-
-      el.innerHTML = `
-        <div style="padding:16px;">
-          ${activeMembers.map(m => `
-            <div style="font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;padding-left:4px;border-left:3px solid var(--primary);">
-              ${escapeHtml(m)}’s habits
-            </div>
-            <div style="display:flex;flex-direction:column;gap:12px;">
-              ${byMember[m].map(h => {
-                const logsForHabit = habitLogs.filter(l => l.habitId === h.id && (h.member !== 'Everyone' || l.member === user));
-                const isLoggedToday = logsForHabit.some(l => l.date === today);
-
-                const daysDots = last7Days.map(day => {
-                  const done = logsForHabit.some(l => l.date === day.dateStr);
-                  return `
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-                      <span style="font-size:10px;color:var(--text-muted);font-weight:${day.isToday ? '700' : '400'};">${escapeHtml(day.dayName)}</span>
-                      <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;${done ? 'background:var(--success-soft);color:var(--success);border:1px solid #86efac;' : day.isToday ? 'background:#fef3c7;color:#b45309;border:1px dashed #f59e0b;' : 'background:var(--bg-subtle, #f1f5f9);color:#94a3b8;'}">
-                        ${done ? '✓' : '·'}
-                      </div>
-                    </div>
-                  `;
-                }).join('');
-
-                const recentLogs = logsForHabit.slice(0, 3);
-
-                return `
-                  <div class="card" style="padding:14px;border-radius:12px;border:1px solid var(--border-color);background:var(--bg-card);">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                      <div style="display:flex;align-items:center;gap:10px;">
-                        <span style="font-size:24px;">${escapeHtml(h.emoji || '✨')}</span>
-                        <div>
-                          <div style="font-size:15px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}</div>
-                          <div style="font-size:12px;color:var(--text-muted);">${escapeHtml(h.member)}</div>
-                        </div>
-                      </div>
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        ${isLoggedToday ? `
-                          <span style="font-size:12px;font-weight:600;color:var(--success);background:var(--success-soft);padding:4px 10px;border-radius:999px;">
-                            ✓ Done today
-                          </span>
-                        ` : `
-                          <button class="btn btn-p btn-sm" onclick="logHabitQuick('${escapeHtml(h.id)}', '${today}')" ${pendingHabitLogs.has(h.id + ':' + today) ? 'disabled' : ''} style="font-size:12px;padding:4px 12px;">
-                            Log practice
-                          </button>
-                        `}
-                        <button class="btn btn-s btn-sm" onclick="openHabitLogModal('${escapeHtml(h.id)}')" title="Log with notes" style="padding:4px 8px;">
-                          📝
-                        </button>
-                        ${isAdultUser ? `
-                          <button onclick="delHabit('${escapeHtml(h.id)}')" title="Delete habit" style="background:none;border:none;color:#cbd5e1;font-size:15px;cursor:pointer;padding:4px 6px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
-                        ` : ''}
-                      </div>
-                    </div>
-
-                    <!-- Past 7 days tracker -->
-                    <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg-subtle, #f8fafc);border-radius:8px;margin-bottom:10px;">
-                      ${daysDots}
-                    </div>
-
-                    <!-- Recent logs -->
-                    ${recentLogs.length ? `
-                      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Recent entries</div>
-                      <div style="display:flex;flex-direction:column;gap:4px;">
-                        ${recentLogs.map(l => `
-                          <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:4px 0;border-top:1px solid var(--border-color);">
-                            <span>📅 <strong>${fmtDate(l.date)}</strong>${l.notes ? ' · ' + escapeHtml(l.notes) : ''} <small style="color:var(--text-muted);">(${escapeHtml(l.loggedBy || '')})</small></span>
-                            <button onclick="delHabitLog('${escapeHtml(l.id)}')" title="Delete log" style="background:none;border:none;color:#cbd5e1;cursor:pointer;font-size:12px;padding:2px 6px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#cbd5e1'">✕</button>
-                          </div>
-                        `).join('')}
-                      </div>
-                    ` : '<div style="font-size:12px;color:var(--text-muted);font-style:italic;">No logs yet. Tap “Log practice” above!</div>'}
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          `).join('')}
-        </div>
-      `;
+      const root = document.getElementById('habits-container'); if (!root) return;
+      const date = habitViewDate || schoolToday();
+      const habits = nestVisibleHabits().filter(h => habitShowArchived && isAdultUser ? h.state === 'archived' : h.state !== 'archived');
+      root.innerHTML = `<div class="habit-toolbar"><label>Day<input type="date" id="habit-view-date" value="${date}"></label>
+        <button class="btn btn-p" onclick="openAddHabitModal()">+ New habit</button>
+        ${isAdultUser ? `<button class="btn btn-s" onclick="habitShowArchived=!habitShowArchived;renderHabits()">${habitShowArchived ? 'Active habits' : 'Archived habits'}</button>` : ''}</div>
+        <p class="habit-intro">Small steps on the days that work for you. A rest day is part of the routine.</p>
+        <div class="habit-grid">${habits.map(h => {
+          const member = h.member === 'Everyone' ? user : h.member;
+          const done = habitDone(h,member,date), due = habitDue(h,member,date), state = h.state || 'active';
+          const week = habitWeek(date);
+          const dots = Array.from({length:7},(_,i)=>{const d=schoolDayOffset(week.start,i),logged=habitDone(h,member,d),scheduled=habitDue(h,member,d);return `<span class="habit-day ${logged?'done':scheduled?'due':'rest'}" title="${d}: ${logged?'Completed':scheduled?'Scheduled':'Rest day'}"><small>${HABIT_DAYS[new Date(d+'T00:00:00Z').getUTCDay()]}</small><span>${logged?'✓':scheduled?'·':'–'}</span></span>`;}).join('');
+          const logs = (data.habitLogs || []).filter(l => l.habitId === h.id && (isAdultUser || l.member === user)).slice(0,5);
+          const canEdit = isAdultUser || h.member === user;
+          return `<article class="habit-card"><div class="habit-card-title"><span aria-hidden="true">${escapeHtml(h.emoji || '🌱')}</span><div><h3>${escapeHtml(h.habit)}${rewardBadge('habit',h.id)}</h3><p>${h.member==='Everyone'?'Shared · each person has their own progress':escapeHtml(h.member)}</p></div></div>
+            <p class="habit-schedule">${escapeHtml(habitScheduleLabel(h))}${state!=='active'?' · '+escapeHtml(state):''}</p>
+            ${h.schedule==='weekly'?`<p class="habit-weekly">${escapeHtml(habitProgressLabel(h,member,date))}${h.member==='Everyone'?' · '+escapeHtml(member):''}</p>`:''}
+            <div class="habit-week" aria-label="${escapeHtml(member)}’s week">${dots}</div>
+            <div class="habit-actions">${state==='active' ? done ? '<span class="habit-complete" role="status">✓ Done for this day</span>' : due ? `<button class="btn btn-p" onclick="${h.member==='Everyone'&&isAdultUser?`openHabitLogModal('${h.id}','${date}')`:`logHabitQuick('${h.id}','${date}','','${member}')`}" ${date>schoolToday()||pendingHabitLogs.has(habitPendingKey(h.id,member,date))?'disabled':''}>${date>schoolToday()?'Do this on the day':h.member==='Everyone'&&isAdultUser?'Log for a member':'✓ I did it'}</button>` : `<span class="habit-rest">${h.schedule==='weekly'?'Weekly goal reached. Enjoy the breathing room.':'Rest day'}</span>` : ''}
+            ${state==='active'&&date<=schoolToday()?`<button class="btn btn-s" onclick="openHabitLogModal('${h.id}','${date}')">Add notes${h.member==='Everyone'&&isAdultUser?' / log for someone':''}</button>`:''}
+            ${canEdit?`<button class="btn btn-s" onclick="openAddHabitModal('${h.id}')">Edit</button>`:''}
+            ${isAdultUser?`<button class="btn btn-s" onclick="setHabitState('${h.id}','${state==='active'?'paused':'active'}')">${state==='active'?'Pause':state==='archived'?'Restore':'Resume'}</button>${state!=='archived'?`<button class="btn btn-s" onclick="delHabit('${h.id}')">Archive</button>`:''}`:''}</div>
+            <details class="habit-history"><summary>Recent history${h.member==='Everyone'&&isAdultUser?' · all members':''}</summary>${logs.length?logs.map(l=>`<div><span>${escapeHtml(l.member)} · ${fmtDate(l.date)}${l.notes?' · '+escapeHtml(l.notes):''}</span><button class="btn btn-s btn-sm" onclick="delHabitLog('${l.id}')" aria-label="Remove ${escapeHtml(l.member)}’s entry on ${l.date}">Remove entry</button></div>`).join(''):'<p>No entries yet.</p>'}</details></article>`;
+        }).join('') || `<div class="empty">${habitShowArchived?'No archived habits.':'No habits yet. Add a small routine to get started.'}</div>`}</div>`;
+      document.getElementById('habit-view-date').onchange = e => {habitViewDate=e.target.value||schoolToday();renderHabits();};
     }
-
     const pendingHabitLogs = new Set();
-    async function logHabitQuick(habitId, dateStr, notes) {
-      dateStr = dateStr || schoolToday();
-      const key = habitId + ':' + dateStr;
-      if (pendingHabitLogs.has(key)) return false;
-      const account = currentUserEmail;
-      const h = (data.habits || []).find(x => x.id === habitId);
-      if (!h) { showError('Habit not found. Refresh before trying again.'); return false; }
-      pendingHabitLogs.add(key);
-      renderHabits(); renderHome();
+    async function logHabitQuick(habitId, dateStr, notes, logMember) {
+      const h=(data.habits||[]).find(h=>h.id===habitId); if(!h)return false;
+      const member=h.member==='Everyone'?(isAdultUser?(logMember||user):user):h.member;
+      dateStr=dateStr||schoolToday(); const key=habitPendingKey(habitId,member,dateStr);
+      if(pendingHabitLogs.has(key))return false;
+      const account=currentUserEmail,generation=sessionGeneration;
+      pendingHabitLogs.add(key);renderHabits();renderHome();
       try {
-        const res = await gPost({ note: 'log_habit', habit_id: habitId, date: dateStr, notes: notes || '' });
-        if (account !== currentUserEmail) return false;
-        if (!res || res.status !== 'ok' || !res.log) { showError(res?.message || 'Could not save the habit. Try again when connected.'); return false; }
-        data.habitLogs = (data.habitLogs || []).filter(l => l.id !== res.log.id);
-        data.habitLogs.unshift(res.log);
-        if (res.rewards) data.rewards = res.rewards;
-        renderHabits(); renderHome();
-        applyRewardResult(res);
-        toast(res.duplicate ? 'Already logged for this day.' : `${h.habit} logged! ${h.emoji || '✨'}`);
-        return true;
-      } catch (e) { if (account === currentUserEmail) showError('Could not save the habit. Try again when connected.'); return false; }
-      finally {
-        pendingHabitLogs.delete(key);
-        if (account === currentUserEmail) { renderHabits(); renderSchoolHome(); }
-      }
+        const res=await gPost({note:'log_habit',habit_id:habitId,date:dateStr,notes:notes||'',log_member:member});
+        if(account!==currentUserEmail||generation!==sessionGeneration)return false;
+        if(!res||res.status!=='ok'||!res.log){showError(res?.message||'Could not save. Try again when connected.');return false;}
+        data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==res.log.id);data.habitLogs.unshift(res.log);
+        if(res.rewards)data.rewards=res.rewards;
+        renderHabits();renderHome();applyRewardResult(res);
+        toast(res.duplicate?'Already logged for this day.':`${member===user?'You':member} completed ${h.habit}.`);return true;
+      } catch (err) {if(account===currentUserEmail&&generation===sessionGeneration)showError('Could not save. Try again when connected.');return false;}
+      finally {if(account===currentUserEmail&&generation===sessionGeneration){pendingHabitLogs.delete(key);renderHabits();renderSchoolHome();}}
     }
     window.logHabitQuick = logHabitQuick;
-
     async function delHabitLog(logId) {
-      if (!confirm('Remove this habit entry? Earned stars will stay with you.')) return;
-      const account = currentUserEmail;
-      const res = await gPost({ note: 'delete_habit_log', log_id: logId });
-      if (account !== currentUserEmail) return;
-      if (!res || res.status !== 'ok') return;
-      data.habitLogs = (data.habitLogs || []).filter(l => l.id !== logId);
-      renderHabits(); renderHome();
-      toast('Habit entry removed.');
+      if(!confirm('Remove this entry? Earned stars will stay with you.'))return;
+      if(!await saveConfirmed({note:'delete_habit_log',log_id:logId}))return;
+      data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==logId);renderHabits();renderHome();toast('Entry removed.');
     }
-    window.delHabitLog = delHabitLog;
-
-    function openHabitLogModal(habitId, dateStr) {
-      const h = (data.habits || []).find(x => x.id === habitId);
-      if (!h) return;
-      document.getElementById('hl-habit-id').value = habitId;
-      document.getElementById('hl-title').textContent = (h.emoji ? h.emoji + ' ' : '') + h.habit + ' (' + h.member + ')';
-      document.getElementById('hl-date').value = dateStr || schoolToday();
-      document.getElementById('hl-notes').value = '';
-      document.getElementById('m-habit-log').classList.add('open');
+    function openHabitLogModal(habitId,dateStr,member) {
+      const h=(data.habits||[]).find(h=>h.id===habitId);if(!h)return;
+      document.getElementById('hl-habit-id').value=habitId;
+      document.getElementById('hl-title').textContent=h.habit;
+      document.getElementById('hl-date').value=dateStr||schoolToday();document.getElementById('hl-date').max=schoolToday();
+      document.getElementById('hl-notes').value='';
+      const select=document.getElementById('hl-member');
+      const members=h.member==='Everyone'&&isAdultUser?FAM.filter(m=>m!=='Everyone'):[h.member==='Everyone'?user:h.member];
+      select.innerHTML=members.map(m=>`<option value="${m}">${m}</option>`).join('');select.value=member||members.find(m=>m===user)||members[0];
+      select.disabled=members.length===1;
+      openM('m-habit-log');
     }
-    window.openHabitLogModal = openHabitLogModal;
-
     async function submitHabitLog(btn) {
-      if (!btn) btn = document.getElementById('hl-submit');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        const habitId = document.getElementById('hl-habit-id').value;
-        const dateStr = document.getElementById('hl-date').value || schoolToday();
-        const notes = document.getElementById('hl-notes').value.trim();
-        if (await logHabitQuick(habitId, dateStr, notes)) closeM('m-habit-log');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save entry';
-      }
+      btn=btn||document.getElementById('hl-submit');btn.disabled=true;btn.textContent='Saving…';
+      try {if(await logHabitQuick(v('hl-habit-id'),v('hl-date'),v('hl-notes'),v('hl-member')))closeM('m-habit-log');}
+      finally {btn.disabled=false;btn.textContent='Save entry';}
     }
-    window.submitHabitLog = submitHabitLog;
-
-    function openAddHabitModal() {
-      clr('hab-name');
-      document.getElementById('hab-emoji').value = '✨';
-      chips('hab-member-chips', FAM, user, 'hab-member');
-      document.getElementById('m-habit').classList.add('open');
+    function updateHabitScheduleFields() {
+      const mode=v('hab-schedule');document.getElementById('hab-days-field').hidden=mode!=='weekdays';document.getElementById('hab-target-field').hidden=mode!=='weekly';
     }
-    window.openAddHabitModal = openAddHabitModal;
-
+    function openAddHabitModal(id) {
+      const h=(data.habits||[]).find(h=>h.id===id);
+      document.getElementById('hab-id').value=h?.id||'';document.getElementById('hab-name').value=h?.habit||'';document.getElementById('hab-emoji').value=h?.emoji||'🌱';
+      const members=h?[h.member]:isAdultUser?FAM:[user];
+      document.getElementById('hab-member').innerHTML=members.map(m=>`<option value="${m}">${m==='Everyone'?'Everyone · shared habit':m}</option>`).join('');document.getElementById('hab-member').value=h?.member||user;
+      document.getElementById('hab-member').disabled=!!h;
+      document.getElementById('hab-schedule').value=h?.schedule||'daily';document.getElementById('hab-target').value=h?.weeklyTarget||3;
+      document.getElementById('hab-days').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" value="${d}" ${(h?.weekdays||[1,2,3,4,5]).includes(d)?'checked':''}>${HABIT_DAYS[d]}</label>`).join('');
+      document.getElementById('hab-modal-title').textContent=h?'Edit habit':'Add habit';document.getElementById('hab-submit').textContent=h?'Save habit':'Add habit';updateHabitScheduleFields();openM('m-habit');
+    }
     async function submitNewHabit(btn) {
-      if (!btn) btn = document.getElementById('hab-submit');
-      btn.disabled = true; btn.textContent = 'Saving…';
+      btn=btn||document.getElementById('hab-submit');btn.disabled=true;btn.textContent='Saving…';
+      const id=v('hab-id');
       try {
-        const name = document.getElementById('hab-name').value.trim();
-        if (!name) { toast('Please enter a habit name.'); return; }
-        const member = gc('hab-member') || user || 'Everyone';
-        const emoji = document.getElementById('hab-emoji').value.trim() || '✨';
-        const res = await gPost({
-          note: 'add_habit',
-          habit: name,
-          member: member,
-          emoji: emoji
-        });
-        if (res && res.status === 'ok') {
-          closeM('m-habit');
-          toast(`Habit added for ${member}!`);
-          await loadData();
-        } else {
-          toast((res && res.message) || 'Failed to add habit', true);
-        }
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Add habit';
-      }
+        const name=v('hab-name');if(!name||name.length>80){showError('Use a habit name up to 80 characters.');return;}
+        const weekdays=Array.from(document.querySelectorAll('#hab-days input:checked'),el=>Number(el.value));
+        if(v('hab-schedule')==='weekdays'&&!weekdays.length){showError('Choose at least one day.');return;}
+        if(v('hab-schedule')==='weekly'&&(!Number.isInteger(Number(v('hab-target')))||Number(v('hab-target'))<1||Number(v('hab-target'))>7)){showError('Choose a weekly target from 1 to 7.');return;}
+        if(!await saveConfirmed({note:id?'edit_habit':'add_habit',habit_id:id,habit:name,member:v('hab-member'),emoji:v('hab-emoji'),schedule:v('hab-schedule'),weekdays,weekly_target:Number(v('hab-target'))}))return;
+        closeM('m-habit');toast(id?'Habit updated.':'Habit added.');await loadData();
+      } finally {btn.disabled=false;btn.textContent=id?'Save habit':'Add habit';}
     }
-    window.submitNewHabit = submitNewHabit;
-
-    async function delHabit(habitId) {
-      if (!isAdultUser) {
-        toast('Only parents can delete habits.');
-        return;
-      }
-      if (!confirm('Delete this habit and all its logged history?')) return;
-      data.habits = (data.habits || []).filter(h => h.id !== habitId);
-      data.habitLogs = (data.habitLogs || []).filter(l => l.habitId !== habitId);
-      renderHabits();
-      renderHome();
-      const res = await gPost({ note: 'delete_habit', habit_id: habitId });
-      if (res && res.status === 'ok') toast('Habit deleted.');
+    async function setHabitState(id,state) {
+      if(!isAdultUser)return;
+      if(!await saveConfirmed({note:'set_habit_state',habit_id:id,state}))return;
+      toast(state==='archived'?'Habit archived. History and stars are kept.':state==='paused'?'Habit paused.':'Habit active again.');await loadData();
     }
-    window.delHabit = delHabit;
+    async function delHabit(id) {
+      if(!isAdultUser||!confirm('Archive this habit? Its history and earned stars will be kept.'))return;
+      await setHabitState(id,'archived');
+    }
 
     // ─── APP INIT (already called above) ───────────────────────
 
