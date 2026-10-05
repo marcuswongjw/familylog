@@ -1,5 +1,6 @@
 /* Companions, accessory collection and a cooperative family goal. */
 const rewardPending = new Set();
+const rewardHabitDrafts = new Map();
 let rewardCelebrationTimer;
 function rewardProfile() { return data.rewards?.members?.find(p => p.member === user); }
 function rewardStars(type, id) { return data.rewards?.rules?.find(r => r.type === type && r.sourceId === id)?.stars || 0; }
@@ -44,6 +45,7 @@ function applyRewardResult(result, celebrate = true) {
   document.querySelectorAll('#reward-home .reward-hello, #rewards-container .reward-hero-art').forEach(rewardAnimate);
 }
 function resetRewards() {
+  rewardHabitDrafts.clear();
   clearTimeout(rewardCelebrationTimer);
   document.getElementById('reward-celebration').hidden = true;
   document.getElementById('reward-home').innerHTML = '';
@@ -58,6 +60,7 @@ async function rewardMutation(key, payload, success) {
     const result = await gPost(payload);
     if (account !== currentUserEmail) return;
     if (!result || result.status !== 'ok') { showError(result?.message || 'Could not save. Try again when connected.'); return; }
+    if (key === 'habit-rules') rewardHabitDrafts.clear();
     applyRewardResult(result, false);
     toast(success);
   } catch (error) {
@@ -76,6 +79,7 @@ function renderRewards() {
   root.innerHTML = `<div class="reward-page-heading"><div><span class="reward-eyebrow">OUR LITTLE NEST</span><h2>Companions & stars</h2><p>Celebrate the small things. Build something together.</p></div><span class="reward-wallet">★ ${p.balance}<small>your stars</small></span></div>
     <section class="reward-hero"><div class="reward-hero-art">${rewardCompanionSVG(p)}</div><div><h3>Meet ${escapeHtml(p.name)}</h3><p>${p.earned ? p.earned + ' stars earned through little everyday wins.' : 'Your companion is ready to share your first little win.'}</p>
       <p class="reward-muted">Stars unlock accessories. Every star earned also grows your family nest.</p></div></section>
+    ${isAdultUser ? rewardHabitRulesHTML() : ''}
     <section class="reward-profile-settings"><h3>Make your companion yours</h3>
       <form id="reward-profile-form"><fieldset ${saving ? 'disabled' : ''}>
         <div class="reward-species">${['fox', 'rabbit', 'bear', 'cat'].map(species => `<label class="reward-species-option"><input type="radio" name="reward-species" value="${species}" ${species === p.species ? 'checked' : ''}>${rewardCompanionSVG({ species, name: species, equipped: '' }, 'small')}<span>${species[0].toUpperCase() + species.slice(1)}</span></label>`).join('')}</div>
@@ -110,6 +114,15 @@ function renderRewards() {
     rewardMutation(p.owned.includes(id) ? 'profile' : id, p.owned.includes(id) ? { note: 'save_companion', species: p.species, companion_name: p.name, equipped: id } : { note: 'buy_reward_item', item_id: id }, p.owned.includes(id) ? 'Looking lovely!' : 'Accessory unlocked. Choose “Wear it” to try it on.');
   }));
   root.querySelector('#reward-remove-accessory')?.addEventListener('click', () => rewardMutation('profile', { note: 'save_companion', species: p.species, companion_name: p.name, equipped: '' }, 'Accessory put away.'));
+
+  root.querySelectorAll('[data-habit-stars]').forEach(input => input.addEventListener('input', () => {
+    rewardHabitDrafts.set(currentUserEmail + ':' + input.dataset.habitStars, input.value);
+  }));
+  root.querySelector('#reward-habit-form')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const rules = Array.from(root.querySelectorAll('[data-habit-stars]')).map(input => ({source_id:input.dataset.habitStars,stars:Number(input.value)}));
+    rewardMutation('habit-rules', {note:'set_habit_rewards',rules}, 'Habit stars saved.');
+  });
   root.querySelector('#reward-rule-type')?.addEventListener('change', rewardRuleOptions);
   root.querySelector('#reward-rule-source')?.addEventListener('change', rewardRuleValue);
   root.querySelector('#reward-rule-form')?.addEventListener('submit', e => {
@@ -120,14 +133,24 @@ function renderRewards() {
   });
   if (isAdultUser) rewardRuleOptions();
 }
+function rewardHabitRulesHTML() {
+  const habits = data.habits || [];
+  return `<section class="reward-habit-settings"><h3>Stars for every habit</h3><p class="reward-muted">Choose the stars each family member earns for a daily habit. Set 0 to turn its reward off.</p>
+    ${habits.length ? `<form id="reward-habit-form"><fieldset ${rewardPending.has('habit-rules') ? 'disabled' : ''}>
+      <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(h.member)}</small></div>
+        <label>Stars<input type="number" data-habit-stars="${escapeHtml(h.id)}" value="${escapeHtml(rewardHabitDrafts.get(currentUserEmail + ':' + h.id) ?? rewardStars('habit',h.id))}" min="0" max="100" step="1" required aria-label="Stars for ${escapeHtml(h.habit)} (${escapeHtml(h.member)})"></label></div>`).join('')}</div>
+      <div class="reward-habit-save"><button type="submit" class="btn btn-p">${rewardPending.has('habit-rules') ? 'Saving…' : 'Save habit stars'}</button><small>Whole numbers from 0 to 100. Earned once per member each day.</small></div>
+    </fieldset></form>` : '<p class="reward-muted">Add a habit in Habits to choose its star reward here.</p>'}
+  </section>`;
+}
 function rewardRulesHTML() {
-  return `<section class="reward-rule-settings"><h3>Choose what earns stars</h3><p class="reward-muted">Parents choose the activities and star amounts. Tasks earn once; habits earn once per member each day. All four family members can take part.</p>
+  return `<section class="reward-rule-settings"><h3>Task rewards</h3><p class="reward-muted">Tasks earn stars once. Choose an open task and its reward.</p>
     <form id="reward-rule-form"><fieldset ${rewardPending.has('rule') ? 'disabled' : ''}><div class="reward-rule-fields">
-      <label>Activity type<select id="reward-rule-type"><option value="task">Task</option><option value="habit">Habit</option></select></label>
-      <label>Activity<select id="reward-rule-source"></select></label>
+      <input type="hidden" id="reward-rule-type" value="task">
+      <label>Task<select id="reward-rule-source"></select></label>
       <label>Reward<select id="reward-rule-stars"><option value="0">No stars</option><option value="1">★ 1 star</option><option value="3">★ 3 stars</option><option value="5">★ 5 stars</option></select></label>
       <button type="submit" class="btn btn-p">${rewardPending.has('rule') ? 'Saving…' : 'Save reward'}</button></div></fieldset></form>
-    <p class="reward-muted">Start with preparation and practice: pack a school bag, read together, or practise an instrument. Asking for help never costs stars.</p></section>`;
+    <p class="reward-muted">Asking for help never costs stars.</p></section>`;
 }
 function rewardRuleOptions() {
   const type = v('reward-rule-type');

@@ -42,7 +42,7 @@ Dark mode uses plum surfaces, lavender highlights and light paper text. Use sema
 
 ## Layout and access
 
-At 1050px and above, use a permanent family sidebar grouped into Day to day, Make memories, and Parents’ corner. Below that, use five navigation buttons: Home, Plan, Tasks, Nest and More. The complete set of destinations remains available through More; the header drawer provides a second shortcut.
+At 1050px and above, use a permanent family sidebar grouped into Day to day, Make memories, and Parents’ corner. Below that, use five navigation buttons: Home, Plan, Tasks, Nest and More for parents; children have Habits in place of Plan and see only their own or shared plans and habits. The complete set of destinations remains available through More; the header drawer provides a second shortcut.
 
 The parent home brings together a daily welcome, real activity counts, a companion/garden, the message-to-plan inbox, children’s plans, and the family overview. The child home focuses on their own plan and encouragement. The complete app retains the same paper surfaces and spacing, including calendars, habits, memories, money, travel and private parent tools.
 

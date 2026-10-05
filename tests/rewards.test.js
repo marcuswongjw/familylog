@@ -161,3 +161,27 @@ test('shared task preserves first reward recipient if earning fails before appen
   assert.equal(complete(h,id,sibling).award.member,'Mikaela');
   assert.equal(profile(h).balance,5); assert.equal(profile(h,'Meaghan').balance,0);
 });
+
+test('parents save custom habit stars together, preserving task rules and retry safety',()=>{
+  const h=harness(), task=activity(h), own=activity(h,'habit'), shared=activity(h,'habit','Everyone');
+  const request={note:'set_habit_rewards',rules:[{source_id:own,stars:7},{source_id:shared,stars:0}]};
+  assert.equal(h.write(request).status,'ok');assert.equal(h.write(request).status,'ok');
+  assert.equal(log(h,own).award.stars,7);assert.equal(log(h,shared).award.stars,0);assert.equal(complete(h,task).award.stars,5);
+  assert.equal(h.sheets.RewardRules.rows.length,4);
+});
+test('habit star batches reject children and invalid rows before changing any rule',()=>{
+  const h=harness(), id=activity(h,'habit');
+  assert.equal(h.write({note:'set_habit_rewards',rules:[{source_id:id,stars:7}]},child).status,'error');
+  for(const stars of [-1,101,1.5,'7',null]) assert.equal(h.write({note:'set_habit_rewards',rules:[{source_id:id,stars:stars}]}).status,'error');
+  assert.equal(h.write({note:'set_habit_rewards',rules:[{source_id:id,stars:7},{source_id:'missing',stars:3}]}).status,'error');
+  assert.equal(log(h,id).award.stars,5);
+});
+test('backend child reads expose only own and shared habits and own logs',()=>{
+  const h=harness(), own=activity(h,'habit'), other=activity(h,'habit','Meaghan'), shared=activity(h,'habit','Everyone');
+  log(h,own);log(h,other,{},sibling);
+  const ids=Array.from(h.c.getHabits(h.ss,child),x=>x.id);
+  assert.ok(ids.includes(own));assert.ok(ids.includes(shared));assert.ok(!ids.includes(other));
+  assert.ok(h.c.getHabitLogs(h.ss,child).every(x=>x.member==='Mikaela'));
+  const events=[{tags:['Mikaela']},{tags:['Meaghan']},{tags:['Family']},{tags:[]}];
+  assert.equal(h.c.memberEvents_(events,child).length,2);assert.equal(h.c.memberEvents_(events,'marcuswongjw@gmail.com').length,4);
+});

@@ -594,6 +594,7 @@
       // Server isAdult is authoritative; fall back to email allowlist
       if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
       else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
+      nestFilterChildData();
       buildDynamicSelectors();
       render(section);
       renderHome();
@@ -743,7 +744,7 @@
       const el = document.getElementById('more-grid');
       if (!el) return;
       const tiles = [
-        ['habits','Habits'],['memories','Memories'],['birthdays','Celebrations'],['travel','Adventures'],
+        ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],['travel','Adventures'],
         ...(isAdultUser ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [])
       ];
       el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
@@ -1062,7 +1063,7 @@
       }
       const today = todayStr();
       const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const people = ['Family', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'];
+      const people = isAdultUser ? ['Family', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'] : [user];
       const visiblePeople = weekPersonFilter && weekPersonFilter !== 'All'
         ? people.filter(p => p === 'Family' || p === weekPersonFilter)
         : people;
@@ -1096,7 +1097,7 @@
         Eleanor: 'Mom',
         Marcus: 'Dad'
       };
-      const pills = ['All', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'];
+      const pills = isAdultUser ? ['All', 'Mikaela', 'Meaghan', 'Eleanor', 'Marcus'] : [user];
       const chip = (e, person) => {
         const timeLabel = !e.time || e.time === 'All day' ? 'All day' : e.time;
         const del = isAdultUser ? `<button class="week-chip-del" data-eid="${escapeHtml(e.id)}" onclick="event.stopPropagation();delEvent(this.dataset.eid)" aria-label="Delete">✕</button>` : '';
@@ -3039,7 +3040,7 @@
     function renderHabits() {
       const el = document.getElementById('habits-container');
       if (!el) return;
-      const habits = data.habits || [];
+      const habits = nestVisibleHabits();
       const habitLogs = data.habitLogs || [];
       const today = schoolToday();
 

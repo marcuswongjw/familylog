@@ -12,7 +12,7 @@ function fixture(adult = true) {
   const pages=ids.map(id=>element('s-'+id)), nav=['home','calendar','tasks','rewards','more'].map(id=>{const e=element('nav-'+id);e.dataset.nestRoute=id;return e;});
   const elements=Object.fromEntries([...pages,...nav,...['fab','hav','hname','hdate','nest-current-page'].map(element)].map(e=>[e.id,e]));
   const renders=[],messages=[];
-  const c=vm.createContext({window:{addEventListener(){}},document:{getElementById:id=>elements[id],querySelectorAll:q=>q==='.section'?pages:nav},
+  const c=vm.createContext({window:{addEventListener(){}},document:{getElementById:id=>elements[id],querySelectorAll:q=>q==='.section'?pages:q.includes('nest-sidebar')?[]:nav},
     section:'home',user:adult?'Marcus':'Mikaela',MEMBERS:[{name:adult?'Marcus':'Mikaela',emoji:'avatar'}],isAdultUser:adult,timelineInterval:null,
     location:{hash:'',search:''},URLSearchParams,savePreference(){},startMemoriesListener(){},stopMemoriesListener(){},render:id=>renders.push(id),toast:m=>messages.push(m)});
   vm.runInContext(fs.readFileSync(require.resolve('../js/nest.js'),'utf8'),c);
@@ -40,4 +40,17 @@ test('secondary screens support notification and hash deep links',()=>{
 
 test('unknown notification destinations return home instead of a blank screen',()=>{
   const h=fixture();h.c.goTo('missing');assert.equal(h.c.section,'home');assert.equal(h.renders.at(-1),'home');
+});
+
+test('children have Habits in primary navigation instead of Plan',()=>{
+  const h=fixture(false); h.c.goTo('habits');
+  const button=h.nav.find(n=>n.id==='nav-calendar');
+  assert.equal(button.dataset.nestRoute,'habits');
+  assert.equal(button.getAttribute('aria-current'),'page');
+  assert.equal(h.nav.find(n=>n.id==='nav-more').getAttribute('aria-current'),undefined);
+});
+test('child data excludes siblings and parents while retaining shared items',()=>{
+  const h=fixture(false); h.c.data={todos:[{assignee:'Mikaela'},{assignee:'Meaghan'},{assignee:'Everyone'}],schoolTasks:[{assignee:'Marcus'}],events:[{tags:['Meaghan']},{tags:['Mikaela']},{tags:['Family']},{tags:[]}],habits:[{member:'Mikaela'},{member:'Meaghan'},{member:'Everyone'}],habitLogs:[{member:'Mikaela'},{member:'Meaghan'}]};
+  h.c.nestFilterChildData();
+  assert.equal(h.c.data.todos.length,2);assert.equal(h.c.data.schoolTasks.length,0);assert.equal(h.c.data.events.length,2);assert.equal(h.c.data.habits.length,2);assert.equal(h.c.data.habitLogs.length,1);
 });

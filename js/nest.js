@@ -67,8 +67,19 @@ function initNest() {
   updateNestShell();
 }
 function updateNestShell() {
+  const planButton = document.getElementById('nav-calendar');
+  if (planButton) {
+    const route = isAdultUser ? 'calendar' : 'habits';
+    planButton.dataset.nestRoute = route;
+    planButton.dataset.label = isAdultUser ? 'Plan' : 'Habits';
+    planButton.onclick = () => goTo(route);
+    planButton.innerHTML = nestIcon(route) + `<span>${planButton.dataset.label}</span>`;
+  }
+  document.querySelectorAll('#nest-sidebar [data-nest-route="calendar"]').forEach(button => { button.hidden = !isAdultUser; });
+  const primary = isAdultUser ? ['home','calendar','tasks','rewards'] : ['home','habits','tasks','rewards'];
+
   document.querySelectorAll('[data-nest-route]').forEach(button=>{
-    const selected=button.dataset.nestRoute===section || (button.dataset.nestRoute==='more' && !['home','calendar','tasks','rewards'].includes(section));
+    const selected=button.dataset.nestRoute===section || (button.dataset.nestRoute==='more' && !primary.includes(section));
     button.classList.toggle('act',selected);
     if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
@@ -85,3 +96,16 @@ function updateNestThemeIcon() {
   document.querySelector('meta[name="theme-color"]').content=dark?'#25212E':'#F8F6F2';
 }
 window.addEventListener('DOMContentLoaded',initNest);
+
+function nestVisibleHabits() {
+  return (data.habits || []).filter(h => isAdultUser || h.member === user || h.member === 'Everyone');
+}
+function nestFilterChildData() {
+  if (isAdultUser) return;
+  const related = t => t.assignee === user || t.assignee === 'Everyone';
+  data.todos = (data.todos || []).filter(related);
+  data.schoolTasks = (data.schoolTasks || []).filter(related);
+  data.events = (data.events || []).filter(e => (e.tags || []).some(tag => [user,'Everyone','Family'].includes(tag)));
+  data.habits = nestVisibleHabits();
+  data.habitLogs = (data.habitLogs || []).filter(l => l.member === user);
+}

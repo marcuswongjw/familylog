@@ -295,3 +295,15 @@ body.dark-mode .reward-wallet,body.dark-mode .reward-star-badge { color:#F3C4AA;
   .is-child .reward-welcome { gap:12px; padding:18px; }
 }
 body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day-today { background:var(--primary-light); }
+/* Parent habit rewards: edit the whole family's habits in one place. */
+.reward-habit-settings { margin:8px 0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:22px; padding:24px; }
+.reward-habit-settings h3 { font-size:22px; margin-bottom:8px; }
+.reward-habit-list { margin:12px 0 20px; }
+.reward-habit-row { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:20px; align-items:center; padding:14px 0; border-bottom:1px solid var(--border-color); }
+.reward-habit-row strong { display:block; font-size:14px; overflow-wrap:anywhere; }
+.reward-habit-row small { display:block; color:var(--text-secondary); font-size:12px; margin-top:5px; }
+.reward-habit-row label { color:var(--text-secondary); font-size:11px; }
+.reward-habit-save { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.reward-habit-save small { color:var(--text-secondary); font-size:11px; }
+.nest-nav-group button[hidden] { display:none; }
+@media(max-width:720px) { .reward-habit-settings { padding:20px 16px; }.reward-habit-row { grid-template-columns:minmax(0,1fr) 80px; gap:12px; } }

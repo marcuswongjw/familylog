@@ -771,7 +771,7 @@ function doGet(e) {
       case 'get_chat':
         output = { status: 'error', message: 'Chat has been removed from Wong’s Nest.' };
         break;
-      case 'get_events':    output = getEvents();           break;
+      case 'get_events':    output = memberEvents_(getEvents(), verifiedEmail); break;
       case 'get_todos':     output = getTodos(null, verifiedEmail);            break;
       case 'get_expenses':  output = isAdultEmail_(verifiedEmail) ? getExpensesData() : emptyExpensesPayload_(); break;
       case 'get_budgets':   output = isAdultEmail_(verifiedEmail) ? getBudgets() : [];          break;
@@ -876,7 +876,7 @@ function handleWriteInner_(data) {
     return { status: 'error', message: 'This feature is only available to parents.' };
   }
 
-  if (['set_reward_rule', 'buy_reward_item', 'save_companion'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
+  if (['set_reward_rule', 'set_habit_rewards', 'buy_reward_item', 'save_companion'].indexOf(noteLower) !== -1) return rewardHandleWrite_(data, ss, verifiedEmail, user);
 
   if (noteLower === 'save_school_draft' || noteLower === 'publish_school_draft') return schoolHandleWrite_(data, ss, verifiedEmail, user);
 
@@ -1551,11 +1551,11 @@ function getAllDashboardData(verifiedEmail) {
   var events = getEvents();
   try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
   var allTodos = getTodos(ss, verifiedEmail, true);
-  var habits = getHabits(ss);
-  var habitLogs = getHabitLogs(ss);
+  var habits = getHabits(ss, verifiedEmail);
+  var habitLogs = getHabitLogs(ss, verifiedEmail);
   // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
-    events:    events,
+    events:    memberEvents_(events, verifiedEmail),
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
@@ -1628,7 +1628,7 @@ function ensureHabitSheets_(ss) {
   return { habits: hSheet, logs: hlSheet };
 }
 
-function getHabits(ss) {
+function getHabits(ss, verifiedEmail) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ensureHabitSheets_(ss);
   var rows = sheets.habits.getDataRange().getValues();
@@ -1636,6 +1636,7 @@ function getHabits(ss) {
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (!r[0] || !r[2]) continue;
+    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[1] !== memberNameFromEmail_(verifiedEmail) && r[1] !== 'Everyone') continue;
     result.push({
       id: toStr(r[0]),
       member: toStr(r[1]),
@@ -1647,7 +1648,7 @@ function getHabits(ss) {
   return result;
 }
 
-function getHabitLogs(ss) {
+function getHabitLogs(ss, verifiedEmail) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ensureHabitSheets_(ss);
   var rows = sheets.logs.getDataRange().getValues();
@@ -1660,6 +1661,7 @@ function getHabitLogs(ss) {
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (!r[0] || !r[4]) continue;
+    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[2] !== memberNameFromEmail_(verifiedEmail)) continue;
     var dStr = r[4] instanceof Date ? Utilities.formatDate(r[4], tz, 'yyyy-MM-dd') : toStr(r[4]);
     if (dStr < cutoffStr) continue;
     result.push({
@@ -1730,6 +1732,11 @@ function syncCalendarEventTasks_(ss, events) {
   }
 }
 
+function memberEvents_(events, verifiedEmail) {
+  if (isAdultEmail_(verifiedEmail)) return events;
+  var member = memberNameFromEmail_(verifiedEmail);
+  return member ? events.filter(function(e) { return (e.tags || []).indexOf(member) !== -1 || (e.tags || []).indexOf('Everyone') !== -1 || (e.tags || []).indexOf('Family') !== -1; }) : [];
+}
 function getEvents() {
   try {
     var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
@@ -3364,7 +3371,27 @@ function rewardAward_(ss, type, sourceId, member, occurrence) {
 function rewardHandleWrite_(data, ss, email, user) {
   try {
     var note = toStr(data.note).toLowerCase().trim();
-    if (note === 'set_reward_rule') {
+    if (note === 'set_habit_rewards') {
+      if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
+      if (!Array.isArray(data.rules) || !data.rules.length || data.rules.length > 500) throw new Error('Choose the habits to update.');
+      var habits = getHabits(ss), seen = {};
+      var updates = data.rules.map(function(rule) {
+        var sourceId = toStr(rule.source_id), stars = rule.stars;
+        if (!habits.some(function(h) { return h.id === sourceId; }) || seen[sourceId]) throw new Error('A habit changed. Refresh before saving stars.');
+        if (typeof stars !== 'number' || !Number.isInteger(stars) || stars < 0 || stars > 100) throw new Error('Enter a whole number from 0 to 100 stars for each habit.');
+        seen[sourceId] = true;
+        return ['habit:' + sourceId, 'habit', sourceId, stars, user, new Date()];
+      });
+      // Validate every row before a single write; preserve task and omitted habit rules.
+      var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
+      var rows = rules.getDataRange().getValues().slice(1);
+      updates.forEach(function(update) {
+        var index = rows.findIndex(function(row) { return row[0] === update[0]; });
+        if (index < 0) rows.push(update); else rows[index] = update;
+      });
+      rules.getRange(2, 1, rows.length, 6).setValues(rows.map(function(row) { return row.slice(0, 6); }));
+      SpreadsheetApp.flush();
+    } else if (note === 'set_reward_rule') {
       if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
       var type = toStr(data.source_type), sourceId = toStr(data.source_id), stars = Number(data.stars);
       if (['task', 'habit'].indexOf(type) === -1 || [0, 1, 3, 5].indexOf(stars) === -1) throw new Error('Choose 0, 1, 3 or 5 stars.');

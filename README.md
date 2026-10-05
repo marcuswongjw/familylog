@@ -137,7 +137,7 @@ Treat the spreadsheet ACL carefully (share only with parents if preferred).
 
 ## Companions & stars
 
-Home now includes an original animal companion and a shared family garden. Open **Nest → Companions & stars** to choose a fox, rabbit, bear or cat, name it, and spend earned stars on accessories. Parents use **Choose what earns stars** to select an existing task or habit and set 0, 1, 3 or 5 stars. Activities start with no rewards until a parent selects them.
+Home now includes an original animal companion and a shared family garden. Open **Nest → Companions & stars** to choose a fox, rabbit, bear or cat, name it, and spend earned stars on accessories. Parents see every habit under **Companions**, enter a whole number from 0 to 100 stars for each, and save them together. Task rewards use the existing 0, 1, 3 or 5 star choices. Activities start with no rewards until a parent selects them.
 
 Tasks reward the assignee once; an Everyone task rewards its first completer. Habits reward once per member per Singapore calendar day, after the save succeeds. Older entries earn no stars. Removing an entry keeps earned stars, and logging it again cannot earn more. Spending stars keeps lifetime family progress toward the 40-star garden. Animations are brief and respect reduced-motion settings.
 
@@ -147,6 +147,6 @@ Validation: `npm test`. For an isolated browser preview, run `node tests/preview
 
 ## Wong’s Nest redesign
 
-The app now uses a nest emblem, lavender/apricot paper surfaces, Nunito headings and DM Sans body text. Desktop has a permanent sidebar; phones have Home, Plan, Tasks, Nest and More. More includes every additional family destination and the adult-only parent tools. Login, page headings, cards, forms, dark mode, companions, app icons, notification defaults and email digest names share the new identity.
+The app now uses a nest emblem, lavender/apricot paper surfaces, Nunito headings and DM Sans body text. Desktop has a permanent sidebar; phones have Home, Plan, Tasks, Nest and More for parents; children have Habits in place of Plan and see only their own or shared plans and habits. More includes every additional family destination and the adult-only parent tools. Login, page headings, cards, forms, dark mode, companions, app icons, notification defaults and email digest names share the new identity.
 
 `css/nest.css` is the current design layer, and `js/nest.js` owns icons, headings and navigation presentation. See `BRAND.md`. Existing family accounts, backend addresses, stored preferences, permissions and reward rules are retained. Publish the Apps Script changes before the frontend. The new PWA cache version refreshes the app shell; operating systems may refresh an already installed home-screen icon separately.
