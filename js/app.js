@@ -51,6 +51,8 @@
     let section = 'home';
     let data = {};
     let currentUserEmail = '';
+    let sessionGeneration = 0;
+    let dashboardGeneration = 0;
     let selectedMember = null;
     let timelineInterval = null;
     let memImageBase64 = null;
@@ -174,6 +176,7 @@
 
       firebase.auth().onAuthStateChanged(user => {
         if (user) {
+          if (currentUserEmail !== user.email) clearSessionState();
           currentUserEmail = user.email;
           const member = MEMBERS.find(m => m.email === user.email);
           if (member) loginAs(member.name);
@@ -185,8 +188,9 @@
           const urlParams = new URLSearchParams(window.location.search);
           const sharedText = urlParams.get('text') || urlParams.get('title') || urlParams.get('url');
           if (sharedText) {
+            const sharedSession = sessionGeneration;
             setTimeout(() => {
-              if (typeof openSchoolCapture === 'function' && isAdultUser) {
+              if (sharedSession === sessionGeneration && typeof openSchoolCapture === 'function' && isAdultUser) {
                 openSchoolCapture();
                 const txtArea = document.getElementById('school-text');
                 if (txtArea) txtArea.value = sharedText;
@@ -195,6 +199,7 @@
             }, 600);
           }
         } else {
+          clearSessionState();
           document.getElementById('login-screen').classList.add('active');
           document.getElementById('app-screen').classList.remove('active');
         }
@@ -226,8 +231,10 @@
     function _flushPendingUndo(useBeacon) {
       if(!_pendingUndo) return;
       clearTimeout(_pendingUndo.timer);
-      const payload = _pendingUndo.payload;
+      const item = _pendingUndo;
+      const payload = item.payload;
       _pendingUndo = null;
+      if (item.account !== currentUserEmail || item.session !== sessionGeneration) return;
       if(!payload) return;
       if(useBeacon && navigator.sendBeacon) {
         payload.user = user || 'Unknown';
@@ -235,7 +242,12 @@
         if(lastIdToken) payload.idToken = lastIdToken;
         try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
       } else {
-        gPost(payload);
+        gPost(payload).then(result => {
+          if (item.account !== currentUserEmail || item.session !== sessionGeneration) return;
+          if (!result || result.status !== 'ok') {
+            item.restore(); showError('Deletion was not confirmed. The item has been restored; refresh to check.');
+          } else { loadData(); }
+        });
       }
     }
 
@@ -244,6 +256,7 @@
       const el = document.getElementById('toast');
       _pendingUndo = {
         restore: restoreFn,
+        account: currentUserEmail, session: sessionGeneration,
         payload: commitPayload || null,
         message: message || 'Item deleted',
         timer: setTimeout(() => {
@@ -260,6 +273,7 @@
       clearTimeout(_pendingUndo.timer);
       const item = _pendingUndo;
       _pendingUndo = null;
+      if (item.account !== currentUserEmail || item.session !== sessionGeneration) return;
       item.restore();
       toast('Action undone.');
     }
@@ -380,8 +394,7 @@
           ind.style.height = '48px';
           ind.textContent = 'Refreshing…';
           try {
-            await loadData();
-            toast('Refreshed');
+            if (await loadData()) toast('Refreshed');
           } catch (err) {
             toast('Refresh failed', true);
           }
@@ -391,23 +404,33 @@
         ind.classList.remove('ptr-ready', 'ptr-loading');
       }, { passive: true });
     }
-    function logout() {
-      resetRewards();
-      schoolReset(); schoolDay = '';
+    function clearSessionState() {
+      sessionGeneration++; dashboardGeneration++;
+      if (_pendingUndo) { clearTimeout(_pendingUndo.timer); _pendingUndo = null; }
+      resetRewards(); schoolReset(); schoolDay = '';
       stopMemoriesListener();
-      firebase.auth().signOut().then(() => {
-        user = null;
-        isAdultUser = false;
-        document.body.classList.remove('is-child');
-        data = { memories: [] };
-        document.getElementById('app-screen').classList.remove('active');
-        document.getElementById('login-screen').classList.add('active');
-        document.getElementById('login-password').value = '';
-        document.getElementById('login-error').textContent = '';
-        selectedMember = null;
-        document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
-        document.getElementById('pinbox').style.display = 'none';
+      if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
+      user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
+      data = { memories: [] }; GROUPS = {}; bucketList = []; memImageBase64 = null;
+      document.body.classList.add('is-child');
+      document.querySelectorAll('.overlay').forEach(el => el.classList.remove('open'));
+      document.querySelectorAll('.overlay input, .overlay textarea, #fert-notes').forEach(el => {
+        if (el.type !== 'checkbox' && el.type !== 'radio') el.value = '';
       });
+      ['us-container','fert-body','bud-list','rec-list','exp-body','dash-summary','school-home','mem-list'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.innerHTML = '';
+      });
+    }
+    function logout() {
+      clearSessionState();
+      document.getElementById('app-screen').classList.remove('active');
+      document.getElementById('login-screen').classList.add('active');
+      document.getElementById('login-password').value = '';
+      document.getElementById('login-error').textContent = '';
+      selectedMember = null;
+      document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
+      document.getElementById('pinbox').style.display = 'none';
+      firebase.auth().signOut().catch(() => showError('Could not sign out. Please reload and try again.'));
     }
 
     /** Show/hide Us, fertility, and money. Kids get body.is-child. */
@@ -524,11 +547,14 @@
      * @param {object} body  Must include action: 'get_all' | 'write' (writes also use note)
      */
     async function gasRequest(body) {
+      const account = currentUserEmail, generation = sessionGeneration;
+      const active = () => account === currentUserEmail && generation === sessionGeneration;
       startProgressBar();
       try {
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) { showError('Please log in'); return null; }
         const idToken = await currentUser.getIdToken();
+        if (!active()) return null;
         lastIdToken = idToken;
         const payload = Object.assign({}, body, {
           idToken: idToken,
@@ -539,20 +565,23 @@
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(payload)
         });
+        if (!active()) return null;
         let r;
         try {
           r = await response.json();
         } catch (parseErr) {
-          showError('Invalid server response');
+          if (active()) showError('Invalid server response');
           return null;
         }
+        if (!active()) return null;
+        if (!response.ok) { showError('Server unavailable. Your changes were not confirmed.'); return null; }
         if (r && r.status === 'error') {
           showError('Server error: ' + (r.message || 'unknown'));
           return r; // keep message for callers
         }
         return r;
       } catch (err) {
-        showError('Network error: ' + err.message);
+        if (active()) showError('Network error: ' + err.message);
         return null;
       } finally {
         finishProgressBar();
@@ -584,31 +613,48 @@
       if (r.status === 'error' && !r.events && !r.intimacyLog) return;
       // Firebase-owned fields: never accept from GAS (even if old deploy sends them)
       const prevMems = Array.isArray(data.memories) ? data.memories : [];
-      const prevIntimacy = data.intimacyLog;
       data = r || {};
       data.memories = prevMems;
-      // Merge intimacy: keep just-saved entries if get_all is empty/stale/old GAS
-      data.intimacyLog = mergeIntimacyLogs(prevIntimacy, data.intimacyLog);
+      // Accepted dashboard responses replace private lists; never retain old-account entries.
+      data.intimacyLog = Array.isArray(r.intimacyLog) ? r.intimacyLog : [];
       if (r.expenseGroups) GROUPS = r.expenseGroups;
       if (r.bucketList) bucketList = r.bucketList;
-      // Server isAdult is authoritative; fall back to email allowlist
-      if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult);
+      // Server denial wins; a response cannot promote a known child account.
+      if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult && ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
       else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
+      if (!isAdultUser) {
+        ['expenses','budgets','fertility','recurring','appreciations','loveCheckins','intimacyLog','bucketList','schoolPlans'].forEach(key => { data[key] = key === 'expenses' ? {total:0,rows:[]} : []; });
+        GROUPS = {}; bucketList = [];
+      }
       nestFilterChildData();
+      if (_pendingUndo?.payload?.note === 'delete_event' && _pendingUndo.account === currentUserEmail) {
+        data.events = (data.events || []).filter(e => e.id !== _pendingUndo.payload.event_id);
+      }
       buildDynamicSelectors();
       render(section);
       renderHome();
     }
 
     /** Sheets-backed dashboard only (not memories). */
-    function loadData() {
-      return gasRequest({ action: 'get_all' }).then(r => {
-        applyDashboardPayload(r);
-      });
+    async function loadData() {
+      const account = currentUserEmail, session = sessionGeneration, request = ++dashboardGeneration;
+      const r = await gasRequest({ action: 'get_all' });
+      if (account !== currentUserEmail || session !== sessionGeneration || request !== dashboardGeneration) return false;
+      if (!r || r.status === 'error') return false;
+      applyDashboardPayload(r);
+      return true;
+    }
+
+    async function saveConfirmed(payload) {
+      const account = currentUserEmail, session = sessionGeneration;
+      const result = await gPost(payload);
+      return account === currentUserEmail && session === sessionGeneration && !!result && result.status === 'ok';
     }
 
     /** GAS write for Sheets-owned features. Do not use for memories. */
-    function gPost(payload) {
+    async function gPost(payload) {
+      const account = currentUserEmail, session = sessionGeneration;
+      dashboardGeneration++;
       const note = String((payload && payload.note) || '').toLowerCase();
       if (note === 'add_chat_message' || note === 'add_memory') {
         console.error('gPost blocked: ' + note + ' is not Sheets-owned (see ARCHITECTURE.md)');
@@ -617,7 +663,10 @@
           message: note + ' is not available'
         });
       }
-      return gasRequest(Object.assign({ action: 'write' }, payload || {}));
+      const result = await gasRequest(Object.assign({ action: 'write' }, payload || {}));
+      if (account !== currentUserEmail || session !== sessionGeneration) return null;
+      dashboardGeneration++;
+      return result;
     }
 
     // Back-compat alias
@@ -1552,7 +1601,7 @@
     }
     async function delBudget(group, account) {
       if(!confirm('Delete budget for '+group+' under '+account+'?')) return;
-      await gPost({ note:'delete_budget', group, account });
+      if (!await saveConfirmed({ note:'delete_budget', group, account })) return;
       toast('Budget deleted');
       await loadData();
       renderBudgets();
@@ -1988,10 +2037,9 @@
       if (!ev) return;
       if (!confirm('Delete this calendar event?')) return;
       data.events = data.events.filter(e => e.id !== id);
-      pushUndo(() => { data.events.push(ev); renderCal(); }, 'Event deleted');
+      pushUndo(() => { if (!data.events.some(e => e.id === ev.id)) data.events.push(ev); renderCal(); }, 'Event removed — Undo available', { note: 'delete_event', event_id: id });
       renderCal();
-      gPost({ note: 'delete_event', event_id: id });
-      toast('Event deleted. Undo available.');
+
     }
     function delSchedule(id) { delEvent(id); }
 
@@ -2005,7 +2053,7 @@
         const tag = gc('ev-tag');
         let notes = v('ev-notes');
         if(tag && tag !== 'Everyone') notes = (notes?notes+'\n':'') + 'Tag: '+tag;
-        await gPost({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes,event_member:tag||''});
+        if (!await saveConfirmed({note:'add_event',event_title:title,event_date:fmtDate(date),event_time:fmtTime(v('ev-time')),event_end_time:fmtTime(v('ev-end')),event_notes:notes,event_member:tag||''})) return;
         closeM('m-event'); clr('ev-title','ev-notes'); toast('Event added.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Add event'; }
@@ -2049,7 +2097,7 @@
             toast((res && res.message) || 'Failed to update task.', true);
           }
         } else {
-          await gPost({note:'add_todo',todo_task:task,todo_assignee:assignee,todo_due:due});
+          if (!await saveConfirmed({note:'add_todo',todo_task:task,todo_assignee:assignee,todo_due:due})) return;
           closeM('m-task'); clr('tk-title', 'tk-due', 'tk-id'); toast('Task added.');
           await loadData();
         }
@@ -2060,6 +2108,8 @@
     }
     async function submitMemory(btn) {
       if(!btn) btn = document.getElementById('mem-submit');
+      const account = currentUserEmail, generation = sessionGeneration;
+      const active = () => account === currentUserEmail && generation === sessionGeneration;
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const text = v('mem-text');
@@ -2076,15 +2126,18 @@
             const ref = storage.ref(`memories/${emailKey}/${Date.now()}.jpg`);
             const snapshot = await ref.put(blob, { contentType: 'image/jpeg' });
             imageUrl = await snapshot.ref.getDownloadURL();
+            if (!active()) return;
           } catch (err) {
+            if (!active()) return;
             toast('Image upload failed: ' + err.message, true);
             return;
           } finally {
-            clearMemoryFilePreview();
+            if (active()) clearMemoryFilePreview();
           }
         }
         
         // Firebase-only: Firestore metadata (+ Storage image above). No GAS/Sheets.
+        if (!active()) return;
         const authUser = firebase.auth().currentUser;
         await db.collection('memories').add({
           loggedBy: user || 'Unknown',
@@ -2097,11 +2150,13 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
         
+        if (!active()) return;
         closeM('m-memory');
         clr('mem-text');
         toast('Saved to your family memories.');
         // Listener updates data.memories; no loadData() needed
       } catch (err) {
+        if (!active()) return;
         toast('We could not save that. Your changes are still here. Try again.', true);
       } finally {
         btn.disabled = false; btn.textContent = 'Save';
@@ -2113,7 +2168,7 @@
       try {
         const name = v('bd-name'), month = v('bd-month'), day = v('bd-day');
         if(!name||!month||!day){ toast('Please enter a name, month, and day.'); return; }
-        await gPost({note:'add_birthday',name,type:gc('bdt')||'Birthday',date:month+'-'+String(day).padStart(2,'0'),year:v('bd-year'),notes:v('bd-notes')});
+        if (!await saveConfirmed({note:'add_birthday',name,type:gc('bdt')||'Birthday',date:month+'-'+String(day).padStart(2,'0'),year:v('bd-year'),notes:v('bd-notes')})) return;
         closeM('m-birthday'); clr('bd-name','bd-day','bd-year','bd-notes'); toast('Birthday saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save'; }
@@ -2124,7 +2179,7 @@
       try {
         const group = v('bud-grp'), amt = parseFloat(v('bud-amt')), account = document.getElementById('bud-account').value;
         if(!group||isNaN(amt)||amt<=0){ toast('Please enter a valid amount.'); return; }
-        await gPost({note:'set_budget',group,budget:amt,account});
+        if (!await saveConfirmed({note:'set_budget',group,budget:amt,account})) return;
         closeM('m-budget'); clr('bud-amt'); toast('Budget saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Set budget'; }
@@ -2135,7 +2190,7 @@
       try {
         const date = v('fert-date');
         if(!date){ toast('Please select a date.'); return; }
-        await gPost({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')});
+        if (!await saveConfirmed({note:'add_fertility',fertility_type:gc('ft')||'Period Start',fertility_date:fmtDate(date),fertility_notes:v('fert-notes')})) return;
         clr('fert-notes'); toast('Cycle entry saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save entry'; }
@@ -2146,7 +2201,7 @@
       try {
         const name = v('rc-name'), amt = parseFloat(v('rc-amt')), day = parseInt(v('rc-day'));
         if(!name||isNaN(amt)||isNaN(day)||day<1||day>28){ toast('Please complete all fields (day: 1–28).'); return; }
-        await gPost({note:'add_recurring',rec_name:name,rec_amount:amt,rec_day:day,rec_category:v('rc-cat'),rec_account:gc('rca')||'Family'});
+        if (!await saveConfirmed({note:'add_recurring',rec_name:name,rec_amount:amt,rec_day:day,rec_category:v('rc-cat'),rec_account:gc('rca')||'Family'})) return;
         closeM('m-recurring'); clr('rc-name','rc-amt','rc-day'); toast('Recurring expense saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save'; }
@@ -2157,7 +2212,7 @@
       try {
         const desc = v('ex-desc'), amt = parseFloat(v('ex-amt')), date = v('ex-date');
         if(!desc||isNaN(amt)||amt<=0||!date){ toast('Please enter a description, amount, and date.'); return; }
-        await gPost({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'});
+        if (!await saveConfirmed({note:'add_expense',ex_desc:desc,ex_amount:amt,ex_date:fmtDate(date),ex_category:v('ex-cat'),ex_account:gc('exa')||'Family'})) return;
         closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save expense'; }
@@ -2173,7 +2228,7 @@
         if(!dateVal){ alert('Please select a date'); return; }
         const memberBoxes = document.querySelectorAll('input[name="tr-mem"]:checked');
         const membersStr = Array.from(memberBoxes).map(cb=>cb.value).join(',');
-        await gPost({note:'add_trip',trip_city:city,trip_country:country,trip_date:fmtDate(dateVal),trip_lat:lat,trip_lng:lng,trip_members:membersStr,trip_notes:notes});
+        if (!await saveConfirmed({note:'add_trip',trip_city:city,trip_country:country,trip_date:fmtDate(dateVal),trip_lat:lat,trip_lng:lng,trip_members:membersStr,trip_notes:notes})) return;
         closeM('m-trip-add'); document.getElementById('tr-loc-search').value=''; document.getElementById('tr-city').value=''; document.getElementById('tr-country').value=''; document.getElementById('tr-lat').value='0'; document.getElementById('tr-lng').value='0'; clr('tr-notes'); toast('Trip added.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Add trip'; }
@@ -2215,25 +2270,27 @@
         if(!activity){ alert('Please enter activity name.'); return; }
         if(!dateVal){ alert('Please select a date.'); return; }
         const title = child + ' - ' + activity;
-        await gPost({note:'add_event',event_title:title,event_child:child,event_member:child,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes});
+        if (!await saveConfirmed({note:'add_event',event_title:title,event_child:child,event_member:child,event_date:fmtDate(dateVal),event_time:time,event_end_time:endTime,event_location:location,event_notes:notes})) return;
 
+        let checklistFailed = false;
         if (addChecklist) {
           const actLower = activity.toLowerCase();
           const tplKey = actLower.includes('sail') ? 'sailing' : actLower.includes('ballet') || actLower.includes('dance') ? 'ballet' : actLower.includes('swim') ? 'swim' : '';
           if (tplKey && typeof ACTIVITY_TEMPLATES !== 'undefined' && ACTIVITY_TEMPLATES[tplKey]) {
             const prepDay = typeof schoolDayOffset === 'function' ? schoolDayOffset(dateVal, -1) : dateVal;
             for (const item of ACTIVITY_TEMPLATES[tplKey].tasks) {
-              await gPost({
+              const saved = await saveConfirmed({
                 note: 'add_todo',
                 todo_task: item.title,
                 todo_assignee: child,
                 todo_due: prepDay ? fmtDate(prepDay) : ''
               });
+              if (!saved) { checklistFailed = true; break; }
             }
           }
         }
 
-        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast('Activity and preparation checklist added.');
+        closeM('m-timetable-add'); clr('sch-act','sch-time','sch-end-time','sch-loc','sch-notes'); toast(checklistFailed ? 'Activity saved, but preparation tasks are incomplete. Add the missing tasks from Tasks.' : 'Activity saved.', checklistFailed);
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save activity'; }
     }
@@ -2243,9 +2300,8 @@
       try {
         const msg = v('love-note-msg');
         if(!msg){ toast('Please enter a note.'); return; }
-        closeM('m-love-note');
         const res = await gPost({note:'add_appreciation',message:msg});
-        if(res && res.status === 'ok'){ toast('Note saved to the jar.'); await loadData(); } else toast('Could not save note.', true);
+        if(res && res.status === 'ok'){ closeM('m-love-note'); toast('Note saved to the jar.'); await loadData(); } else toast('Could not save note.', true);
       } finally { btn.disabled = false; btn.textContent = 'Save note'; }
     }
     async function submitLoveCheckin(btn) {
@@ -2255,13 +2311,10 @@
         const selectedMoods = [];
         document.querySelectorAll('#checkin-moods .checkin-tag.sel').forEach(t => selectedMoods.push(t.textContent.trim()));
         const notes = v('checkin-notes'), focus = v('checkin-focus');
-        closeM('m-love-checkin');
-        
-        console.log('Sending check-in payload:', {note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
         const res = await gPost({note:'add_love_checkin',battery:selectedCheckinBattery,moods:selectedMoods.join(', '),notes:notes,focus:focus});
-        console.log('Check-in server response:', res);
         
         if(res && res.status === 'ok'){
+          closeM('m-love-checkin');
           toast('Check-in saved.');
           await loadData();
         } else {
@@ -2668,7 +2721,7 @@
           closeM('m-intimacy');
           toast('Intimacy entry saved.');
           renderUs();
-          // Background refresh — mergeIntimacyLogs keeps this entry if get_all is stale
+          // Refreshes started before this write were invalidated by gPost.
           loadData().then(() => { if (section === 'us') renderUs(); }).catch(() => {});
         } else {
           toast((res && res.message) || 'Could not save. Redeploy Apps Script with latest Code.js if this continues.', true);
@@ -2873,10 +2926,12 @@
         toast('Could not connect to database.', true);
         return;
       }
+      const account = currentUserEmail, generation = sessionGeneration;
       memoriesUnsubscribe = db.collection('memories')
         .orderBy('timestamp', 'desc')
         .limit(100)
         .onSnapshot((snapshot) => {
+          if (account !== currentUserEmail || generation !== sessionGeneration) return;
           const memories = [];
           snapshot.forEach((doc) => {
             const d = doc.data();
@@ -2905,6 +2960,7 @@
           data.memories = memories;
           if (section === 'memories') renderMemories();
         }, (error) => {
+          if (account !== currentUserEmail || generation !== sessionGeneration) return;
           console.error('Memories listener error:', error);
           toast('Could not load memories.', true);
         });

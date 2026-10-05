@@ -2,6 +2,7 @@
 let schoolDraft = null;
 let schoolImageUrl = '';
 let schoolBusy = false;
+let schoolGeneration = 0;
 let schoolReturnFocus = null;
 let schoolDay = '';
 
@@ -66,11 +67,15 @@ function schoolMessage(message, error = false) {
   el.textContent = message; el.classList.toggle('school-error', error);
 }
 function schoolReset() {
+  schoolGeneration++; schoolBusy = false;
+  const capture = document.getElementById('school-capture-fields'); if (capture) capture.disabled = false;
   schoolDraft = null;
   if (schoolImageUrl.startsWith('blob:')) URL.revokeObjectURL(schoolImageUrl);
   schoolImageUrl = '';
   const dialog = document.getElementById('school-dialog');
   if (dialog?.open) dialog.close();
+  const sourceImage = document.getElementById('school-source-image');
+  if (sourceImage) { sourceImage.src = ''; sourceImage.hidden = true; }
   document.getElementById('school-review').innerHTML = '';
   document.getElementById('school-text').value = '';
   document.getElementById('school-file').value = '';
@@ -129,6 +134,7 @@ function schoolOptimizeImage(file) {
   });
 }
 async function schoolUpload() {
+  const generation = schoolGeneration;
   const file = document.getElementById('school-file').files[0];
   if (!file) return '';
   const isPdf = file.type === 'application/pdf';
@@ -136,6 +142,7 @@ async function schoolUpload() {
   const blob = await schoolOptimizeImage(file);
   if (blob.size >= 5 * 1024 * 1024) throw new Error('File too large (max 5 MB).');
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('');
+  if (generation !== schoolGeneration) throw new Error('Session changed.');
   const email = (firebase.auth().currentUser?.email || '').toLowerCase();
   if (!email) throw new Error('Sign in as a parent to upload notices or messages.');
   const path = 'school/' + email + '/' + hash;
@@ -145,10 +152,12 @@ async function schoolUpload() {
   try {
     await ref.getMetadata();
   } catch (err) {
+    if (generation !== schoolGeneration) throw new Error('Session changed.');
     const uploadPromise = ref.put(blob, { contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timed out. Check connection or enter manually.')), 25000));
     await Promise.race([uploadPromise, timeoutPromise]);
   }
+  if (generation !== schoolGeneration) throw new Error('Session changed.');
   if (!isPdf) {
     if (schoolImageUrl.startsWith('blob:')) URL.revokeObjectURL(schoolImageUrl);
     schoolImageUrl = URL.createObjectURL(blob);
@@ -156,6 +165,7 @@ async function schoolUpload() {
   return path;
 }
 async function extractSchool(manual) {
+  const generation = schoolGeneration;
   if (schoolBusy || !isAdultUser) return;
   schoolBusy = true;
   const capture = document.getElementById('school-capture-fields'); capture.disabled = true;
@@ -164,11 +174,13 @@ async function extractSchool(manual) {
     const text = document.getElementById('school-text').value.trim();
     if (!text && !document.getElementById('school-file').files.length) throw new Error('Paste a message or choose an image first.');
     const sourcePath = await schoolUpload();
+    if (generation !== schoolGeneration) return;
     let extracted = { title: '', child: '', event: {}, tasks: [], warnings: [] };
     if (!manual) {
       schoolMessage('Reading text with Gemini AI…');
       extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
     }
+    if (generation !== schoolGeneration) return;
     const eventDate = extracted.event?.date || '';
     const prepDate = schoolDayOffset(eventDate, -1);
     schoolDraft = {
@@ -189,8 +201,8 @@ async function extractSchool(manual) {
     document.getElementById('school-capture').hidden = true;
     renderSchoolReview();
     schoolMessage(manual ? 'Enter the details below. Nothing is saved until you choose Save draft.' : 'Check the details and confirm the dates, times, and owners. Nothing has been added yet.');
-  } catch (err) { schoolMessage((err.message || 'Extraction unavailable.') + ' You can use “Enter manually”.', true); }
-  finally { schoolBusy = false; capture.disabled = false; }
+  } catch (err) { if (generation !== schoolGeneration) return; schoolMessage((err.message || 'Extraction unavailable.') + ' You can use “Enter manually”.', true); }
+  finally { if (generation === schoolGeneration) { schoolBusy = false; capture.disabled = false; } }
 }
 function schoolField(label, id, value, type = 'text', max = 200) {
   return `<label class="school-field">${label}<input id="${id}" type="${type}" maxlength="${max}" value="${escapeHtml(value || '')}"></label>`;
@@ -310,10 +322,13 @@ function renderSchoolReview() {
   document.getElementById('school-review-fields').addEventListener('input', () => { const c = document.getElementById('school-confirm'); if (c) c.checked = false; });
 }
 async function schoolShowSource() {
+  const generation = schoolGeneration;
   try {
-    if (!schoolImageUrl) schoolImageUrl = (await firebase.functions().httpsCallable('getSchoolSourceImage')({ path: schoolDraft.sourcePath })).data.image;
-    const img = document.getElementById('school-source-image'); img.src = schoolImageUrl; img.hidden = false;
-  } catch (err) { schoolMessage('Could not load the original screenshot. Try again when connected.', true); }
+    const image = schoolImageUrl || (await firebase.functions().httpsCallable('getSchoolSourceImage')({ path: schoolDraft.sourcePath })).data.image;
+    if (generation !== schoolGeneration) return;
+    schoolImageUrl = image;
+    const img = document.getElementById('school-source-image'); img.src = image; img.hidden = false;
+  } catch (err) { if (generation === schoolGeneration) schoolMessage('Could not load the original screenshot. Try again when connected.', true); }
 }
 function schoolCollect() {
   if (!schoolDraft || schoolDraft.status !== 'draft') return;
@@ -323,6 +338,7 @@ function schoolCollect() {
   p.tasks = p.tasks.map((t, i) => ({ ...t, title: v('school-task-title-' + i), kind: v('school-task-kind-' + i), assignee: v('school-task-owner-' + i), due: v('school-task-due-' + i) }));
 }
 async function saveSchool(publish) {
+  const generation = schoolGeneration;
   if (schoolBusy || !isAdultUser) return;
   if (publish && schoolDraft.status === 'draft' && !document.getElementById('school-confirm').checked) return schoolMessage('Check the source, dates and owners, then tick the confirmation box.', true);
   schoolCollect(); schoolBusy = true;
@@ -332,10 +348,12 @@ async function saveSchool(publish) {
   try {
     if (schoolDraft.status === 'draft') {
       const saved = await gPost({ note: 'save_school_draft', plan: schoolDraft, revision: schoolDraft.revision });
+      if (generation !== schoolGeneration) return;
       if (!saved || saved.status !== 'ok') throw new Error(saved?.message || 'Could not save. Your review is still here.');
       schoolDraft.id = saved.id; schoolDraft.revision = saved.revision; schoolDraft.status = saved.state;
       if (saved.duplicate) {
         await loadData();
+        if (generation !== schoolGeneration) return;
         const existing = data.schoolPlans?.find(p => p.id === saved.id);
         if (existing) schoolDraft = JSON.parse(JSON.stringify(existing));
         schoolMessage('This announcement already exists. Showing the saved plan.');
@@ -344,18 +362,23 @@ async function saveSchool(publish) {
     }
     if (publish) {
       const result = await gPost({ note: 'publish_school_draft', source_id: schoolDraft.id, revision: schoolDraft.revision });
+      if (generation !== schoolGeneration) return;
       if (!result || result.status !== 'ok') throw new Error(result?.message || 'Save interrupted. Reopen the saved plan from Home before retrying.');
       schoolDraft.status = 'published';
     }
     await loadData();
+    if (generation !== schoolGeneration) return;
     renderSchoolReview();
     schoolMessage(publish ? 'Added to the family plan. Tasks and calendar are ready.' : 'Draft saved. Reopen it from Home whenever you are ready.');
   } catch (err) {
+    if (generation !== schoolGeneration) return;
     await loadData();
+    if (generation !== schoolGeneration) return;
     const latest = data.schoolPlans?.find(p => p.id === schoolDraft.id);
     if (latest && latest.status !== 'draft') schoolDraft = JSON.parse(JSON.stringify(latest));
     renderSchoolReview(); schoolMessage(err.message, true);
   } finally {
+    if (generation !== schoolGeneration) return;
     schoolBusy = false;
     document.querySelectorAll('#school-review .school-actions button').forEach(b => b.disabled = false);
     document.getElementById('school-review-fields').disabled = schoolDraft.status !== 'draft';
