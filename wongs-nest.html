@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wong's Nest</title>
+<style>
+body{margin:0;font-family:Trebuchet MS,system-ui,sans-serif;background:#f4f4f4;color:#222}
+.phone{max-width:420px;margin:0 auto;min-height:100vh;background:#fff;padding:28px 22px 92px}
+h1{text-align:center;font-size:34px;margin:8px 0 18px}
+.muted{color:#444;text-align:center;margin:8px 0 18px}
+.row{display:flex;justify-content:center;gap:14px;align-items:flex-end;margin:18px 0 28px}
+.fig{width:58px;height:58px;border-radius:50%;position:relative;border:3px solid #222}
+.fig i{position:absolute;left:14px;right:14px;top:22px;height:8px;border-bottom:3px solid #222;border-radius:0 0 8px 8px}
+.fig b{position:absolute;left:50%;top:-14px;transform:translateX(-50%)}
+.fig s{position:absolute;left:8px;right:8px;bottom:10px;height:10px;background:repeating-linear-gradient(90deg,#fff 0 4px,#e25b4a 4px 8px);border-radius:4px;text-decoration:none}
+.name{text-align:center;font-size:12px;margin-top:6px}
+.check,.item,.tool{display:flex;align-items:center;gap:12px;width:100%;border:0;background:#fff;border-bottom:1px solid #e6e6e6;padding:14px 2px;font:inherit;text-align:left}
+.box{width:22px;height:22px;border:2px solid #222;display:inline-grid;place-items:center}
+nav{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(420px,100%);display:flex;background:#fff;border-top:1px solid #e6e6e6}
+nav button{flex:1;border:0;background:#fff;padding:12px 0 16px;font:inherit}
+.hidden{display:none}
+.hop{animation:hop .4s}@keyframes hop{50%{transform:translateY(-8px)}}
+</style>
+</head>
+<body>
+<div class="phone">
+<div id="home"><h1>Wong's Nest</h1><div class="muted" id="jar-label"></div><div class="row" id="family"></div><div id="quests"></div><div id="parent-tools"></div></div>
+<div id="other" class="hidden"><h2 id="other-title"></h2><div class="row" id="focus"></div><div id="other-body"></div></div>
+</div>
+<nav><button onclick="show('home')">Nest</button><button onclick="show('clothes')">Clothes</button><button onclick="show('pets')">Pets</button><button onclick="show('shop')">Shop</button></nav>
+<script>
+const members=[{id:'Marcus',color:'#8fbf8a'},{id:'Eleanor',color:'#f0a090'},{id:'Mikaela',color:'#f2d56b'},{id:'Meaghan',color:'#7eb8c9'}];
+const clothes=[{id:'hat',name:'Sunny hat',price:12,mark:'hat'},{id:'scarf',name:'Scarf',price:12,mark:'scarf'},{id:'bag',name:'Backpack',price:12,mark:'bag'}];
+const pets=[{id:'bird',name:'Bird',price:20,icon:'bird'},{id:'cat',name:'Cat',price:40,icon:'cat'},{id:'pup',name:'Puppy',price:80,icon:'pup'}];
+const houses=[{id:'tent',name:'Tent',cost:0},{id:'cabin',name:'Cabin',cost:20},{id:'tree',name:'Treehouse',cost:40}];
+const quests=['School bag packed','Read together','Water the plants'];
+const state={me:'Mikaela',pocket:24,jar:8,house:'tent',worn:{},pet:{Mikaela:'bird'},done:{}};
+function figure(id,hop){const m=members.find(x=>x.id===id);const worn=state.worn[id]||{};const pet=pets.find(p=>p.id===state.pet[id]);return '<div class="'+(hop?'hop':'')+'"><div class="fig" style="background:'+m.color+'">'+(worn.hat?'<b>hat</b>':'')+'<i></i>'+(worn.scarf?'<s></s>':'')+(worn.bag?'<span style="position:absolute;right:-28px;top:18px">bag</span>':'')+'</div><div class="name">'+(pet?pet.icon:'')+'</div><div class="name">'+id+'</div></div>';}
+function show(tab){const home=document.getElementById('home'),other=document.getElementById('other');if(tab==='home'){home.classList.remove('hidden');other.classList.add('hidden');paint();return;}home.classList.add('hidden');other.classList.remove('hidden');document.getElementById('other-title').textContent={clothes:'Clothes',pets:'Pets',shop:'Cottage',school:'School',week:'Week',money:'Money',us:'Us'}[tab];document.getElementById('focus').innerHTML=figure(state.me);const body=document.getElementById('other-body');if(tab==='clothes')body.innerHTML=clothes.map(c=>'<button class="item" onclick="buyCloth(\''+c.id+'\')">'+c.name+' \u00b7 '+c.price+' berries</button>').join('');if(tab==='pets')body.innerHTML=pets.map(p=>'<button class="item" onclick="buyPet(\''+p.id+'\')">'+p.name+' \u00b7 '+p.price+'</button>').join('');if(tab==='shop')body.innerHTML=houses.map(h=>'<button class="item" onclick="buyHouse(\''+h.id+'\')">'+h.name+' \u00b7 '+h.cost+' cottage berries</button>').join('');if(tab==='school')body.innerHTML='<button class="item">Mikaela \u00b7 spelling list, Thursday</button><button class="item">Meaghan \u00b7 library book, Friday</button>';if(tab==='week')body.innerHTML='<button class="item">Mon \u00b7 swimming</button><button class="item">Wed \u00b7 piano</button>';if(tab==='money')body.innerHTML='<p class="muted">Visible only to parents</p><button class="item">Groceries \u00b7 86</button>';if(tab==='us')body.innerHTML='<p class="muted">Visible only to parents</p><button class="item">This week together</button>';}
+function buyCloth(id){const item=clothes.find(c=>c.id===id);const who=state.me;state.worn[who]=state.worn[who]||{};if(!state.worn[who][item.mark]){if(state.pocket<item.price)return alert('Not enough pocket berries');state.pocket-=item.price;}state.worn[who][item.mark]=!state.worn[who][item.mark];show('clothes');}
+function buyPet(id){const item=pets.find(p=>p.id===id);if(state.pet[state.me]!==id&&state.pocket<item.price)return alert('Not enough pocket berries');if(state.pet[state.me]!==id)state.pocket-=item.price;state.pet[state.me]=id;show('pets');}
+function buyHouse(id){const item=houses.find(h=>h.id===id);if(state.jar<item.cost)return alert('The cottage jar is not full enough yet');state.house=id;show('home');}
+function check(i){const id=state.me+i;state.done[id]=!state.done[id];state.pocket+=state.done[id]?1:-1;state.jar+=state.done[id]?1:-1;paint(true);}
+function paint(hop){document.getElementById('jar-label').textContent=state.jar+' of 20 berries \u00b7 '+(houses.find(h=>h.id===state.house).name);document.getElementById('family').innerHTML=members.map(m=>'<button class="item" style="border:0;width:auto" onclick="state.me=\''+m.id+'\';paint()">'+figure(m.id,hop&&m.id===state.me)+'</button>').join('');document.getElementById('quests').innerHTML=quests.map((q,i)=>'<button class="check" onclick="check('+i+')"><span class="box">'+(state.done[state.me+i]?'\u2713':'')+'</span>'+q+'</button>').join('');document.getElementById('parent-tools').innerHTML='<p class="muted" style="text-align:left;margin-top:22px">For parents</p><button class="tool" onclick="show(\'school\')">School</button><button class="tool" onclick="show(\'week\')">Week</button><button class="tool" onclick="show(\'money\')">Money</button><button class="tool" onclick="show(\'us\')">Us</button>';}
+paint();
+</script>
+</body></html>
