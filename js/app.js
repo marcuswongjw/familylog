@@ -1134,14 +1134,10 @@
             todo_stars: stars
           });
           if (res && res.status === 'ok') {
-            const prevStars = typeof rewardStars === 'function' ? rewardStars('task', taskId) : 0;
-            if (isAdultUser && stars !== prevStars) {
-              await gPost({ note: 'set_reward_rule', source_type: 'task', source_id: taskId, stars: stars });
-              if (data.rewards) {
-                if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
-                data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === taskId));
-                if (stars > 0) data.rewards.rules.push({ type: 'task', sourceId: taskId, stars: stars });
-              }
+            if (data.rewards && isAdultUser) {
+              if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
+              data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === taskId));
+              if (stars > 0) data.rewards.rules.push({ type: 'task', sourceId: taskId, stars: stars });
             }
             const updateItem = item => {
               if (item.id === taskId) {
@@ -1170,14 +1166,10 @@
             todo_stars: stars
           });
           if (!res || res.status !== 'ok') return;
-          const newTaskId = res.id;
-          if (isAdultUser && stars > 0 && newTaskId) {
-            await gPost({ note: 'set_reward_rule', source_type: 'task', source_id: newTaskId, stars: stars });
-            if (data.rewards) {
-              if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
-              data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === newTaskId));
-              data.rewards.rules.push({ type: 'task', sourceId: newTaskId, stars: stars });
-            }
+          if (data.rewards && stars > 0 && res.id) {
+            if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
+            data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === res.id));
+            data.rewards.rules.push({ type: 'task', sourceId: res.id, stars: stars });
           }
           closeM('m-task'); clr('tk-title', 'tk-due', 'tk-id'); toast('Task added.');
           await loadData();

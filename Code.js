@@ -972,6 +972,7 @@ function handleWriteInner_(data) {
       var existing = operationRecover_(ss,operation,tdSheet,7,13); if (existing) return existing;
       var taskId = operation ? operation.id : Utilities.getUuid();
       tdSheet.appendRow([new Date(), schoolCell_(task), assignee, parsedDue, user, 'Open', '', taskId, '', '', '', '', '', operation ? operation.fingerprint : '']);
+      SpreadsheetApp.flush();
       if (isAdultEmail_(verifiedEmail) && data.todo_stars !== undefined) {
         var addStars = Number(data.todo_stars);
         if ([0, 1, 3, 5].indexOf(addStars) !== -1 && addStars > 0) {
@@ -1029,6 +1030,7 @@ function handleWriteInner_(data) {
 
       var parsedDue = due ? parseEventDate(due, '') : '';
       tdSheet.getRange(rowIndex + 1, 2, 1, 3).setValues([[schoolCell_(task), assignee, parsedDue]]);
+      SpreadsheetApp.flush();
       if (isAdultEmail_(verifiedEmail) && data.todo_stars !== undefined) {
         var editStars = Number(data.todo_stars);
         if ([0, 1, 3, 5].indexOf(editStars) !== -1) {
