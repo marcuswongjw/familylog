@@ -725,7 +725,7 @@ function doGet(e) {
         output = isAdultEmail_(verifiedEmail) ? getFertilityData() : [];
         break;
       case 'get_recurring': output = isAdultEmail_(verifiedEmail) ? getRecurring() : [];        break;
-      case 'get_travel':    output = getTravelData();       break;
+      case 'get_travel':    output = [];       break;
       case 'submit_confirmed_expense':
         output = handleSubmitConfirmedExpense(e.parameter);
         break;
@@ -972,6 +972,12 @@ function handleWriteInner_(data) {
       var existing = operationRecover_(ss,operation,tdSheet,7,13); if (existing) return existing;
       var taskId = operation ? operation.id : Utilities.getUuid();
       tdSheet.appendRow([new Date(), schoolCell_(task), assignee, parsedDue, user, 'Open', '', taskId, '', '', '', '', '', operation ? operation.fingerprint : '']);
+      if (isAdultEmail_(verifiedEmail) && data.todo_stars !== undefined) {
+        var addStars = Number(data.todo_stars);
+        if ([0, 1, 3, 5].indexOf(addStars) !== -1 && addStars > 0) {
+          rewardHandleWrite_({ note: 'set_reward_rule', source_type: 'task', source_id: taskId, stars: addStars }, ss, verifiedEmail, user);
+        }
+      }
       return operationFinish_(ss,operation,{ status: 'ok', id: taskId });
     }
 
@@ -1023,6 +1029,12 @@ function handleWriteInner_(data) {
 
       var parsedDue = due ? parseEventDate(due, '') : '';
       tdSheet.getRange(rowIndex + 1, 2, 1, 3).setValues([[schoolCell_(task), assignee, parsedDue]]);
+      if (isAdultEmail_(verifiedEmail) && data.todo_stars !== undefined) {
+        var editStars = Number(data.todo_stars);
+        if ([0, 1, 3, 5].indexOf(editStars) !== -1) {
+          rewardHandleWrite_({ note: 'set_reward_rule', source_type: 'task', source_id: taskId, stars: editStars }, ss, verifiedEmail, user);
+        }
+      }
       return { status: 'ok' };
     }
 
@@ -1203,48 +1215,9 @@ function handleWriteInner_(data) {
       return { status: 'ok' };
     }
 
-    // ── TRAVEL: add ──
-    if (noteLower === 'add_trip') {
-      var city = toStr(data.trip_city);
-      var country = toStr(data.trip_country);
-      var tripDate = toStr(data.trip_date);
-      var lat = parseFloat(data.trip_lat);
-      var lng = parseFloat(data.trip_lng);
-      var members = toStr(data.trip_members);
-      var notes = toStr(data.trip_notes);
-      if (!city || !country) return { status: 'error', message: 'City and country required' };
-      if (!validateDate(tripDate)) return { status: 'error', message: 'Invalid date' };
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return { status: 'error', message: 'Invalid coordinates' };
-      if (!validateString(notes, 500)) return { status: 'error', message: 'Notes too long' };
-
-      var travelSheet = ss.getSheetByName('Travel');
-      if (!travelSheet) {
-        travelSheet = ss.insertSheet('Travel');
-        travelSheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
-      }
-      var existing = operationRecover_(ss,operation,travelSheet,0,9); if (existing) return existing;
-      var tripId = operation ? operation.id : 'tr_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-      var parsed = parseEventDate(tripDate, '');
-      travelSheet.appendRow([tripId, parsed, schoolCell_(city), schoolCell_(country), lat, lng, members, schoolCell_(notes), new Date(), operation ? operation.fingerprint : '']);
-      return operationFinish_(ss,operation,{ status:'ok',id:tripId });
-    }
-
-    // ── TRAVEL: delete ──
-    if (noteLower === 'delete_trip') {
-      var targetId = toStr(data.trip_id);
-      if (!targetId) return { status: 'error', message: 'Trip ID missing' };
-      var travelSheet = ss.getSheetByName('Travel');
-      if (travelSheet) {
-        var tVals = travelSheet.getDataRange().getValues();
-        for (var ti = 1; ti < tVals.length; ti++) {
-          if (toStr(tVals[ti][0]) === targetId) {
-            travelSheet.deleteRow(ti + 1);
-            break;
-          }
-        }
-      }
-      console.log('✅ Trip deleted: ' + targetId);
-      return { status: 'ok' };
+    // ── TRAVEL: retired ──
+    if (noteLower === 'add_trip' || noteLower === 'delete_trip') {
+      return { status: 'error', message: 'The travel feature has been removed.' };
     }
 
     // ── APPRECIATION: add ──
@@ -1525,7 +1498,7 @@ function getAllDashboardData(verifiedEmail) {
     // Adult-only payloads are empty for children's accounts
     fertility:      adult ? getFertilityData(ss) : [],
     recurring:      adult ? getRecurring(ss) : [],
-    travel:         getTravelData(ss),
+    travel:         [],
     appreciations:  adult ? getAppreciationsData(ss) : [],
     loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
     intimacyLog:    adult ? getIntimacyLogData(ss) : [],
@@ -1541,7 +1514,7 @@ function getAllDashboardData(verifiedEmail) {
     memories: null,
     dataSources: {
       sheets: ['events', 'todos', 'schoolPlans', 'schoolTasks', 'expenses', 'budgets', 'birthdays', 'fertility',
-               'recurring', 'travel', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs', 'rewards'],
+               'recurring', 'appreciations', 'loveCheckins', 'intimacyLog', 'bucketList', 'habits', 'habitLogs', 'rewards'],
       firebase: ['memories', 'auth', 'fcmTokens']
     }
   };

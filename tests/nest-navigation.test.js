@@ -8,7 +8,7 @@ function fixture(adult = true) {
     const classes=new Set(), attrs={};
     return {id,dataset:{},textContent:'',classList:{add:v=>classes.add(v),remove:v=>classes.delete(v),toggle:(v,on)=>on?classes.add(v):classes.delete(v),contains:v=>classes.has(v)},setAttribute:(k,v)=>attrs[k]=v,removeAttribute:k=>delete attrs[k],getAttribute:k=>attrs[k]};
   }
-  const ids=['home','tasks','calendar','expenses','budgets','recurring','us','fertility','memories','birthdays','travel','rewards','habits','more'];
+  const ids=['home','tasks','calendar','expenses','budgets','recurring','us','fertility','memories','birthdays','rewards','habits','more'];
   const pages=ids.map(id=>element('s-'+id)), nav=['home','calendar','tasks','rewards','more'].map(id=>{const e=element('nav-'+id);e.dataset.nestRoute=id;return e;});
   const elements=Object.fromEntries([...pages,...nav,...['fab','hav','hname','hdate','nest-current-page'].map(element)].map(e=>[e.id,e]));
   const renders=[],messages=[];
@@ -34,7 +34,7 @@ test('new navigation retains parent gates, including direct links',()=>{
   assert.equal(h.messages.length,5);h.c.goTo('rewards');assert.equal(h.c.section,'rewards');
 });
 test('secondary screens support notification and hash deep links',()=>{
-  const h=fixture();for(const id of ['habits','memories','rewards','more','budgets','travel']){h.c.location.hash='#'+id;assert.equal(h.c.screenFromLocation(),id);}
+  const h=fixture();for(const id of ['habits','memories','rewards','more','budgets']){h.c.location.hash='#'+id;assert.equal(h.c.screenFromLocation(),id);}
   h.c.location.search='?open=calendar';assert.equal(h.c.screenFromLocation(),'calendar');
 });
 

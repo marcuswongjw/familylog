@@ -16,7 +16,7 @@ function fixture(){
  vm.runInContext(source.slice(source.indexOf('    // ─── UNDO'),source.indexOf('    // ─── LOGIN')),c);
  vm.runInContext(source.slice(source.indexOf('    function clearSessionState'),source.indexOf('    /** Show/hide Us')),c);
  vm.runInContext(source.slice(source.indexOf('    async function gasRequest'),source.indexOf('    // ─── BUILD DYNAMIC SELECTORS')),c);
- vm.runInContext(source.slice(source.indexOf('    function delEvent'),source.indexOf('    // ─── TRAVEL')),c);
+ vm.runInContext(source.slice(source.indexOf('    function delEvent'),source.indexOf('    // ─── US')),c);
  return {c,calls,el,timers,authUser};
 }
 test('late parent dashboard response is ignored after child login',async()=>{
@@ -51,7 +51,7 @@ test('token awaited under an old session cannot start a request for the new sess
 test('failed refresh returns false without clearing the current dashboard',async()=>{
  const h=fixture();h.c.data={events:[{id:'keep'}]};h.c.gasRequest=async()=>null;assert.equal(await h.c.loadData(),false);assert.equal(h.c.data.events[0].id,'keep');
 });
-for(const fn of ['submitEvent','submitTask','submitBirthday','submitBudget','submitFert','submitRecurring','submitExpense','submitTrip','submitSchedule']){
+for(const fn of ['submitEvent','submitTask','submitBirthday','submitBudget','submitFert','submitRecurring','submitExpense','submitSchedule']){
  test(fn+' preserves form and never reports success on a rejected or lost save',async()=>{
   for(const result of [null,{status:'error',message:'Rejected'}]){const h=fixture();h.c.gasRequest=async()=>result;const btn={};await h.c[fn](btn);assert.deepEqual(h.calls.closed,[]);assert.deepEqual(h.calls.cleared,[]);assert.equal(btn.disabled,false);assert.equal(h.calls.messages.length,0);}
  });

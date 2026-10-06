@@ -31,10 +31,10 @@ function getEvents() {
     var calendar        = CalendarApp.getCalendarById(CALENDAR_ID);
     var now             = new Date();
     var thirtyDaysAgo   = new Date(); thirtyDaysAgo.setDate(now.getDate() - 30);
-    var thirtyDaysLater = new Date(); thirtyDaysLater.setFullYear(now.getFullYear() + 1);
+    var ninetyDaysLater = new Date(); ninetyDaysLater.setDate(now.getDate() + 90);
     var schoolLinks = schoolEventLinks_();
     var manualMembers = manualEventMembers_();
-    var events          = calendar.getEvents(thirtyDaysAgo, thirtyDaysLater);
+    var events          = calendar.getEvents(thirtyDaysAgo, ninetyDaysLater);
     var tz              = Session.getScriptTimeZone();
     var result          = [];
     for (var i = 0; i < events.length; i++) {

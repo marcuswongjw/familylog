@@ -10,7 +10,6 @@ const NEST_PAGES = {
   budgets: ['Room in the budget', 'Plan for the everyday and the unexpected.'],
   recurring: ['On repeat', 'The household costs that come around again.'],
   birthdays: ['Days to celebrate', 'Keep your favourite people close.'],
-  travel: ['Places we’ve been', 'Little outings. Big adventures. Our family story.'],
   us: ['Just the two of us', 'A private corner for Marcus and Eleanor.'],
   fertility: ['Cycle & wellbeing', 'Personal notes, held with care.'],
   more: ['Around the nest', 'All the little corners of family life.']
@@ -27,7 +26,6 @@ function nestIcon(name) {
     budgets: '<path d="M5 20V10m7 10V4m7 16v-7"/>',
     recurring: '<path d="M20 7a9 9 0 0 0-15-2L2 8m0-5v5h5M4 17a9 9 0 0 0 15 2l3-3m0 5v-5h-5"/>',
     birthdays: '<path d="M4 21v-9h16v9M4 16h16M8 12V8m4 4V8m4 4V8M7 5l1-2 1 2m2 0 1-2 1 2m2 0 1-2 1 2"/>',
-    travel: '<path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2Zm6-2v16m6-14v16"/>',
     us: '<path d="M20 5c-3-3-6-1-8 1-2-2-5-4-8-1-4 4 2 10 8 15 6-5 12-11 8-15Z"/>',
     fertility: '<path d="M12 3c4 5 7 8 7 12a7 7 0 0 1-14 0c0-4 3-7 7-12Z"/>',
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
@@ -43,7 +41,7 @@ function initNest() {
   const rail = document.getElementById('nest-sidebar');
   const groups = [
     ['DAY TO DAY', [['home','Our nest'],['calendar','Family plan'],['tasks','Tasks'],['habits','Habits'],['rewards','Companions']]],
-    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations'],['travel','Adventures']]],
+    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations']]],
     ['PARENTS’ CORNER', [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']], true]
   ];
   rail.innerHTML = `<button class="nest-brand" onclick="goTo('home')" aria-label="Wong’s Nest home"><img src="assets/nest-mark.svg" alt=""><span>Wong’s Nest<small>Our family, together.</small></span></button>

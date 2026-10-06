@@ -26,6 +26,19 @@ test('unselected tasks complete without awarding stars', () => {
   const h = harness(), id = h.write({note:'add_todo',todo_task:'Pack',todo_assignee:'Mikaela'}).id;
   assert.equal(complete(h,id).award.stars, 0); assert.equal(profile(h).balance, 0);
 });
+test('tasks created or edited with stars allocate rules and award stars on completion', () => {
+  const h = harness();
+  const res = h.write({ note: 'add_todo', todo_task: 'Clean room', todo_assignee: 'Mikaela', todo_stars: 3 });
+  assert.equal(res.status, 'ok');
+  assert.equal(h.c.getRewards_(h.ss).rules.find(r => r.type === 'task' && r.sourceId === res.id)?.stars, 3);
+  assert.equal(complete(h, res.id).award.stars, 3);
+  assert.equal(profile(h).balance, 3);
+
+  const res2 = h.write({ note: 'add_todo', todo_task: 'Water plants', todo_assignee: 'Meaghan', todo_stars: 1 });
+  assert.equal(res2.status, 'ok');
+  assert.equal(h.write({ note: 'edit_todo', todo_id: res2.id, todo_task: 'Water plants', todo_assignee: 'Meaghan', todo_stars: 5 }).status, 'ok');
+  assert.equal(h.c.getRewards_(h.ss).rules.find(r => r.type === 'task' && r.sourceId === res2.id)?.stars, 5);
+});
 test('only parents set rewards on existing open activities with allowed amounts', () => {
   const h = harness(), id = activity(h);
   for (const request of [{stars:5,email:child},{stars:2},{stars:100},{stars:-1},{stars:5,source_id:'missing'}]) {

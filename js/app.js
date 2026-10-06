@@ -203,14 +203,6 @@
           document.getElementById('app-screen').classList.remove('active');
         }
       });
-
-      // Autocomplete blur
-      const searchInput = document.getElementById('tr-loc-search');
-      if (searchInput) {
-        searchInput.addEventListener('blur', () => {
-          setTimeout(() => { const sug = document.getElementById('tr-loc-suggestions'); if(sug) sug.style.display='none'; }, 200);
-        });
-      }
     });
 
     // ─── TOAST ──────────────────────────────────────────────────
@@ -486,7 +478,7 @@
     }
 
     // ─── NAVIGATION ───────────────────────────────────────────
-    const NAV_SECONDARY = ['budgets','memories','habits','fertility','recurring','birthdays','schedules','travel'];
+    const NAV_SECONDARY = ['budgets','memories','habits','fertility','recurring','birthdays','schedules'];
     const ADULT_SCREENS = ['us', 'fertility', 'expenses', 'budgets', 'recurring'];
     const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'rewards', 'more', 'expenses', 'us'];
 
@@ -549,7 +541,7 @@
       }
       if (!document.getElementById('s-' + id)) id = 'home';
       section = id;
-      if(id !== 'travel' && timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; const playBtn = document.getElementById('btn-play-timeline'); if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; }
+      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; }
 
       // Handle memories listener
       if(id === 'memories') {
@@ -584,7 +576,7 @@
       const el = document.getElementById('more-grid');
       if (!el) return;
       const tiles = [
-        ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],['travel','Adventures'],
+        ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],
         ...(isAdultUser ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [])
       ];
       el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
@@ -604,7 +596,6 @@
         case 'recurring': renderRecurring(); break;
         case 'birthdays': renderBirthdays(); break;
         case 'schedules': renderSchedules(); break;
-        case 'travel': renderTravel(); break;
         case 'us': renderUs(); break;
       }
     }
@@ -647,6 +638,8 @@
         const titleEl = document.getElementById('m-task-title'); if (titleEl) titleEl.textContent = 'Add task';
         const submitBtn = document.getElementById('tk-submit'); if (submitBtn) submitBtn.textContent = 'Save task';
         clr('tk-title', 'tk-due');
+        const starEl = document.getElementById('tk-stars'); if (starEl) starEl.value = '0';
+        const starWrap = document.getElementById('tk-stars-wrap'); if (starWrap) starWrap.style.display = isAdultUser ? '' : 'none';
         chips('tk-chips', isAdultUser ? FAM : [user], user, 'tk-a');
       }
       if(id === 'm-timetable-add'){ const el=document.getElementById('sch-date'); if(el) el.value=selectedCalDayStr||todayStr(); }
@@ -663,6 +656,8 @@
       const dueInput = document.getElementById('tk-due'); if (dueInput) dueInput.value = t.dueRaw || '';
       const titleEl = document.getElementById('m-task-title'); if (titleEl) titleEl.textContent = 'Edit task';
       const submitBtn = document.getElementById('tk-submit'); if (submitBtn) submitBtn.textContent = 'Save changes';
+      const starEl = document.getElementById('tk-stars'); if (starEl) starEl.value = String(typeof rewardStars === 'function' ? rewardStars('task', t.id) : 0);
+      const starWrap = document.getElementById('tk-stars-wrap'); if (starWrap) starWrap.style.display = isAdultUser ? '' : 'none';
       chips('tk-chips', isAdultUser ? FAM : [user], t.assignee || user, 'tk-a');
       modalOpened('m-task');
     }
@@ -1126,6 +1121,8 @@
         const assignee = gc('tk-a') || user || 'Everyone';
         const due = v('tk-due') ? fmtDate(v('tk-due')) : '';
         const dueRaw = v('tk-due') || '';
+        const starEl = document.getElementById('tk-stars');
+        const stars = isAdultUser && starEl ? Number(starEl.value || 0) : 0;
 
         if (taskId) {
           const res = await gPost({
@@ -1133,9 +1130,19 @@
             todo_id: taskId,
             todo_task: task,
             todo_assignee: assignee,
-            todo_due: due
+            todo_due: due,
+            todo_stars: stars
           });
           if (res && res.status === 'ok') {
+            const prevStars = typeof rewardStars === 'function' ? rewardStars('task', taskId) : 0;
+            if (isAdultUser && stars !== prevStars) {
+              await gPost({ note: 'set_reward_rule', source_type: 'task', source_id: taskId, stars: stars });
+              if (data.rewards) {
+                if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
+                data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === taskId));
+                if (stars > 0) data.rewards.rules.push({ type: 'task', sourceId: taskId, stars: stars });
+              }
+            }
             const updateItem = item => {
               if (item.id === taskId) {
                 item.task = task;
@@ -1155,7 +1162,23 @@
             toast((res && res.message) || 'Failed to update task.', true);
           }
         } else {
-          if (!await saveConfirmed({note:'add_todo',todo_task:task,todo_assignee:assignee,todo_due:due})) return;
+          const res = await gPost({
+            note: 'add_todo',
+            todo_task: task,
+            todo_assignee: assignee,
+            todo_due: due,
+            todo_stars: stars
+          });
+          if (!res || res.status !== 'ok') return;
+          const newTaskId = res.id;
+          if (isAdultUser && stars > 0 && newTaskId) {
+            await gPost({ note: 'set_reward_rule', source_type: 'task', source_id: newTaskId, stars: stars });
+            if (data.rewards) {
+              if (!Array.isArray(data.rewards.rules)) data.rewards.rules = [];
+              data.rewards.rules = data.rewards.rules.filter(r => !(r.type === 'task' && r.sourceId === newTaskId));
+              data.rewards.rules.push({ type: 'task', sourceId: newTaskId, stars: stars });
+            }
+          }
           closeM('m-task'); clr('tk-title', 'tk-due', 'tk-id'); toast('Task added.');
           await loadData();
         }
@@ -1232,22 +1255,6 @@
         closeM('m-expense'); clr('ex-desc','ex-amt'); toast('Expense saved.');
         await loadData();
       } finally { btn.disabled = false; btn.textContent = 'Save expense'; }
-    }
-    async function submitTrip(btn) {
-      if(!btn) btn = document.getElementById('tr-submit');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        const city = document.getElementById('tr-city').value, country = document.getElementById('tr-country').value;
-        const lat = parseFloat(document.getElementById('tr-lat').value)||0, lng = parseFloat(document.getElementById('tr-lng').value)||0;
-        const dateVal = document.getElementById('tr-date').value, notes = v('tr-notes');
-        if(!city||!country||lat===0||lng===0){ alert('Please select a valid location from the search suggestions dropdown'); return; }
-        if(!dateVal){ alert('Please select a date'); return; }
-        const memberBoxes = document.querySelectorAll('input[name="tr-mem"]:checked');
-        const membersStr = Array.from(memberBoxes).map(cb=>cb.value).join(',');
-        if (!await saveConfirmed({note:'add_trip',trip_city:city,trip_country:country,trip_date:fmtDate(dateVal),trip_lat:lat,trip_lng:lng,trip_members:membersStr,trip_notes:notes})) return;
-        closeM('m-trip-add'); document.getElementById('tr-loc-search').value=''; document.getElementById('tr-city').value=''; document.getElementById('tr-country').value=''; document.getElementById('tr-lat').value='0'; document.getElementById('tr-lng').value='0'; clr('tr-notes'); toast('Trip added.');
-        await loadData();
-      } finally { btn.disabled = false; btn.textContent = 'Add trip'; }
     }
     function applyActivityPreset(act) {
       const actInput = document.getElementById('sch-act');
@@ -1344,142 +1351,6 @@
         btn.disabled = false; btn.textContent = 'Save Check-in';
       }
     }
-
-    // ─── TRAVEL ─────────────────────────────────────────────────
-    let travelMap = null, travelMarkers = [], travelPaths = [];
-    function renderTravel() {
-      const trips = data.travel || [];
-      const el = document.getElementById('trip-list');
-      if(!el) return;
-      const tripsCount = trips.length;
-      const uniqueCountries = new Set();
-      const travelerCounts = {};
-      trips.forEach(t => {
-        if(t.country) uniqueCountries.add(t.country.trim());
-        if(t.members && t.members.length) { t.members.forEach(m => travelerCounts[m] = (travelerCounts[m]||0)+1); }
-        else travelerCounts['Everyone'] = (travelerCounts['Everyone']||0)+1;
-      });
-      const countriesCount = uniqueCountries.size;
-      let topTraveler='None', maxTrips=0;
-      for(const person in travelerCounts) if(travelerCounts[person] > maxTrips){ maxTrips=travelerCounts[person]; topTraveler=person; }
-      if(topTraveler!=='None' && maxTrips>0) topTraveler = `${topTraveler} (${maxTrips})`;
-      document.getElementById('stat-trips-count').textContent = tripsCount;
-      document.getElementById('stat-countries-count').textContent = countriesCount;
-      document.getElementById('stat-top-traveler').textContent = topTraveler;
-      if(!trips.length){ el.innerHTML = '<div class="empty"><div class="ei">✈️</div>No trips logged yet</div>'; return; }
-      el.innerHTML = trips.map(t => {
-        const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
-        return `<div class="row" style="padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;" onclick="focusTrip('${t.id}', ${t.lat}, ${t.lng})"><div style="font-size:22px;flex-shrink:0;margin-right:6px;">✈️</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(t.city)}, ${escapeHtml(t.country)}</div><div class="row-sub">${escapeHtml(t.date)} · Travelers: ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(t.notes)}"</div>` : ''}</div><button onclick="event.stopPropagation(); delTrip('${t.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
-      }).join('');
-      setTimeout(() => {
-        const mapContainer = document.getElementById('travel-map');
-        if(!mapContainer) return;
-        if(!travelMap){
-          travelMap = L.map('travel-map').setView([20,0],2);
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', subdomains:'abcd', maxZoom:20 }).addTo(travelMap);
-        }
-        travelMarkers.forEach(m => m.remove()); travelMarkers = [];
-        travelPaths.forEach(p => p.remove()); travelPaths = [];
-        const homeBase = [1.3521, 103.8198];
-        trips.forEach(t => {
-          if(t.lat !==0 || t.lng !==0){
-            let pinColorClass = 'pin-purple';
-            if(t.members && t.members.length ===1){
-              const traveler = t.members[0];
-              if(traveler === 'Mikaela') pinColorClass='pin-blue';
-              else if(traveler === 'Meaghan') pinColorClass='pin-amber';
-              else if(traveler === 'Eleanor') pinColorClass='pin-red';
-              else if(traveler === 'Marcus') pinColorClass='pin-green';
-            }
-            const customIcon = L.divIcon({ html: `<div class="custom-pin ${pinColorClass}"></div>`, className:'custom-pin-container', iconSize:[12,12], iconAnchor:[6,6] });
-            const marker = L.marker([t.lat, t.lng], { icon: customIcon }).addTo(travelMap);
-            const membersStr = t.members && t.members.length ? t.members.join(', ') : 'Everyone';
-            const popupContent = `<div style="font-family:sans-serif;padding:2px;min-width:150px;"><h4 style="margin:0 0 4px;color:#1a1a2e;font-size:13px;font-weight:bold;">📍 ${escapeHtml(t.city)}, ${escapeHtml(t.country)}</h4><div style="font-size:11px;color:#9898aa;margin-bottom:6px;">📅 ${escapeHtml(t.date)}</div><div style="font-size:12px;color:#5a5a72;margin-bottom:4px;"><strong>Who:</strong> ${escapeHtml(membersStr)}</div>${t.notes ? `<div style="font-size:11px;color:#888;font-style:italic;border-top:1px solid #eee;padding-top:4px;margin-top:4px;">"${escapeHtml(t.notes)}"</div>` : ''}</div>`;
-            marker.bindPopup(popupContent);
-            marker.tripId = t.id;
-            travelMarkers.push(marker);
-            const pathCoords = [homeBase, [t.lat, t.lng]];
-            const polyline = L.polyline(pathCoords, { color: pinColorClass==='pin-blue'?'#4f86c6':pinColorClass==='pin-amber'?'#f4a261':pinColorClass==='pin-red'?'#e05252':pinColorClass==='pin-green'?'#3aaa75':'#9b59b6', weight:2, dashArray:'6,8', className:'animated-flight-path', opacity:0.65 }).addTo(travelMap);
-            travelPaths.push(polyline);
-          }
-        });
-        travelMap.invalidateSize();
-      }, 100);
-    }
-    function focusTrip(id, lat, lng){ if(!travelMap) return; travelMap.flyTo([lat,lng],6,{animate:true,duration:1.2}); const marker=travelMarkers.find(m=>m.tripId===id); if(marker) setTimeout(()=>marker.openPopup(),1200); }
-    function playTravelTimeline() {
-      if(!travelMap){ toast('Map is still loading.'); return; }
-      const trips = data.travel || [];
-      const validTrips = trips.filter(t => t.lat !==0 || t.lng !==0);
-      if(!validTrips.length){ toast('No trip locations to show.'); return; }
-      const sortedTrips = [...validTrips].sort((a,b)=>new Date(a.date)-new Date(b.date));
-      const playBtn = document.getElementById('btn-play-timeline');
-      if(timelineInterval){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; toast('Timeline stopped.'); return; }
-      if(playBtn) playBtn.innerHTML='<span>⏹</span><span>Stop playback</span>';
-      toast('Starting travel tour.');
-      let i=0;
-      function nextStep(){
-        if(i>=sortedTrips.length){ clearInterval(timelineInterval); timelineInterval=null; if(playBtn) playBtn.innerHTML='<span>▶</span><span>Play timeline</span>'; toast('Travel tour finished.'); setTimeout(()=>{ if(travelMap) travelMap.setView([20,0],2); },2000); return; }
-        const t=sortedTrips[i]; focusTrip(t.id,t.lat,t.lng); i++;
-      }
-      nextStep();
-      timelineInterval = setInterval(nextStep, 3800);
-    }
-    function delTrip(id) {
-      const trip = data.travel.find(t => t.id === id);
-      if(!trip) return;
-      if(!confirm('Remove this trip?')) return;
-      data.travel = data.travel.filter(t => t.id !== id);
-      pushUndo(() => { data.travel.push(trip); renderTravel(); }, 'Trip removed', { note:'delete_trip', trip_id: id });
-      renderTravel();
-    }
-
-    // ─── LOCATION AUTOCOMPLETE ────────────────────────────────
-    let locTimeout = null;
-    function handleLocInput(val) {
-      clearTimeout(locTimeout);
-      if(val.trim().length < 3){ document.getElementById('tr-loc-suggestions').style.display='none'; return; }
-      locTimeout = setTimeout(() => fetchLocSuggestions(val.trim()), 400);
-    }
-    let _locResults = [];
-    async function fetchLocSuggestions(q) {
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=en&q=${encodeURIComponent(q)}&limit=5`;
-        const res = await fetch(url);
-        const results = await res.json();
-        const sug = document.getElementById('tr-loc-suggestions');
-        if(!results || results.length===0){ sug.style.display='none'; return; }
-        _locResults = results;
-        sug.innerHTML = results.map((item, i) =>
-          `<div class="autocomplete-suggestion" data-loc-idx="${i}">${escapeHtml(item.display_name)}</div>`
-        ).join('');
-        sug.querySelectorAll('.autocomplete-suggestion').forEach(el => {
-          el.addEventListener('click', () => {
-            const item = _locResults[parseInt(el.dataset.locIdx, 10)];
-            if(!item) return;
-            const addr = item.address || {};
-            const city = addr.city || addr.town || addr.suburb || addr.village || addr.municipality || '';
-            selectLocSuggestion(city, addr.country || '', item.lat, item.lon, item.display_name);
-          });
-        });
-        sug.style.display = 'block';
-      } catch(e){ console.error('Autocomplete Error:', e); }
-    }
-    function selectLocSuggestion(city, country, lat, lng, displayName) {
-      let parsedCity = city;
-      if(!parsedCity && displayName) parsedCity = displayName.split(',')[0].trim();
-      document.getElementById('tr-loc-search').value = displayName;
-      document.getElementById('tr-city').value = parsedCity || 'Unknown';
-      document.getElementById('tr-country').value = country || 'Unknown';
-      document.getElementById('tr-lat').value = lat;
-      document.getElementById('tr-lng').value = lng;
-      document.getElementById('tr-loc-suggestions').style.display = 'none';
-    }
-    document.addEventListener('click', function(e) {
-      const sug = document.getElementById('tr-loc-suggestions');
-      const searchInput = document.getElementById('tr-loc-search');
-      if(sug && searchInput && !searchInput.contains(e.target) && !sug.contains(e.target)) sug.style.display='none';
-    });
 
     // ─── US (Connection Sanctuary) ────────────────────────────
     const DEEP_QUESTIONS = [
