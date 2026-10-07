@@ -604,12 +604,17 @@ function renderSchoolHome() {
           </div>
         `;
       })()}
-      <div class="school-parent-actions">
-        <h3>${escapeHtml(user)} — your actions & tasks</h3>
-        ${tasks.filter(t => (t.sourceId || t.kind) && ['Marcus', 'Eleanor', 'Everyone'].includes(t.assignee) && t.status !== 'Done')
-          .sort((a, b) => (a.assignee === user ? 0 : a.assignee === 'Everyone' ? 1 : 2) - (b.assignee === user ? 0 : b.assignee === 'Everyone' ? 1 : 2))
-          .map(t => schoolTaskCard(t, day)).join('') || '<p class="school-muted">No pending notice or prep actions waiting for you.</p>'}
-      </div>
+      ${(() => {
+        const parentTasks = tasks.filter(t => (t.sourceId || t.kind) && ['Marcus', 'Eleanor', 'Everyone'].includes(t.assignee) && t.status !== 'Done')
+          .sort((a, b) => (a.assignee === user ? 0 : a.assignee === 'Everyone' ? 1 : 2) - (b.assignee === user ? 0 : b.assignee === 'Everyone' ? 1 : 2));
+        if (!parentTasks.length) return '';
+        return `
+          <div class="school-parent-actions">
+            <h3>${escapeHtml(user)} — your actions & tasks</h3>
+            ${parentTasks.map(t => schoolTaskCard(t, day)).join('')}
+          </div>
+        `;
+      })()}
       ${plans.some(p => p.status === 'published') ? `
         <details class="school-inbox">
           <summary>Saved announcements</summary>

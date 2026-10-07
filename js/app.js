@@ -732,7 +732,7 @@
         .filter((m, i, arr) => m && m !== 'Everyone' && arr.indexOf(m) === i);
       let membersHtml = '';
       memberOrder.forEach(m => {
-        const tasks = todos.filter(t => t.assignee === m);
+        const tasks = todos.filter(t => t.assignee === m && t.status !== 'Done' && t.status !== 'Deleted');
         const memberEvents = events.filter(e => (e.tags || []).includes(m) && e.dateRaw >= tod).slice(0, 3);
         const together = m === 'Meaghan' ? ' · with you' : m === 'Mikaela' ? ' · self-serve' : '';
         membersHtml += `
@@ -744,14 +744,14 @@
         `;
       });
       document.getElementById('dash-members').innerHTML = `<span class="nest-kicker">THE WONG CREW</span>${membersHtml}`;
-      const tksToday = todos.filter(t => t.dueRaw && t.dueRaw <= tod);
+      const tksToday = todos.filter(t => t.dueRaw && t.dueRaw <= tod && t.status !== 'Done' && t.status !== 'Deleted');
       document.getElementById('today-wrap').innerHTML = `
         <div class="card">
           <div class="card-hdr"><span class="card-title">Today at a glance</span></div>
           <div class="card-body">
             ${!evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
             ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
-            ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '✅'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
+            ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '⏰'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
         </div>
         <div class="card">
@@ -868,7 +868,7 @@
           <div class="card-hdr" style="flex-wrap:wrap;gap:8px;">
             <span class="card-title">Activity Feed</span>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">
-              ${filters.map(f => `<button class="toggle-pill ${currentActivityFilter === f ? 'active' : ''}" style="padding:4px 12px;font-size:12px;" onclick="setActivityFilter('${f}')">${f}</button>`).join('')}
+              ${filters.map(f => `<button class="activity-pill ${currentActivityFilter === f ? 'active' : ''}" onclick="setActivityFilter('${f}')">${f}</button>`).join('')}
             </div>
           </div>
           <div class="activity-feed">
