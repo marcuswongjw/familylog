@@ -85,7 +85,7 @@
       if (typeof r.isAdult === 'boolean') setAdultAccess(r.isAdult && ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
       else setAdultAccess(ADULT_EMAILS.includes(String(currentUserEmail || '').toLowerCase()));
       if (!isAdultUser) {
-        ['expenses','budgets','fertility','recurring','appreciations','loveCheckins','intimacyLog','bucketList','schoolPlans'].forEach(key => { data[key] = key === 'expenses' ? {total:0,rows:[]} : []; });
+        ['expenses','budgets','fertility','recurring','appreciations','loveCheckins','intimacyLog','bucketList','schoolPlans','activityLog'].forEach(key => { data[key] = key === 'expenses' ? {total:0,rows:[]} : []; });
         GROUPS = {}; bucketList = [];
       }
       nestFilterChildData();

@@ -19,6 +19,9 @@ function getTodos(ss, verifiedEmail, includeDone) {
       due:      row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'dd MMM yyyy') : '',
       dueRaw:   row[3] ? Utilities.formatDate(new Date(row[3]), tz, 'yyyy-MM-dd') : '',
       completedRaw: row[6] ? Utilities.formatDate(new Date(row[6]), tz, 'yyyy-MM-dd') : '',
+      completedAt: row[6] ? (row[6] instanceof Date ? row[6].toISOString() : (new Date(row[6]).toISOString())) : '',
+      completedBy: toStr(row[12]) || '',
+      createdAt: row[0] ? (row[0] instanceof Date ? row[0].toISOString() : (new Date(row[0]).toISOString())) : '',
       addedBy:  toStr(row[4]),
       status:   toStr(row[5]) || 'Open'
     });

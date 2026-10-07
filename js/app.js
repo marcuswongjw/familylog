@@ -693,15 +693,18 @@
       const summaryEl = document.getElementById('dash-summary');
       const membersEl = document.getElementById('dash-members');
       const todayWrapEl = document.getElementById('today-wrap');
+      const activityWrapEl = document.getElementById('dash-activity-wrap');
       if (!isAdultUser) {
         if (summaryEl) summaryEl.style.display = 'none';
         if (membersEl) membersEl.style.display = 'none';
         if (todayWrapEl) todayWrapEl.style.display = 'none';
+        if (activityWrapEl) activityWrapEl.style.display = 'none';
         return;
       } else {
         if (summaryEl) summaryEl.style.display = '';
         if (membersEl) membersEl.style.display = '';
         if (todayWrapEl) todayWrapEl.style.display = '';
+        if (activityWrapEl) activityWrapEl.style.display = '';
       }
 
       const tod = todayStr();
@@ -758,7 +761,125 @@
           </div>
         </div>
       `;
+
+      renderActivityLog();
     }
+
+    let currentActivityFilter = 'All';
+
+    function setActivityFilter(filter) {
+      currentActivityFilter = filter;
+      renderActivityLog();
+    }
+
+    function renderActivityLog() {
+      const container = document.getElementById('dash-activity-wrap');
+      if (!container) return;
+      if (!isAdultUser) {
+        container.style.display = 'none';
+        return;
+      }
+      container.style.display = '';
+
+      const list = Array.isArray(data.activityLog) ? data.activityLog : [];
+      const filters = ['All', 'Tasks', 'Calendar', 'Habits', 'Expenses', 'Other'];
+
+      const filtered = list.filter(item => {
+        if (currentActivityFilter === 'All') return true;
+        if (currentActivityFilter === 'Other') {
+          return !['Tasks', 'Calendar', 'Habits', 'Expenses'].includes(item.category);
+        }
+        return item.category === currentActivityFilter;
+      });
+
+      const getActionIcon = (action, category) => {
+        switch (action) {
+          case 'task_done': return '✅';
+          case 'task_add': return '📋';
+          case 'task_edit': return '✏️';
+          case 'task_delete': return '🗑️';
+          case 'task_help': return '🆘';
+          case 'event_add':
+          case 'event_edit':
+          case 'event_delete': return '📅';
+          case 'habit_log': return '⭐';
+          case 'habit_delete': return '↩️';
+          case 'expense_add':
+          case 'expense_delete': return '💳';
+          case 'birthday_add': return '🎂';
+          case 'school_published': return '🏫';
+          default:
+            if (category === 'Tasks') return '📋';
+            if (category === 'Calendar') return '📅';
+            if (category === 'Habits') return '⭐';
+            if (category === 'Expenses') return '💳';
+            return '📌';
+        }
+      };
+
+      const getRelativeTime = (ts) => {
+        if (!ts) return '';
+        try {
+          const d = new Date(ts);
+          if (isNaN(d.getTime())) return String(ts);
+          const now = new Date();
+          const diffSec = Math.floor((now - d) / 1000);
+          if (diffSec < 60) return 'Just now';
+          if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+          if (diffSec < 86400 && d.getDate() === now.getDate()) {
+            return d.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit', hour12: true });
+          }
+          const yesterday = new Date(now);
+          yesterday.setDate(yesterday.getDate() - 1);
+          if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear()) {
+            return 'Yesterday ' + d.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit', hour12: true });
+          }
+          return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit', hour12: true });
+        } catch (_) {
+          return String(ts);
+        }
+      };
+
+      let rowsHtml = '';
+      if (!filtered.length) {
+        rowsHtml = `<div class="empty" style="padding:24px 16px;text-align:center;color:var(--text-muted);">No activity recorded yet for ${currentActivityFilter === 'All' ? 'the family' : currentActivityFilter}.</div>`;
+      } else {
+        rowsHtml = filtered.map(item => {
+          const icon = getActionIcon(item.action, item.category);
+          const timeStr = getRelativeTime(item.timestamp);
+          return `
+            <div class="activity-item">
+              <div class="activity-icon">${icon}</div>
+              <div class="activity-content">
+                <div class="activity-desc">${escapeHtml(item.description)}</div>
+                ${item.details ? `<div class="activity-detail">${escapeHtml(item.details)}</div>` : ''}
+                <div class="activity-meta">
+                  <span class="activity-badge">${escapeHtml(item.category || 'General')}</span>
+                  <span>${escapeHtml(timeStr)}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      container.innerHTML = `
+        <div class="card">
+          <div class="card-hdr" style="flex-wrap:wrap;gap:8px;">
+            <span class="card-title">Activity Feed</span>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${filters.map(f => `<button class="toggle-pill ${currentActivityFilter === f ? 'active' : ''}" style="padding:4px 12px;font-size:12px;" onclick="setActivityFilter('${f}')">${f}</button>`).join('')}
+            </div>
+          </div>
+          <div class="activity-feed">
+            ${rowsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    window.setActivityFilter = setActivityFilter;
+    window.renderActivityLog = renderActivityLog;
 
     function goToMember(member) {
       goTo('tasks');

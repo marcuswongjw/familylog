@@ -234,6 +234,16 @@
     .dash-member .count{font-size:14px;font-weight:700;color:var(--primary);}
     .dash-recent .recent-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-color);font-size:14px;}
     .dash-recent .recent-item:last-child{border-bottom:none;}
+    .dash-activity-wrap{margin-top:20px;}
+    .activity-feed{display:flex;flex-direction:column;}
+    .activity-item{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border-color);transition:background var(--transition);}
+    .activity-item:last-child{border-bottom:none;}
+    .activity-icon{font-size:18px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--bg-body);flex-shrink:0;}
+    .activity-content{flex:1;min-width:0;}
+    .activity-desc{font-size:14px;color:var(--text-primary);line-height:1.4;word-break:break-word;}
+    .activity-detail{font-size:12px;color:var(--text-secondary);margin-top:3px;}
+    .activity-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-top:4px;}
+    .activity-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--bg-body);color:var(--text-secondary);border:1px solid var(--border-color);}
 
     /* ── MORE GRID ── */
     .more-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:16px;}
@@ -958,7 +968,7 @@
 #school-feedback { font-size:13px;line-height:1.6;color:var(--text-secondary); }
 #school-feedback.school-error { color:#bd3443; }
 #school-dialog button:disabled { opacity:.5;cursor:wait; }
-.is-child #dash-summary,.is-child #dash-members,.is-child #today-wrap,.is-child .parent-task-delete { display:none; }
+.is-child #dash-summary,.is-child #dash-members,.is-child #today-wrap,.is-child #dash-activity-wrap,.is-child .parent-task-delete { display:none; }
 .is-child .school-day-grid { grid-template-columns:1fr; }
 @media(max-width:640px) {
  .school-intro { padding:20px;align-items:flex-start;flex-direction:column;gap:12px; }
