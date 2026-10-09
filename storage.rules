@@ -1,6 +1,6 @@
 rules_version = '2';
-// Wong’s Nest — Storage rules for chat & memory images
-// New uploads must live under chat/{email}/… or memories/{email}/…
+// Wong’s Nest — Storage rules for memory images and school sources
+// New uploads must live under memories/{email}/… or school/{email}/…
 // Old Drive links are unchanged and not governed by these rules.
 service firebase.storage {
   match /b/{bucket}/o {
@@ -43,12 +43,6 @@ service firebase.storage {
       allow update: if false;
     }
 
-    // chat/{ownerEmail}/{fileName}
-    match /chat/{ownerEmail}/{fileName} {
-      allow read: if isFamily();
-      allow write: if false;
-    }
-
     // memories/{ownerEmail}/{fileName}
     match /memories/{ownerEmail}/{fileName} {
       allow read: if isFamily();
@@ -58,13 +52,7 @@ service firebase.storage {
       allow delete: if isFamily() && ownerEmail.lower() == callerEmail();
     }
 
-    // Block legacy flat paths (chat/timestamp_name.jpg) for NEW writes.
-    // Existing objects remain readable if already public-URL based; rules
-    // only apply to SDK access. Prefer migrating new uploads to nested paths.
-    match /chat/{fileName} {
-      allow read: if isFamily();
-      allow write: if false;
-    }
+    // Legacy flat memory paths remain read-only.
     match /memories/{fileName} {
       allow read: if isFamily();
       allow write: if false;
