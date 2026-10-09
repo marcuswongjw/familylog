@@ -10,3 +10,18 @@ test('offline reward completion is rejected without sending or queuing a write',
 test('photo retry reuses upload and confirms metadata before clearing preview',async({page})=>{expect(await page.evaluate(async()=>{const docs=new Map();let uploads=0,fail=true;const previousDb=db,previousStorage=storage;db={collection:()=>({doc:id=>({get:async()=>({exists:docs.has(id),data:()=>docs.get(id)}),set:async p=>{if(fail){fail=false;throw Error('Metadata failed')};docs.set(id,p)}})})};storage={ref:()=>({getMetadata:async()=>{if(!uploads)throw {code:'storage/object-not-found'}},put:async()=>uploads++,updateMetadata:async()=>{},getDownloadURL:async()=> 'https://example.com/photo.jpg'})};firebase.firestore.FieldValue={serverTimestamp:()=>new Date()};memImageBase64='data:image/jpeg;base64,AA==';openM('m-memory');document.querySelector('#mem-text').value='Keep photo';await submitMemory();const retained=!!memImageBase64;await submitMemory();db=previousDb;storage=previousStorage;return {retained,uploads,docs:docs.size,cleared:memImageBase64===null};})).toEqual({retained:true,uploads:1,docs:1,cleared:true});});
 
 test('companions respect reduced motion and refreshed status is visible',async({page})=>{await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>goTo('rewards'));await expect(page.locator('#connection-status')).toContainText('Last refreshed');const animation=await page.evaluate(()=>{const el=document.querySelector('.reward-character');el?.closest('.reward-hero-art')?.classList.add('reward-happy');return el?getComputedStyle(el).animationName:'none';});expect(animation).toBe('none');});
+
+test('habits list filters a person and shared progress without exposing siblings to children',async({page})=>{
+ await page.evaluate(()=>{data.habits=[{id:'own',habit:'Mikaela reading',member:'Mikaela',schedule:'daily',state:'active'},{id:'other',habit:'Meaghan phonics',member:'Meaghan',schedule:'daily',state:'active'},{id:'shared',habit:'Shared tidy',member:'Everyone',schedule:'daily',state:'active'}];goTo('habits');});
+ await page.locator('#habit-layout').selectOption('list');await page.locator('#habit-person').selectOption('Mikaela');
+ await expect(page.locator('.habit-list .habit-card')).toHaveCount(2);await expect(page.locator('#habits-container')).not.toContainText('Meaghan phonics');
+ await page.evaluate(()=>{user='Meaghan';setAdultAccess(false);renderHabits();});
+ await expect(page.locator('#habit-person')).toHaveCount(0);await expect(page.locator('#habits-container')).not.toContainText('Mikaela reading');
+});
+
+test('Home fits desktop and mobile with today before the family overview on mobile',async({page})=>{
+ for(const width of [1440,390]){await page.setViewportSize({width,height:900});await page.evaluate(()=>goTo('home'));
+ const bounds=await page.evaluate(()=>{const today=document.querySelector('#today-wrap').getBoundingClientRect(),crew=document.querySelector('#dash-members').getBoundingClientRect();return {overflow:document.documentElement.scrollWidth>innerWidth,todayWidth:today.width,crewWidth:crew.width,todayY:today.y,crewY:crew.y};});
+ expect(bounds.overflow).toBe(false);expect(bounds.todayWidth).toBeGreaterThan(300);if(width===390)expect(bounds.todayY).toBeLessThan(bounds.crewY);else expect(bounds.crewWidth).toBeGreaterThanOrEqual(290);
+ }
+});

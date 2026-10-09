@@ -199,3 +199,18 @@ test('backend child reads expose only own and shared habits and own logs',()=>{
   const events=[{tags:['Mikaela']},{tags:['Meaghan']},{tags:['Family']},{tags:[]}];
   assert.equal(h.c.memberEvents_(events,child).length,2);assert.equal(h.c.memberEvents_(events,'marcuswongjw@gmail.com').length,4);
 });
+
+test('new wardrobe items spend stars once, stay owned on retry, and can be equipped',()=>{
+ const h=harness();for(let i=0;i<20;i++)complete(h,activity(h));
+ const items=['sunhat','scarf','crown','flower','cape','party-hat'];
+ for(const itemId of items){
+  const item=h.c.REWARD_ITEMS_.find(i=>i.id===itemId);assert.ok(item);
+  const balance=profile(h).balance;
+  assert.equal(h.write({note:'buy_reward_item',item_id:itemId},child).status,'ok');
+  assert.equal(profile(h).balance,balance-item.cost);
+  assert.equal(h.write({note:'buy_reward_item',item_id:itemId},child).status,'ok');
+  assert.equal(profile(h).balance,balance-item.cost);
+  assert.equal(h.write({note:'save_companion',species:'fox',companion_name:'Pip',equipped:itemId},child).status,'ok');
+  assert.equal(profile(h).equipped,itemId);assert.ok(profile(h).owned.includes(itemId));
+ }
+});

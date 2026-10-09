@@ -2002,31 +2002,38 @@
     // ─── HABITS ────────────────────────────────────────────────
     let habitViewDate = '';
     let habitShowArchived = false;
+    let habitLayout = 'cards';
+    let habitPerson = 'All';
     function renderHabits() {
       const root = document.getElementById('habits-container'); if (!root) return;
       const date = habitViewDate || schoolToday();
-      const habits = nestVisibleHabits().filter(h => habitShowArchived && isAdultUser ? h.state === 'archived' : h.state !== 'archived');
+      const habits = nestVisibleHabits().filter(h => habitShowArchived && isAdultUser ? h.state === 'archived' : h.state !== 'archived').filter(h => !isAdultUser || habitPerson === 'All' || h.member === habitPerson || h.member === 'Everyone');
       root.innerHTML = `<div class="habit-toolbar"><label>Day<input type="date" id="habit-view-date" value="${date}"></label>
+        <label>View<select id="habit-layout"><option value="cards" ${habitLayout==='cards'?'selected':''}>Cards</option><option value="list" ${habitLayout==='list'?'selected':''}>List</option></select></label>
+        ${isAdultUser ? `<label>Person<select id="habit-person">${['All','Marcus','Eleanor','Mikaela','Meaghan'].map(m=>`<option value="${m}" ${habitPerson===m?'selected':''}>${m==='All'?'Everyone':m}</option>`).join('')}</select></label>` : ''}
         <button class="btn btn-p" onclick="openAddHabitModal()">+ New habit</button>
         ${isAdultUser ? `<button class="btn btn-s" onclick="habitShowArchived=!habitShowArchived;renderHabits()">${habitShowArchived ? 'Active habits' : 'Archived habits'}</button>` : ''}</div>
         <p class="habit-intro">Small steps on the days that work for you. A rest day is part of the routine.</p>
-        <div class="habit-grid">${habits.map(h => {
-          const member = h.member === 'Everyone' ? user : h.member;
+        <div class="habit-grid ${habitLayout==='list'?'habit-list':''}">${habits.map(h => {
+          const member = h.member === 'Everyone' ? (isAdultUser && habitPerson !== 'All' ? habitPerson : user) : h.member;
           const done = habitDone(h,member,date), due = habitDue(h,member,date), state = h.state || 'active';
           const week = habitWeek(date);
           const dots = Array.from({length:7},(_,i)=>{const d=schoolDayOffset(week.start,i),logged=habitDone(h,member,d),scheduled=habitDue(h,member,d);return `<span class="habit-day ${logged?'done':scheduled?'due':'rest'}" title="${d}: ${logged?'Completed':scheduled?'Scheduled':'Rest day'}"><small>${HABIT_DAYS[new Date(d+'T00:00:00Z').getUTCDay()]}</small><span>${logged?'✓':scheduled?'·':'–'}</span></span>`;}).join('');
-          const logs = (data.habitLogs || []).filter(l => l.habitId === h.id && (isAdultUser || l.member === user)).slice(0,5);
+          const logs = (data.habitLogs || []).filter(l => l.habitId === h.id && (isAdultUser ? habitPerson==='All'||l.member===habitPerson : l.member === user)).slice(0,5);
           const canEdit = isAdultUser || h.member === user;
           return `<article class="habit-card"><div class="habit-card-title"><span aria-hidden="true">${escapeHtml(h.emoji || '🌱')}</span><div><h3>${escapeHtml(h.habit)}${rewardBadge('habit',h.id)}</h3><p>${h.member==='Everyone'?'Shared · each person has their own progress':escapeHtml(h.member)}</p></div></div>
             <p class="habit-schedule">${escapeHtml(habitScheduleLabel(h))}${state!=='active'?' · '+escapeHtml(state):''}</p>
             ${h.schedule==='weekly'?`<p class="habit-weekly">${escapeHtml(habitProgressLabel(h,member,date))}${h.member==='Everyone'?' · '+escapeHtml(member):''}</p>`:''}
             <div class="habit-week" aria-label="${escapeHtml(member)}’s week">${dots}</div>
-            <div class="habit-actions">${state==='active' ? done ? '<span class="habit-complete" role="status">✓ Done for this day</span>' : due ? `<button class="btn btn-p" onclick="${h.member==='Everyone'&&isAdultUser?`openHabitLogModal('${h.id}','${date}')`:`logHabitQuick('${h.id}','${date}','','${member}')`}" ${date>schoolToday()||pendingHabitLogs.has(habitPendingKey(h.id,member,date))?'disabled':''}>${date>schoolToday()?'Do this on the day':h.member==='Everyone'&&isAdultUser?'Log for a member':'✓ I did it'}</button>` : `<span class="habit-rest">${h.schedule==='weekly'?'Weekly goal reached. Enjoy the breathing room.':'Rest day'}</span>` : ''}
+            <div class="habit-actions">${state==='active' ? done ? '<span class="habit-complete" role="status">✓ Done for this day</span>' : due ? `<button class="btn btn-p" onclick="${h.member==='Everyone'&&isAdultUser&&habitPerson==='All'?`openHabitLogModal('${h.id}','${date}')`:`logHabitQuick('${h.id}','${date}','','${member}')`}" ${date>schoolToday()||pendingHabitLogs.has(habitPendingKey(h.id,member,date))?'disabled':''}>${date>schoolToday()?'Do this on the day':h.member==='Everyone'&&isAdultUser&&habitPerson==='All'?'Log for a member':isAdultUser&&member!==user?'✓ Log for '+escapeHtml(member):'✓ I did it'}</button>` : `<span class="habit-rest">${h.schedule==='weekly'?'Weekly goal reached. Enjoy the breathing room.':'Rest day'}</span>` : ''}
             ${state==='active'&&date<=schoolToday()?`<button class="btn btn-s" onclick="openHabitLogModal('${h.id}','${date}')">Add notes${h.member==='Everyone'&&isAdultUser?' / log for someone':''}</button>`:''}
             ${canEdit?`<button class="btn btn-s" onclick="openAddHabitModal('${h.id}')">Edit</button>`:''}
             ${isAdultUser?`<button class="btn btn-s" onclick="setHabitState('${h.id}','${state==='active'?'paused':'active'}')">${state==='active'?'Pause':state==='archived'?'Restore':'Resume'}</button>${state!=='archived'?`<button class="btn btn-s" onclick="delHabit('${h.id}')">Archive</button>`:''}`:''}</div>
             <details class="habit-history"><summary>Recent history${h.member==='Everyone'&&isAdultUser?' · all members':''}</summary>${logs.length?logs.map(l=>`<div><span>${escapeHtml(l.member)} · ${fmtDate(l.date)}${l.notes?' · '+escapeHtml(l.notes):''}</span><button class="btn btn-s btn-sm" onclick="delHabitLog('${l.id}')" aria-label="Remove ${escapeHtml(l.member)}’s entry on ${l.date}">Remove entry</button></div>`).join(''):'<p>No entries yet.</p>'}</details></article>`;
         }).join('') || `<div class="empty">${habitShowArchived?'No archived habits.':'No habits yet. Add a small routine to get started.'}</div>`}</div>`;
+      document.getElementById('habit-layout').onchange = e => {habitLayout=e.target.value;renderHabits();};
+      const personSelect=document.getElementById('habit-person');
+      if(personSelect)personSelect.onchange=e=>{habitPerson=e.target.value;renderHabits();};
       document.getElementById('habit-view-date').onchange = e => {habitViewDate=e.target.value||schoolToday();renderHabits();};
     }
     const pendingHabitLogs = new Set();

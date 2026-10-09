@@ -8,7 +8,7 @@
       stopMemoriesListener();
       if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
       user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
-      habitViewDate = ''; habitShowArchived = false; pendingHabitLogs.clear();
+      habitViewDate = ''; habitShowArchived = false; habitPerson = 'All'; habitLayout = 'cards'; pendingHabitLogs.clear();
       data = { memories: [] }; GROUPS = {}; bucketList = []; memImageBase64 = null;
       document.body.classList.add('is-child');
       document.querySelectorAll('.overlay').forEach(el => el.classList.remove('open'));

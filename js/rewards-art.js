@@ -8,6 +8,12 @@ function rewardCompanionSVG(profile, size = 'large') {
     : species === 'bear' ? '<circle cx="49" cy="53" r="20"/><circle cx="131" cy="53" r="20"/><g fill="' + muzzle + '"><circle cx="49" cy="53" r="11"/><circle cx="131" cy="53" r="11"/></g>'
     : '<path d="M40 69 43 23 77 48ZM102 48 137 23 140 69Z"/><g fill="' + muzzle + '"><path d="M48 57 49 34 67 49ZM113 49 132 34 132 57Z"/></g>';
   const accessory = {
+    sunhat: '<g fill="#E4BF68"><path d="M57 51Q60 15 90 15Q120 15 123 51Z"/><ellipse cx="90" cy="52" rx="58" ry="9"/><path d="M60 40h60" stroke="#A87557" stroke-width="8"/></g>',
+    scarf: '<g fill="#779C96"><path d="M49 112Q90 130 131 112L126 129Q90 142 54 129Z"/><path d="M109 125h17v35h-17Z"/></g>',
+    crown: '<path d="M52 48 47 20 72 33 90 10 109 33 134 20 127 48Z" fill="#E5BD55" stroke="#B88B35" stroke-width="2"/>',
+    flower: '<g fill="#D59B9C"><circle cx="126" cy="35" r="10"/><circle cx="140" cy="46" r="10"/><circle cx="130" cy="60" r="10"/><circle cx="114" cy="50" r="10"/><circle cx="127" cy="47" r="7" fill="#E5BD55"/></g>',
+    cape: '<path d="M49 111 28 170Q90 155 152 170L131 111Z" fill="#9C83B6"/>',
+    'party-hat': '<g><path d="M65 47 90 0 115 47Z" fill="#779C96"/><path d="m78 24 22 9M71 37l35 6" stroke="#E5BD55" stroke-width="5"/><circle cx="90" cy="3" r="5" fill="#D59B9C"/></g>',
     glasses: '<g stroke="#665080" stroke-width="4" fill="none"><circle cx="65" cy="82" r="16"/><circle cx="115" cy="82" r="16"/><path d="M81 82Q90 76 99 82M44 78 49 80M131 80 137 78"/></g>',
     'sailing-cap': '<g><path d="M53 52Q90 4 129 52Z" fill="#6F9893"/><path d="M48 50Q90 38 137 51L141 60H43Z" fill="#665080"/><path d="M90 29v13m-6-6h12" stroke="#FFF5E7" stroke-width="3"/></g>',
     'ballet-bow': '<g fill="#D59B9C" stroke="#755766" stroke-width="2"><path d="M104 45Q94 26 80 31L83 52Q96 52 104 45ZM104 45Q115 23 132 30L128 51Q112 54 104 45Z"/><circle cx="104" cy="44" r="7"/></g>',

@@ -6,7 +6,13 @@ var REWARD_ITEMS_ = [
   { id: 'glasses', name: 'Reading glasses', cost: 5, description: 'For a curious little companion.' },
   { id: 'sailing-cap', name: 'Sailing cap', cost: 8, description: 'Ready for a little adventure.' },
   { id: 'ballet-bow', name: 'Ballet bow', cost: 8, description: 'A bow for your next happy dance.' },
-  { id: 'backpack', name: 'Little backpack', cost: 12, description: 'Small steps, big adventures.' }
+  { id: 'backpack', name: 'Little backpack', cost: 12, description: 'Small steps, big adventures.' },
+  {id:'sunhat',name:'Sunny hat',cost:10,description:'A little shade for sunny days.'},
+  {id:'scarf',name:'Cosy scarf',cost:10,description:'Wrapped up for a cosy day.'},
+  {id:'crown',name:'Star crown',cost:20,description:'Celebrate your steady little wins.'},
+  {id:'flower',name:'Garden flower',cost:6,description:'A tiny bloom from our family garden.'},
+  {id:'cape',name:'Superhelper cape',cost:18,description:'Every small act of kindness counts.'},
+  {id:'party-hat',name:'Party hat',cost:14,description:'Make an ordinary day a celebration.'}
 ];
 var REWARD_GOALS_ = [
   {id:'garden',name:'Our family garden',stars:40,emoji:'🌷'},
