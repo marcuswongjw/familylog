@@ -24,3 +24,9 @@ The default dispatch deploys only the client. Enable its backend option only aft
 Backend deployment uploads `Code.js` and **all `gas/*.js`** to the same Apps Script project and rolls the existing deployment ID. It then deploys Firebase functions and rules. No automatic push-triggered deployment occurs. Environment branch policy restricts production to main; required human reviewers can be added in repository settings if desired. If backend credentials are absent, the explicit backend option fails before uploading anything.
 
 Local emergency release remains possible through the existing authorized CLI tools after the same checks. It is intentionally separate from automatic CI; record the deployed commit and service versions. Installed clients use network-first shell caching and the release cache version in `firebase-messaging-sw.js`.
+
+## Family and parent domains
+
+`npm run build` creates `public-site/index.html` (family) and `public-site/parents/index.html` (parent), separate manifests/workers, and public assets only. Pages production deployment runs this build after verification. Future client releases update both subdomains automatically through their static Cloudflare mappings.
+
+Hosting configuration changes only: with the existing authorized Cloudflare login, run `npx wrangler@4 deploy --config hosting/family.wrangler.toml` and the matching `parents.wrangler.toml`. These Workers only fetch allowlisted static files from the Pages build; private API requests remain direct to Firebase/GAS. No Cloudflare token is checked in or required by the normal client CI release. Changing domains also requires a preserving append to Firebase authorized domains. Family notifications and installed PWA shortcuts must be enabled/added on the new origin.

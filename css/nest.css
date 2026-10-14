@@ -359,3 +359,13 @@ body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day
  .dash-stat{padding:14px 10px;gap:4px;text-align:center;grid-template-columns:1fr}.dash-stat .num{grid-row:auto;font-size:24px}.dash-stat small{display:none}.dash-stat .lbl{font-size:11px}
  .habit-list .habit-card{grid-template-columns:minmax(0,1fr);padding:16px}.habit-list .habit-week{grid-column:1;grid-row:auto;margin:8px 0}
 }
+
+.cross-app-link{display:inline-flex;align-items:center;text-decoration:none;font-size:13px;gap:8px;line-height:1.5}
+.nest-sidebar>.cross-app-link{padding:14px 8px;color:var(--primary)}
+.parent-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.parent-overview .dash-stat{grid-template-columns:1fr;gap:6px;min-width:0}
+.parent-overview .num{grid-row:auto;font-size:28px}
+.parent-spaces{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media(max-width:700px){.parent-overview{grid-template-columns:1fr}.parent-overview .dash-stat{text-align:left;padding:20px}.parent-overview .dash-stat small{display:block}.parent-spaces{grid-template-columns:1fr}}
+html[data-app="parents"] #notifBell{display:none}
+@media(max-width:700px){.parent-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.parent-overview .dash-stat:first-child{grid-column:1/-1}.parent-overview .dash-stat{padding:16px}.parent-overview .dash-stat small{font-size:10px}}

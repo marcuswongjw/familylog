@@ -1,8 +1,11 @@
 # Wong’s Nest
 
-A personal family hub PWA: school + daily/weekly logistics, budgets & expenses, calendar/tasks, travel map, memories, and a parents-only **Us** sanctuary.
+Two personal PWAs: Wong’s Nest for school, family plans, tasks, habits, companions and memories; Parents’ Corner for expenses, budgets, recurring costs, Just us and Wellbeing.
 
-**Live app:** [GitHub Pages](https://marcuswongjw.github.io/familylog/)  
+**Family app:** [Wong’s Nest](https://family.marcusw.xyz/)
+
+**Parent app:** [Parents’ Corner](https://parents.marcusw.xyz/)
+
 **Repo:** [marcuswongjw/familylog](https://github.com/marcuswongjw/familylog)
 
 ---

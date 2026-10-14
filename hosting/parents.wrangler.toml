@@ -1,0 +1,8 @@
+name = "wongs-nest-parents"
+main = "static-proxy.mjs"
+compatibility_date = "2026-10-14"
+account_id = "55965b8501615a67628a2fa4b611cf3a"
+workers_dev = false
+routes = [{ pattern = "parents.marcusw.xyz", custom_domain = true }]
+[vars]
+ORIGIN_PATH = "/familylog/parents/"

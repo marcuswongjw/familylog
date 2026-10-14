@@ -1,0 +1,22 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
+const {harness}=require('./helpers/gas-harness.cjs'),{appHTML}=require('../scripts/build-apps.cjs');
+const privateReads=['getExpensesData','getBudgets','getRecurring','getFertilityData','getAppreciationsData','getLoveCheckinsData','getIntimacyLogData','getBucketList'];
+test('family dashboard never reads private-parent domains or exposes private activity',()=>{
+ const h=harness();for(const fn of privateReads)h.c[fn]=()=>{throw Error('Private read '+fn)};
+ h.c.recordActivity_(h.ss,'Marcus','expense_add','Expenses','Private spending','Private note');
+ h.write({note:'add_todo',todo_task:'Family task',todo_assignee:'Meaghan'});
+ const r=h.c.getAllDashboardData('marcuswongjw@gmail.com','family');assert.equal(r.isAdult,true);assert.equal(r.expenses.total,0);assert.equal(r.budgets.length,0);assert.equal(r.intimacyLog.length,0);assert.ok(r.activityLog.every(e=>['Tasks','Calendar','Habits'].includes(e.category)));assert.ok(!JSON.stringify(r).includes('Private note'));
+});
+test('parent dashboard denies children and outsiders before reading any data',()=>{
+ const h=harness();h.c.SpreadsheetApp.getActiveSpreadsheet=()=>{throw Error('Unexpected read')};
+ for(const email of ['mikaelawonght@gmail.com','meaghanwongzx@gmail.com','outside@example.com',''])assert.equal(h.c.getParentDashboardData(email).status,'error');
+});
+test('parent dashboard has no Calendar/reconciliation or family-record dependency',()=>{
+ const h=harness();for(const fn of ['getEvents','syncCalendarEventTasks_','getTodos','getHabits','getHabitLogs','getRewards_','schoolReadPlans_'])h.c[fn]=()=>{throw Error('Family read '+fn)};
+ const r=h.c.getParentDashboardData('marcuswongjw@gmail.com');assert.equal(r.status,'ok');assert.equal(r.isAdult,true);assert.ok(r.expenses);assert.equal(r.events,undefined);assert.equal(r.rewards,undefined);
+});
+test('separate builds exclude the other app screens and parent excludes unused Firebase SDKs',()=>{
+ const source=fs.readFileSync('index.html','utf8'),family=appHTML(source,'family'),parents=appHTML(source,'parents');
+ assert.ok(!family.includes('id="s-expenses"'));assert.ok(!family.includes('id="s-us"'));assert.ok(family.includes('id="s-habits"'));
+ assert.ok(parents.includes('id="s-expenses"'));assert.ok(!parents.includes('id="s-habits"'));assert.ok(!parents.includes('firebase-firestore-compat.js'));assert.ok(parents.includes('firebase-auth-compat.js'));assert.ok(parents.includes('data-app="parents"'));
+});

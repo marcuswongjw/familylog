@@ -14,15 +14,16 @@ function fixture(adult = true) {
   const renders=[],messages=[];
   const c=vm.createContext({window:{addEventListener(){}},document:{getElementById:id=>elements[id],querySelectorAll:q=>q==='.section'?pages:q.includes('nest-sidebar')?[]:nav},
     section:'home',user:adult?'Marcus':'Mikaela',MEMBERS:[{name:adult?'Marcus':'Mikaela',emoji:'avatar'}],isAdultUser:adult,timelineInterval:null,
-    location:{hash:'',search:''},URLSearchParams,savePreference(){},startMemoriesListener(){},stopMemoriesListener(){},render:id=>renders.push(id),toast:m=>messages.push(m)});
+    location:{hash:'',search:'',assign:url=>messages.push(url)},URLSearchParams,savePreference(){},startMemoriesListener(){},stopMemoriesListener(){},render:id=>renders.push(id),toast:m=>messages.push(m)});
   vm.runInContext(fs.readFileSync(require.resolve('../js/nest.js'),'utf8'),c);
   const source=require('./helpers/app-source.cjs').readAppSource();
+  vm.runInContext(source.split('\n')[0],c);
   vm.runInContext(source.slice(source.indexOf('    const NAV_SECONDARY'),source.indexOf('    function onFab')),c);
   return {c,pages,nav,renders,messages};
 }
 test('every redesigned destination activates a real section',()=>{
   const h=fixture();
-  for(const page of h.pages){const id=page.id.slice(2);h.c.goTo(id);assert.equal(h.pages.filter(p=>p.classList.contains('active')).length,1);assert.ok(page.classList.contains('active'));assert.equal(h.renders.at(-1),id);}
+  for(const page of h.pages.filter(p=>!['expenses','budgets','recurring','us','fertility'].includes(p.id.slice(2)))){const id=page.id.slice(2);h.c.goTo(id);assert.equal(h.pages.filter(p=>p.classList.contains('active')).length,1);assert.ok(page.classList.contains('active'));assert.equal(h.renders.at(-1),id);}
 });
 test('Nest is selected directly and additional destinations select More on mobile',()=>{
   const h=fixture();h.c.goTo('rewards');assert.equal(h.nav.find(n=>n.getAttribute('aria-current')==='page').dataset.nestRoute,'rewards');
@@ -54,3 +55,5 @@ test('child data excludes siblings and parents while retaining shared items',()=
   h.c.nestFilterChildData();
   assert.equal(h.c.data.todos.length,2);assert.equal(h.c.data.schoolTasks.length,0);assert.equal(h.c.data.events.length,2);assert.equal(h.c.data.habits.length,2);assert.equal(h.c.data.habitLogs.length,1);
 });
+
+test('family parent deep links open the separate parent app',()=>{const h=fixture();h.c.goTo('expenses');assert.equal(h.messages.at(-1),'https://parents.marcusw.xyz/?open=expenses');assert.equal(h.c.section,'home');});

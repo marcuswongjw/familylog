@@ -1,3 +1,4 @@
+function isParentApp(){return typeof document!=='undefined' && document.documentElement?.dataset?.app==='parents';}
     // ─── DATA OWNERSHIP (see ARCHITECTURE.md) ───────────────────
     // Firebase  → Auth, Memories, Storage images, FCM tokens
     // GAS/Sheets → expenses, budgets, todos, calendar, birthdays, travel,
@@ -115,12 +116,11 @@
     // ─── INIT ──────────────────────────────────────────────────
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
-      db = firebase.firestore();
-      storage = firebase.storage();
-      try { messaging = firebase.messaging(); } catch (_) { messaging = null; }
-
-      // Enable offline persistence (optional)
-      db.enablePersistence().catch(() => {});
+      if (!isParentApp()) {
+        db = firebase.firestore(); storage = firebase.storage();
+        try { messaging = firebase.messaging(); } catch (_) { messaging = null; }
+        db.enablePersistence().catch(() => {});
+      }
 
       applyDarkMode();
       buildLogin();
@@ -139,10 +139,10 @@
 
       // Service worker (for FCM + notification click)
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('firebase-messaging-sw.js')
+        navigator.serviceWorker.register(isParentApp() ? 'parents-sw.js' : 'firebase-messaging-sw.js')
           .then((registration) => {
             console.log('✅ FCM Service Worker registered');
-            messaging.useServiceWorker(registration);
+            if(messaging)messaging.useServiceWorker(registration);
             // Pick up a new SW version (v3+) without waiting forever
             registration.update().catch(() => {});
           })
@@ -186,7 +186,7 @@
           // Web Share Target: open School Copilot if shared text/title present
           const urlParams = new URLSearchParams(window.location.search);
           const sharedText = urlParams.get('text') || urlParams.get('title') || urlParams.get('url');
-          if (sharedText) {
+          if (sharedText && !isParentApp()) {
             const sharedSession = sessionGeneration;
             setTimeout(() => {
               if (sharedSession === sessionGeneration && typeof openSchoolCapture === 'function' && isAdultUser) {
@@ -275,7 +275,7 @@
     function buildLogin() {
       const grid = document.getElementById('mgrid');
       if(!grid) return;
-      grid.innerHTML = MEMBERS.map(m =>
+      grid.innerHTML = MEMBERS.filter(m=>!isParentApp() || ADULT_EMAILS.includes(m.email)).map(m =>
         `<button class="member-btn" onclick="selectMember('${m.name}')"><span class="av">${rewardCompanionSVG({species:({Marcus:'bear',Eleanor:'cat',Mikaela:'fox',Meaghan:'rabbit'})[m.name],name:m.name},'small')}</span>${m.name}</button>`
       ).join('');
     }
@@ -298,7 +298,7 @@
       // Family policy: 6-digit numeric PIN (same for kids and parents)
       if (!/^\d{6}$/.test(password)) {
         errorEl.textContent = 'PIN must be exactly 6 digits.';
-        return;
+        btn.disabled = false;return;
       }
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(() => {
@@ -308,6 +308,13 @@
         .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
     }
     function loginAs(name) {
+      const candidate=MEMBERS.find(m=>m.name===name);
+      if(isParentApp() && !ADULT_EMAILS.includes((candidate?.email || currentUserEmail || '').toLowerCase())) {
+        clearSessionState();document.getElementById('app-screen').classList.remove('active');
+        document.getElementById('login-screen').classList.add('active');
+        document.getElementById('login-error').textContent='This app is available only to parents.';showError('This app is available only to parents.');
+        firebase.auth().signOut().catch(()=>{});return;
+      }
       user = name;
       const m = MEMBERS.find(m => m.name === name);
       document.getElementById('login-screen').classList.remove('active');
@@ -322,10 +329,7 @@
       goTo('home');
       // Sheets dashboard (GAS) + Firebase realtime (memories)
       loadData();
-      startMemoriesListener();
-
-      // Bind this device without prompting for permission
-      initReminders();
+      if(!isParentApp()){startMemoriesListener();initReminders();}
       setupPullToRefresh();
     }
 
@@ -528,6 +532,8 @@
     }
 
     function goTo(id) {
+      if(isParentApp() && !['home','more',...ADULT_SCREENS].includes(id))id='home';
+      if(!isParentApp() && isAdultUser && ADULT_SCREENS.includes(id)){location.assign('https://parents.marcusw.xyz/?open='+encodeURIComponent(id));return;}
       if (id === 'chat') id = 'home';
       if (id === 'schedules') {
         calView = 'week';
@@ -575,11 +581,12 @@
     function buildMore() {
       const el = document.getElementById('more-grid');
       if (!el) return;
-      const tiles = [
+      const tiles = isParentApp() ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [
         ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],
-        ...(isAdultUser ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [])
+
       ];
       el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
+      if(isAdultUser)el.insertAdjacentHTML('beforeend',`<a class="more-tile cross-app-link" href="https://${isParentApp()?'family':'parents'}.marcusw.xyz/"><span class="mi">${nestIcon(isParentApp()?'home':'us')}</span><span class="ml">${isParentApp()?'Wong’s Nest':'Parents’ Corner'} →</span><span class="nest-tile-description">${isParentApp()?'Family plans, habits and memories.':'Money, Just us and Wellbeing.'}</span></a>`);
     }
 
     function render(id) {
@@ -683,6 +690,7 @@
 
     // ─── HOME (Dashboard) ────────────────────────────────────
     function renderHome() {
+      if(isParentApp()){renderParentHome();return;}
       updateNestShell();
       renderRewardHome();
       renderSchoolHome();

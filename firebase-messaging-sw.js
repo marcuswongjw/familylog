@@ -1,12 +1,13 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v32';
+const CACHE_NAME = 'wongs-nest-v33';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './css/nest.css',
   './js/nest.js',
+  './js/parents.js',
   './assets/nest-mark.svg',
   './js/app.js',
   './js/status.js',

@@ -39,13 +39,14 @@ function nestIcon(name) {
 }
 function initNest() {
   const rail = document.getElementById('nest-sidebar');
-  const groups = [
+  if(isParentApp())NEST_PAGES.home=['Parents’ Corner','Household money and a private space for us.'];
+  const groups = isParentApp() ? [['HOUSEHOLD MONEY',[['home','Overview'],['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs']]],['FOR THE TWO OF US',[['us','Just us'],['fertility','Wellbeing']]]] : [
     ['DAY TO DAY', [['home','Our nest'],['calendar','Family plan'],['tasks','Tasks'],['habits','Habits'],['rewards','Companions']]],
-    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations']]],
-    ['PARENTS’ CORNER', [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']], true]
+    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations']]]
   ];
-  rail.innerHTML = `<button class="nest-brand" onclick="goTo('home')" aria-label="Wong’s Nest home"><img src="assets/nest-mark.svg" alt=""><span>Wong’s Nest<small>Our family, together.</small></span></button>
+  rail.innerHTML = `<button class="nest-brand" onclick="goTo('home')" aria-label="Wong’s Nest home"><img src="assets/nest-mark.svg" alt=""><span>${isParentApp()?'Parents’ Corner':'Wong’s Nest'}<small>${isParentApp()?'A private space for us.':'Our family, together.'}</small></span></button>
     <nav aria-label="Main navigation">${groups.map(([label,items,adult])=>`<div class="nest-nav-group ${adult?'adult-only':''}"><p>${label}</p>${items.map(([id,title])=>`<button data-nest-route="${id}" onclick="goTo('${id}')">${nestIcon(id)}<span>${title}</span></button>`).join('')}</div>`).join('')}</nav>
+    <a class="cross-app-link ${isParentApp()?'':'adult-only'}" href="https://${isParentApp()?'family':'parents'}.marcusw.xyz/">${isParentApp()?'Open Wong’s Nest':'Open Parents’ Corner'} →</a>
     <div class="nest-rail-note"><span class="nest-sprig">${nestIcon('habits')}</span><p>A place for our plans.<br>A little room to grow.</p></div>`;
   Object.entries(NEST_PAGES).forEach(([id,[title,description]])=>{
     const page = document.getElementById('s-'+id);
@@ -62,11 +63,15 @@ function initNest() {
   const bell=document.getElementById('notifBell');
   bell.insertAdjacentHTML('afterbegin',nestIcon('bell'));
   document.querySelectorAll('.nav-it[data-nest-route]').forEach(b=>b.innerHTML=nestIcon(b.dataset.nestRoute)+`<span>${b.dataset.label}</span>`);
+  if(isParentApp()){
+    const routes=[['home','Home'],['expenses','Money'],['budgets','Budgets'],['us','Just us'],['more','More']];
+    document.querySelectorAll('.bot-nav .nav-it').forEach((button,i)=>{const [route,label]=routes[i];button.id='nav-'+route;button.dataset.nestRoute=route;button.dataset.label=label;button.onclick=()=>goTo(route);button.innerHTML=nestIcon(route)+`<span>${label}</span>`;});
+  }
   updateNestShell();
 }
 function updateNestShell() {
   const planButton = document.getElementById('nav-calendar');
-  if (planButton) {
+  if (planButton && !isParentApp()) {
     const route = isAdultUser ? 'calendar' : 'habits';
     planButton.dataset.nestRoute = route;
     planButton.dataset.label = isAdultUser ? 'Plan' : 'Habits';
@@ -74,7 +79,7 @@ function updateNestShell() {
     planButton.innerHTML = nestIcon(route) + `<span>${planButton.dataset.label}</span>`;
   }
   document.querySelectorAll('#nest-sidebar [data-nest-route="calendar"]').forEach(button => { button.hidden = !isAdultUser; });
-  const primary = isAdultUser ? ['home','calendar','tasks','rewards'] : ['home','habits','tasks','rewards'];
+  const primary = isParentApp() ? ['home','expenses','budgets','us'] : isAdultUser ? ['home','calendar','tasks','rewards'] : ['home','habits','tasks','rewards'];
 
   document.querySelectorAll('[data-nest-route]').forEach(button=>{
     const selected=button.dataset.nestRoute===section || (button.dataset.nestRoute==='more' && !primary.includes(section));

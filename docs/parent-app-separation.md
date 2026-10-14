@@ -21,4 +21,12 @@ The first phase separates the user experience with minimal data migration. Movin
 - Firebase owns sign-in, memories/photos, school extraction and reminder preferences/delivery.
 - Finance rendering is already partly extracted into `js/money.js` and `gas/money.js`; private-parent rendering and handlers remain substantially in `js/app.js` and `Code.js`.
 
-This document is a migration proposal; no parent data has been moved.
+## Implemented — 14 October 2026
+
+The interface split is live at `family.marcusw.xyz` and `parents.marcusw.xyz`. The parent app is called Parents’ Corner. Both builds come from the same repository through `scripts/build-apps.cjs`; reviewed Pages releases publish family assets at the artifact root and parent assets under `parents/`. Two Cloudflare Workers map the requested hostnames to the corresponding static artifact paths and forward no cookies, authorization headers, request bodies or personal query parameters to the static origin. Custom domains manage DNS/TLS without changing the apex website.
+
+Family uses `get_family_dashboard`, which skips finance/private-parent reads and excludes private activity categories. Parent uses `get_parent_dashboard`, which verifies the parent allowlist and performs no family Calendar, reconciliation, task, habit or reward reads. `get_all` remains a compatibility endpoint for old authorized clients.
+
+The parent app has two login choices, independent origin/session/PWA cache, Auth-only Firebase SDK loading, and no family memories/reminder initialization. Both requested hostnames are authorized in Firebase. Old Pages entries redirect to the corresponding new domain; installed PWAs should be added again from the new URLs because their origins changed.
+
+No records were copied or moved: both apps still use the existing authoritative spreadsheet and Firebase identities. Backend/data separation remains the optional later phase above.

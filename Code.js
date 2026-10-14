@@ -705,6 +705,8 @@ function doGet(e) {
     var output;
     switch (action) {
       case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
+      case 'get_family_dashboard': output = getAllDashboardData(verifiedEmail, 'family'); break;
+      case 'get_parent_dashboard': output = getParentDashboardData(verifiedEmail); break;
       // Chat lives in Firestore only — Sheets chat endpoints removed
       case 'get_chat':
         output = { status: 'error', message: 'Chat has been removed from Wong’s Nest.' };
@@ -763,6 +765,11 @@ function doPost(e) {
     if (action === 'get_all') {
       return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified)))
         .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'get_family_dashboard' || action === 'get_parent_dashboard') {
+      var dashboard = action === 'get_family_dashboard' ? getAllDashboardData(verified, 'family') : getParentDashboardData(verified);
+      return ContentService.createTextOutput(JSON.stringify(dashboard)).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === 'get_rewards') {
@@ -1524,7 +1531,7 @@ function recordActivity_(ss, user, action, category, description, details) {
   }
 }
 
-function getActivityLog(ss, allTodos, habitLogs) {
+function getActivityLog(ss, allTodos, habitLogs, scope) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var list = [];
   var seen = {};
@@ -1535,6 +1542,7 @@ function getActivityLog(ss, allTodos, habitLogs) {
     for (var i = vals.length - 1; i >= 1 && list.length < 50; i--) {
       var r = vals[i];
       if (!r[0]) continue;
+      if (scope === 'family' && ['Tasks','Calendar','Habits'].indexOf(toStr(r[3])) === -1) continue;
       var ts;
       try { ts = r[0] instanceof Date ? r[0].toISOString() : (new Date(r[0]).toISOString()); } catch (_) { ts = toStr(r[0]); }
       var desc = toStr(r[4]);
@@ -1623,9 +1631,10 @@ function getActivityLog(ss, allTodos, habitLogs) {
   return list.slice(0, 50);
 }
 
-function getAllDashboardData(verifiedEmail) {
+function getAllDashboardData(verifiedEmail, scope) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
+  var includePrivate = adult && scope !== 'family';
   var events = getEvents();
   try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
   var allTodos = getTodos(ss, verifiedEmail, true);
@@ -1638,22 +1647,22 @@ function getAllDashboardData(verifiedEmail) {
     completedTasks: allTodos.filter(function(t) { return t.status.toLowerCase() === 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
-    expenses:  adult ? getExpensesData(ss) : emptyExpensesPayload_(),
-    budgets:   adult ? getBudgets(ss) : [],
+    expenses:  includePrivate ? getExpensesData(ss) : emptyExpensesPayload_(),
+    budgets:   includePrivate ? getBudgets(ss) : [],
     birthdays: getBirthdays(ss),
     // Adult-only payloads are empty for children's accounts
-    fertility:      adult ? getFertilityData(ss) : [],
-    recurring:      adult ? getRecurring(ss) : [],
+    fertility:      includePrivate ? getFertilityData(ss) : [],
+    recurring:      includePrivate ? getRecurring(ss) : [],
     travel:         [],
-    appreciations:  adult ? getAppreciationsData(ss) : [],
-    loveCheckins:   adult ? getLoveCheckinsData(ss) : [],
-    intimacyLog:    adult ? getIntimacyLogData(ss) : [],
-    bucketList:     adult ? getBucketList(ss) : [],
+    appreciations:  includePrivate ? getAppreciationsData(ss) : [],
+    loveCheckins:   includePrivate ? getLoveCheckinsData(ss) : [],
+    intimacyLog:    includePrivate ? getIntimacyLogData(ss) : [],
+    bucketList:     includePrivate ? getBucketList(ss) : [],
     habits:         habits,
     habitLogs:      habitLogs,
     rewards:        getRewards_(ss),
-    activityLog:    adult ? getActivityLog(ss, allTodos, habitLogs) : [],
-    expenseGroups:  adult ? EXPENSE_GROUPS : {},
+    activityLog:    adult ? getActivityLog(ss, allTodos, habitLogs, scope) : [],
+    expenseGroups:  includePrivate ? EXPENSE_GROUPS : {},
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || '',
     // Explicit nulls so old clients don't fall back to stale dual-path assumptions
@@ -3114,4 +3123,15 @@ function schoolHandleWrite_(data, ss, email, user) {
     recordActivity_(ss, user, 'school_published', 'School', user + ' published school notice: "' + eventTitle + '"' + (plan.child ? ' for ' + plan.child : ''), plan.tasks.length + ' task(s) created');
     return { status: 'ok', id: plan.id, state: 'published' };
   } catch (e) { return { status: 'error', message: e.message }; }
+}
+
+// Parent app reads only private-parent domains; no Calendar/reconciliation/family reads.
+function getParentDashboardData(verifiedEmail) {
+  if (!isAdultEmail_(verifiedEmail)) return {status:'error',message:'This app is available only to parents.'};
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  return {status:'ok',isAdult:true,memberName:memberNameFromEmail_(verifiedEmail),
+    expenses:getExpensesData(ss),budgets:getBudgets(ss),recurring:getRecurring(ss),
+    fertility:getFertilityData(ss),appreciations:getAppreciationsData(ss),
+    loveCheckins:getLoveCheckinsData(ss),intimacyLog:getIntimacyLogData(ss),
+    bucketList:getBucketList(ss),expenseGroups:EXPENSE_GROUPS};
 }

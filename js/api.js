@@ -105,7 +105,7 @@
       let timer;
       try {
         const timeout=new Promise(resolve=>{timer=setTimeout(()=>resolve({status:'error',message:'The family server took too long to respond. Please try again.'}),45000);});
-        const r=await Promise.race([gasRequest({action:'get_all'}),timeout]);
+        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_dashboard'}),timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');

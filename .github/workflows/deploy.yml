@@ -45,9 +45,7 @@ jobs:
       - uses: actions/configure-pages@v5
       - name: Prepare public client only
         run: |
-          mkdir public-site
-          cp index.html manifest.json firebase-messaging-sw.js *.png *.svg public-site/
-          cp -R js css assets public-site/
+          node scripts/build-apps.cjs
       - uses: actions/upload-pages-artifact@v3
         with: {path: public-site}
       - uses: actions/deploy-pages@v4

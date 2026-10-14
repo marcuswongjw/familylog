@@ -49,3 +49,7 @@ playwright-report/
 test-results/
 *-debug.log
 public-site/
+
+# Cloudflare local deployment metadata
+.wrangler/
+.dev.vars

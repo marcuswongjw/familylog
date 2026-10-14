@@ -1,6 +1,6 @@
 # Architecture — Sheets vs Firebase
 
-Wong’s Nest uses **two backends on purpose**. Each owns a different kind of data. Do not dual-write the same feature to both.
+Wong’s Nest and Parents’ Corner share **two backends on purpose**. Each owns a different kind of data. Do not dual-write the same feature to both.
 
 ```mermaid
 flowchart TB
@@ -198,3 +198,11 @@ Domain scripts load before the app initializer and continue sharing its existing
 `js/api.js` rejects offline writes before transport; rewards are never queued. Token acquisition and fetch share an abort deadline (45 seconds for reads, 120 for writes). An offline/last-refreshed banner describes the accepted dashboard for the current session. A fresh session clears that timestamp. Generic modals have named dialog semantics, a Tab loop, Escape/backdrop dismissal through one path, and focus restoration. Selection chips use keyboard-operable buttons. Reduced-motion companion styling remains enabled.
 
 CI runs Node regressions, Chromium failure flows and actual Firestore/Storage emulator rule tests on pushes and pull requests. Manual production deployment reruns those checks and deploys only from main through the production environment. Traces are retained on browser failures. See `docs/testing-and-deployment.md` for commands and environment/credential setup.
+
+## Two app builds and domains
+
+`family.marcusw.xyz` hosts family planning, tasks, school review, habits, rewards and memories; `parents.marcusw.xyz` hosts money, Just us and Wellbeing. `index.html` is the shared source template; `scripts/build-apps.cjs` excludes the other app’s screens/modals from each build. Parent Home is in `js/parents.js`. Mode is fixed in the rendered HTML, not a query-string switch. Frontend mode does not grant access: backend parent endpoints and writes still verify identity and allowlist.
+
+`get_family_dashboard` skips private-parent sheet reads and filters family activity categories. `get_parent_dashboard` rejects children/outsiders before reading any sheet and does not call Calendar/reconciliation. The existing `get_all` endpoint remains for compatibility. Source globals still load some shared/legacy function definitions; incremental extraction continues without duplicating records.
+
+The controlled Pages release builds both outputs. Cloudflare Workers in `hosting/` map each requested domain to its static Pages artifact path. They accept only static GET/HEAD paths, never proxy application APIs, and do not forward auth/cookies/body/personal query to the static origin. Parent app loads Firebase Auth only and uses `parents-sw.js`; family keeps its Firebase services and reminder worker. Each origin has an independent login/cache. Backend ownership is unchanged.
