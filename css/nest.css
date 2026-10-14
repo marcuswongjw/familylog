@@ -369,3 +369,9 @@ body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day
 @media(max-width:700px){.parent-overview{grid-template-columns:1fr}.parent-overview .dash-stat{text-align:left;padding:20px}.parent-overview .dash-stat small{display:block}.parent-spaces{grid-template-columns:1fr}}
 html[data-app="parents"] #notifBell{display:none}
 @media(max-width:700px){.parent-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.parent-overview .dash-stat:first-child{grid-column:1/-1}.parent-overview .dash-stat{padding:16px}.parent-overview .dash-stat small{font-size:10px}}
+.companion-page-links{display:flex;flex-wrap:wrap;gap:12px}
+.companion-gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.companion-visit-card{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 16px;border:1px solid var(--border-color);border-radius:24px;background:var(--bg-card);min-width:0}
+.companion-visit-card h3{margin:8px 0;font-size:22px;overflow-wrap:anywhere}.companion-visit-card p,.companion-visit-card small{color:var(--text-secondary);font-size:12px}
+.companion-greeting{border:0;background:transparent;cursor:pointer;border-radius:22px;padding:8px}.companion-greeting:focus-visible{outline:3px solid var(--primary);outline-offset:3px}.companion-greeting svg{width:140px;max-width:100%}
+@media(max-width:850px){.companion-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.companion-visit-card{padding:20px 12px}.companion-greeting svg{width:120px}}

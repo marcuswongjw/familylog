@@ -10,7 +10,7 @@ let rewardCelebrationTimer;
 let rewardLoadState = { loading:false, error:'' };
 function setRewardLoadState(loading,error='') {
   rewardLoadState={loading,error};
-  if(section==='rewards')renderRewards();
+  if(['rewards','reward-admin'].includes(section))renderRewards();if(section==='companions')renderCompanionGallery();
 }
 function rewardProfile() { return data.rewards?.members?.find(p => p.member === user); }
 function rewardStars(type, id) { return data.rewards?.rules?.find(r => r.type === type && r.sourceId === id)?.stars || 0; }
@@ -44,7 +44,8 @@ function rewardAnimate(root) {
 function applyRewardResult(result, celebrate = true) {
   if (result.rewards) data.rewards = result.rewards;
   renderRewardHome();
-  if (section === 'rewards') renderRewards();
+  if (['rewards','reward-admin'].includes(section)) renderRewards();
+  if(section==='companions')renderCompanionGallery();
   if (celebrate && (result.log || result.award)) document.querySelectorAll('#reward-home .reward-hello, #rewards-container .reward-hero-art').forEach(rewardAnimate);
   if (!celebrate || !result.award?.stars) return;
   const { stars, member } = result.award;
@@ -63,6 +64,7 @@ function resetRewards() {
   document.getElementById('reward-celebration').hidden = true;
   document.getElementById('reward-home').innerHTML = '';
   document.getElementById('rewards-container').innerHTML = '';
+  for(const id of ['companion-gallery','reward-admin-container']){const el=document.getElementById(id);if(el)el.innerHTML='';}
 }
 function habitRewardSaveMatches(payload,result){
   return result?.status==='ok'&&Array.isArray(result.rewards?.rules)&&payload.rules.every(rule=>result.rewards.rules.some(saved=>saved.type==='habit'&&saved.sourceId===rule.source_id&&saved.stars===rule.stars));
@@ -89,11 +91,13 @@ async function rewardMutation(key, payload, success) {
   } catch (error) {
     if (active()) showError("Could not save. Try again when connected.");
   } finally {
-    if(active()){rewardChecking.delete(key);rewardPending.delete(key);if(section==='rewards')renderRewards();}
+    if(active()){rewardChecking.delete(key);rewardPending.delete(key);if(['rewards','reward-admin'].includes(section))renderRewards();if(section==='companions')renderCompanionGallery();}
   }
 }
 function renderRewards() {
-  const root = document.getElementById('rewards-container'); if (!root) return;
+  const admin=section==='reward-admin';
+  const root = document.getElementById(admin?'reward-admin-container':'rewards-container'); if (!root) return;
+  if(admin&&!isAdultUser){root.innerHTML='';return;}
   const p = rewardProfile();
   if (!p) {
     const loading=rewardLoadState.loading;
@@ -107,7 +111,7 @@ function renderRewards() {
   root.innerHTML = `<div class="reward-page-heading"><div><span class="reward-eyebrow">OUR LITTLE NEST</span><h2>Companions & stars</h2><p>Celebrate the small things. Build something together.</p></div><span class="reward-wallet">★ ${p.balance}<small>your stars</small></span></div>
     <section class="reward-hero"><div class="reward-hero-art">${rewardCompanionSVG(p)}</div><div><h3>Meet ${escapeHtml(p.name)}</h3><p>${p.earned ? p.earned + ' stars earned through little everyday wins.' : 'Your companion is ready to share your first little win.'}</p>
       <p class="reward-muted">Stars unlock accessories. Every star earned also grows your family nest.</p></div></section>
-    ${isAdultUser ? rewardHabitRulesHTML() : ''}
+    <div class="companion-page-links"><button class="btn btn-s" onclick="goTo('companions')">Visit family companions</button>${isAdultUser?'<button class="btn btn-s" onclick="goTo(\'reward-admin\')">Reward settings</button>':''}</div>
     <section class="reward-profile-settings"><h3>Make your companion yours</h3>
       <form id="reward-profile-form"><fieldset ${saving ? 'disabled' : ''}>
         <div class="reward-species">${(data.rewards.species || ['fox', 'rabbit', 'bear', 'cat']).map(species => `<label class="reward-species-option"><input type="radio" name="reward-species" value="${species}" ${species === p.species ? 'checked' : ''}>${rewardCompanionSVG({ species, name: species, equipped: '' }, 'small')}<span>${species[0].toUpperCase() + species.slice(1)}</span></label>`).join('')}</div>
@@ -128,11 +132,11 @@ function renderRewards() {
       <div class="reward-family-members">${data.rewards.members.map(m => `<div>${rewardCompanionSVG(m, 'small')}<strong>${escapeHtml(m.member)}</strong><span>${m.earned} stars contributed</span></div>`).join('')}</div>
       <div class="reward-progress" role="progressbar" aria-label="Family goal progress" aria-valuenow="${Math.min(family.goal, family.earned)}" aria-valuemin="0" aria-valuemax="${family.goal}"><span style="width:${Math.min(100, family.earned / family.goal * 100)}%"></span></div><p class="reward-muted">${family.earned} / ${family.goal} stars earned together</p>
     </section>
-    ${isAdultUser ? `<section class="reward-rule-settings"><h3>Our next family goal</h3><p class="reward-muted">A shared milestone in our nest. Earned stars carry forward; choosing a goal does not spend them.</p><form id="family-goal-form"><label for="family-goal">Choose a goal</label><select id="family-goal">${(data.rewards.goals||[]).map(g=>`<option value="${g.id}" ${family.goalId===g.id?'selected':''}>${g.emoji} ${escapeHtml(g.name)} · ${g.stars} stars</option>`).join('')}</select><button class="btn btn-p" ${rewardPending.has('family-goal')?'disabled':''}>Save family goal</button></form></section>` : ''}
-    ${isAdultUser ? rewardRulesHTML() : ''}
     <p class="reward-footnote">One reward per task, or per habit each day. Older habit entries can be recorded but earn no stars. Earned stars and accessories stay with you when a log is removed.</p>`;
+  if(admin)root.innerHTML=`<div class="reward-page-heading"><div><span class="reward-eyebrow">PARENT CONTROLS</span><h2>Reward settings</h2><p>Choose stars for everyday activities and the next family goal.</p></div></div><button class="btn btn-s" onclick="goTo('rewards')">Back to companions</button>${rewardHabitRulesHTML()}    ${isAdultUser ? `<section class="reward-rule-settings"><h3>Our next family goal</h3><p class="reward-muted">A shared milestone in our nest. Earned stars carry forward; choosing a goal does not spend them.</p><form id="family-goal-form"><label for="family-goal">Choose a goal</label><select id="family-goal">${(data.rewards.goals||[]).map(g=>`<option value="${g.id}" ${family.goalId===g.id?'selected':''}>${g.emoji} ${escapeHtml(g.name)} · ${g.stars} stars</option>`).join('')}</select><button class="btn btn-p" ${rewardPending.has('family-goal')?'disabled':''}>Save family goal</button></form></section>` : ''}
+${rewardRulesHTML()}`;
   root.querySelector('#family-goal-form')?.addEventListener('submit', e => {e.preventDefault();rewardMutation('family-goal',{note:'set_family_goal',goal_id:root.querySelector('#family-goal').value},'Family goal updated.');});
-  root.querySelector('#reward-profile-form').addEventListener('submit', e => {
+  root.querySelector('#reward-profile-form')?.addEventListener('submit', e => {
     e.preventDefault();
     const species = root.querySelector('[name="reward-species"]:checked').value;
     const name = root.querySelector('#reward-name').value.trim();
@@ -161,7 +165,7 @@ function renderRewards() {
     if (!id) return showError('Choose a task or habit first.');
     rewardMutation('rule', { note: 'set_reward_rule', source_type: type, source_id: id, stars: Number(v('reward-rule-stars')) }, 'Star reward saved.');
   });
-  if (isAdultUser) rewardRuleOptions();
+  if (admin && isAdultUser) rewardRuleOptions();
 }
 function rewardHabitRulesHTML() {
   const habits = data.habits || [];
@@ -190,3 +194,11 @@ function rewardRuleOptions() {
   rewardRuleValue();
 }
 function rewardRuleValue() { document.getElementById('reward-rule-stars').value = String(rewardStars(v('reward-rule-type'), v('reward-rule-source'))); }
+
+function renderCompanionGallery(){
+ const root=document.getElementById('companion-gallery');if(!root)return;
+ const members=data.rewards?.members||[];
+ root.innerHTML=`<div class="reward-page-heading"><div><span class="reward-eyebrow">OUR FAMILY FRIENDS</span><h2>Family companions</h2><p>Visit everyone’s companion and see their latest look.</p></div></div><button class="btn btn-s" onclick="goTo('rewards')">Dress my companion</button>
+ <div class="companion-gallery-grid">${members.map(p=>{const item=data.rewards.catalog?.find(i=>i.id===p.equipped);return `<article class="companion-visit-card"><span class="reward-eyebrow">${escapeHtml(p.member)}</span><button class="companion-greeting" aria-label="Say hello to ${escapeHtml(p.member)}’s companion ${escapeHtml(p.name)}">${rewardCompanionSVG(p)}</button><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.species)}${item?' · '+escapeHtml(item.name):''}</p><small>${p.member===user?'Your companion':'Say hello with a tap'}</small></article>`;}).join('')||'<div class="empty">Companions haven’t loaded yet. <button class="btn btn-s" onclick="loadData()">Try again</button></div>'}</div>`;
+ root.querySelectorAll('.companion-greeting').forEach(button=>button.addEventListener('click',()=>rewardAnimate(button)));
+}

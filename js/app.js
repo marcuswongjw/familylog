@@ -405,7 +405,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       document.body.classList.toggle('is-child', !isAdultUser);
       weekPersonFilter = adult ? (loadPreference('weekPerson', 'All') || 'All') : (user || 'All');
       buildMore();
-      if (!isAdultUser && ['us', 'fertility', 'expenses', 'budgets', 'recurring'].includes(section)) {
+      if (!isAdultUser && ['us', 'fertility', 'expenses', 'budgets', 'recurring', 'reward-admin'].includes(section)) {
         goTo('home');
       }
     }
@@ -482,7 +482,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     }
 
     // ─── NAVIGATION ───────────────────────────────────────────
-    const NAV_SECONDARY = ['budgets','memories','habits','fertility','recurring','birthdays','schedules'];
+    const NAV_SECONDARY = ['companions','reward-admin','budgets','memories','habits','fertility','recurring','birthdays','schedules'];
     const ADULT_SCREENS = ['us', 'fertility', 'expenses', 'budgets', 'recurring'];
     const PRIMARY_SCREENS = ['home', 'tasks', 'calendar', 'rewards', 'more', 'expenses', 'us'];
 
@@ -532,6 +532,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     }
 
     function goTo(id) {
+      if(id==='reward-admin'&&!isAdultUser){toast('Reward settings are available only to parents.',true);id='home';}
       if(isParentApp() && !['home','more',...ADULT_SCREENS].includes(id))id='home';
       if(!isParentApp() && isAdultUser && ADULT_SCREENS.includes(id)){location.assign('https://parents.marcusw.xyz/?open='+encodeURIComponent(id));return;}
       if (id === 'chat') id = 'home';
@@ -582,7 +583,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const el = document.getElementById('more-grid');
       if (!el) return;
       const tiles = isParentApp() ? [['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs'],['us','Just us'],['fertility','Wellbeing']] : [
-        ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],
+        ...(isAdultUser ? [['habits','Habits']] : []),['memories','Memories'],['birthdays','Celebrations'],['companions','Family companions'],...(isAdultUser?[['reward-admin','Reward settings']]:[]),
 
       ];
       el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
@@ -596,6 +597,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         case 'tasks': renderTasks(); break;
         case 'habits': renderHabits(); break;
         case 'rewards': renderRewards(); break;
+        case 'reward-admin': renderRewards(); break;
+        case 'companions': renderCompanionGallery(); break;
         case 'expenses': renderExpenses(); break;
         case 'budgets': renderBudgets(); break;
         case 'memories': renderMemories(); break;

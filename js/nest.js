@@ -3,6 +3,8 @@ const NEST_PAGES = {
   home: ['Our nest', 'A little less juggling. A little more together.'],
   tasks: ['Little things, done', 'Make space for the things that matter.'],
   calendar: ['The family plan', 'School days, adventures and everything in between.'],
+  companions: ['Family companions','Visit everyone’s companion.'],
+  'reward-admin': ['Reward settings','Parent controls for stars and family goals.'],
   rewards: ['Companions & stars', 'Small steps. A nest we grow together.'],
   habits: ['Everyday rhythms', 'Practice, prepare, and find your own rhythm.'],
   memories: ['The good stuff', 'Ordinary days worth keeping.'],
@@ -20,6 +22,8 @@ function nestIcon(name) {
     calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h2m4 0h2"/>',
     tasks: '<rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 9 1.5 1.5L12 8m2 1h2m-8 6h8"/>',
     rewards: '<path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/>',
+    companions: '<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 21v-3a6 6 0 0 1 12 0v3m1-7q7-1 7 5v2"/>',
+    'reward-admin': '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>',
     habits: '<path d="M12 21V10M12 15C4 15 3 10 3 6c6 0 9 3 9 9ZM12 11c0-6 4-8 9-8 0 6-3 8-9 8Z"/>',
     memories: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/>',
     expenses: '<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-6 5h3"/>',
@@ -41,8 +45,9 @@ function initNest() {
   const rail = document.getElementById('nest-sidebar');
   if(isParentApp())NEST_PAGES.home=['Parents’ Corner','Household money and a private space for us.'];
   const groups = isParentApp() ? [['HOUSEHOLD MONEY',[['home','Overview'],['expenses','Expenses'],['budgets','Budgets'],['recurring','Recurring costs']]],['FOR THE TWO OF US',[['us','Just us'],['fertility','Wellbeing']]]] : [
-    ['DAY TO DAY', [['home','Our nest'],['calendar','Family plan'],['tasks','Tasks'],['habits','Habits'],['rewards','Companions']]],
-    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations']]]
+    ['DAY TO DAY', [['home','Our nest'],['calendar','Family plan'],['tasks','Tasks'],['habits','Habits'],['rewards','My companion'],['companions','Family companions']]],
+    ['MAKE MEMORIES', [['memories','Memories'],['birthdays','Celebrations']]],
+    ['PARENT CONTROLS', [['reward-admin','Reward settings']], true]
   ];
   rail.innerHTML = `<button class="nest-brand" onclick="goTo('home')" aria-label="Wong’s Nest home"><img src="assets/nest-mark.svg" alt=""><span>${isParentApp()?'Parents’ Corner':'Wong’s Nest'}<small>${isParentApp()?'A private space for us.':'Our family, together.'}</small></span></button>
     <nav aria-label="Main navigation">${groups.map(([label,items,adult])=>`<div class="nest-nav-group ${adult?'adult-only':''}"><p>${label}</p>${items.map(([id,title])=>`<button data-nest-route="${id}" onclick="goTo('${id}')">${nestIcon(id)}<span>${title}</span></button>`).join('')}</div>`).join('')}</nav>
@@ -50,7 +55,7 @@ function initNest() {
     <div class="nest-rail-note"><span class="nest-sprig">${nestIcon('habits')}</span><p>A place for our plans.<br>A little room to grow.</p></div>`;
   Object.entries(NEST_PAGES).forEach(([id,[title,description]])=>{
     const page = document.getElementById('s-'+id);
-    if (!page || ['home','rewards','habits'].includes(id)) return;
+    if (!page || ['home','rewards','habits','companions','reward-admin'].includes(id)) return;
     const heading = document.createElement('header'); heading.className='nest-page-heading';
     heading.innerHTML=`<span class="nest-kicker">${['us','fertility','expenses','budgets','recurring'].includes(id)?'PARENTS’ CORNER':'FAMILY LIFE'}</span><h1>${title}</h1><p>${description}</p>`;
     page.prepend(heading);

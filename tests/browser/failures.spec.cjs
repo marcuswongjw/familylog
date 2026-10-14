@@ -33,3 +33,12 @@ test('new companions save through the backend and the life jacket renders after 
  if(!await page.evaluate(()=>rewardProfile().owned.includes('life-jacket')))await page.locator('[data-accessory="life-jacket"]').click();await expect.poll(()=>page.evaluate(()=>rewardProfile().owned.includes('life-jacket'))).toBe(true);
  await page.locator('[data-accessory="life-jacket"]').click();await expect.poll(()=>page.evaluate(()=>rewardProfile().equipped)).toBe('life-jacket');await expect(page.locator('.reward-hero-art svg')).toHaveAttribute('aria-label',/otter.*wearing an accessory/);
 });
+
+test('family gallery shows current companions without editing others; reward administration is separate and parent-only',async({page})=>{
+ await page.evaluate(()=>goTo('rewards'));await expect(page.locator('#reward-habit-form')).toHaveCount(0);await expect(page.locator('#reward-rule-form')).toHaveCount(0);await expect(page.locator('#family-goal-form')).toHaveCount(0);
+ await page.getByRole('button',{name:'Visit family companions'}).click();await expect(page.locator('.companion-visit-card')).toHaveCount(4);await expect(page.locator('.companion-visit-card')).toContainText(['Marcus','Eleanor','Mikaela','Meaghan']);
+ await page.locator('.companion-greeting').first().click();await expect(page.locator('#companion-gallery input')).toHaveCount(0);
+ await page.getByRole('button',{name:'Dress my companion'}).click();await page.locator('#rewards-container').getByRole('button',{name:'Reward settings',exact:true}).click();await expect(page.locator('#reward-habit-form')).toBeVisible();await expect(page.locator('#reward-rule-form')).toBeVisible();await expect(page.locator('#family-goal-form')).toBeVisible();
+ const first=page.locator('[data-habit-stars]').first();await first.fill('7');await page.locator('#reward-habit-form button[type="submit"]').click();await expect.poll(()=>page.evaluate(()=>data.rewards.rules.some(r=>r.type==='habit'&&r.stars===7))).toBe(true);
+ await page.evaluate(()=>{user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';setAdultAccess(false);goTo('companions');});await expect(page.locator('.companion-visit-card')).toHaveCount(4);await page.evaluate(()=>goTo('reward-admin'));await expect(page.locator('#s-reward-admin')).not.toHaveClass(/active/);
+});
