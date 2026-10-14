@@ -25,3 +25,11 @@ test('Home fits desktop and mobile with today before the family overview on mobi
  expect(bounds.overflow).toBe(false);expect(bounds.todayWidth).toBeGreaterThan(300);if(width===390)expect(bounds.todayY).toBeLessThan(bounds.crewY);else expect(bounds.crewWidth).toBeGreaterThanOrEqual(290);
  }
 });
+
+test('new companions save through the backend and the life jacket renders after purchase',async({page})=>{
+ await page.evaluate(async()=>{for(let i=0;i<3;i++){const t=await gasRequest({action:'write',note:'add_todo',todo_task:'Fixture stars '+i,todo_assignee:'Marcus',todo_stars:5});await gasRequest({action:'write',note:'complete_todo',todo_id:t.id});}await loadData();goTo('rewards');});
+ await expect(page.locator('[name="reward-species"]')).toHaveCount(8);
+ for(const species of ['turtle','dolphin','penguin','otter']){await page.locator('[name="reward-species"][value="'+species+'"]').check();await page.locator('#reward-profile-form button[type="submit"], #reward-profile-form .btn-p').click();await expect.poll(()=>page.evaluate(()=>rewardProfile().species)).toBe(species);}
+ await page.locator('[data-accessory="life-jacket"]').click();await expect.poll(()=>page.evaluate(()=>rewardProfile().owned.includes('life-jacket'))).toBe(true);
+ await page.locator('[data-accessory="life-jacket"]').click();await expect.poll(()=>page.evaluate(()=>rewardProfile().equipped)).toBe('life-jacket');await expect(page.locator('.reward-hero-art svg')).toHaveAttribute('aria-label',/otter.*wearing an accessory/);
+});

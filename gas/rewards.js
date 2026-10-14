@@ -2,7 +2,9 @@
 // COMPANIONS & STARS — server-owned ledger, under handleWrite's lock.
 // Earn IDs survive edits/deletes; spending never reduces family progress.
 // ============================================================
+var REWARD_SPECIES_ = ['fox', 'rabbit', 'bear', 'cat', 'turtle', 'dolphin', 'penguin', 'otter'];
 var REWARD_ITEMS_ = [
+  {id:'life-jacket',name:'Life jacket',cost:12,description:'Ready for adventures on the water.'},
   { id: 'glasses', name: 'Reading glasses', cost: 5, description: 'For a curious little companion.' },
   { id: 'sailing-cap', name: 'Sailing cap', cost: 8, description: 'Ready for a little adventure.' },
   { id: 'ballet-bow', name: 'Ballet bow', cost: 8, description: 'A bow for your next happy dance.' },
@@ -52,7 +54,7 @@ function getRewards_(ss, savedRules) {
   });
   var selected = rewardRows_(ss,'FamilyGoal')[0];
   var goal = REWARD_GOALS_.find(function(g){return selected && g.id === selected[0];}) || REWARD_GOALS_[0];
-  return { members: members, catalog: REWARD_ITEMS_, goals: REWARD_GOALS_, family: { earned: familyStars, goal: goal.stars, unlocked: familyStars >= goal.stars, name: goal.name, goalId:goal.id, emoji:goal.emoji },
+  return { members: members, catalog: REWARD_ITEMS_, species: REWARD_SPECIES_, goals: REWARD_GOALS_, family: { earned: familyStars, goal: goal.stars, unlocked: familyStars >= goal.stars, name: goal.name, goalId:goal.id, emoji:goal.emoji },
     rules: (savedRules || rewardRows_(ss, 'RewardRules')).filter(function(r){return r[0];}).map(function(r) { return { type: toStr(r[1]), sourceId: toStr(r[2]), stars: Number(r[3]) }; }) };
 }
 function rewardAward_(ss, type, sourceId, member, occurrence) {
@@ -122,7 +124,7 @@ function rewardHandleWrite_(data, ss, email, user) {
       }
     } else if (note === 'save_companion') {
       var species = toStr(data.species), name = toStr(data.companion_name).trim(), equipped = toStr(data.equipped);
-      if (['fox', 'rabbit', 'bear', 'cat'].indexOf(species) === -1 || !name || name.length > 24) throw new Error('Choose a companion and a name of up to 24 characters.');
+      if (REWARD_SPECIES_.indexOf(species) === -1 || !name || name.length > 24) throw new Error('Choose a companion and a name of up to 24 characters.');
       var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
       if (equipped && profile.owned.indexOf(equipped) === -1) throw new Error('Unlock this accessory before wearing it.');
       var sheet = rewardSheet_(ss, 'Companions', ['Member', 'Species', 'Name', 'Equipped', 'Updated At']);

@@ -110,7 +110,7 @@ function renderRewards() {
     ${isAdultUser ? rewardHabitRulesHTML() : ''}
     <section class="reward-profile-settings"><h3>Make your companion yours</h3>
       <form id="reward-profile-form"><fieldset ${saving ? 'disabled' : ''}>
-        <div class="reward-species">${['fox', 'rabbit', 'bear', 'cat'].map(species => `<label class="reward-species-option"><input type="radio" name="reward-species" value="${species}" ${species === p.species ? 'checked' : ''}>${rewardCompanionSVG({ species, name: species, equipped: '' }, 'small')}<span>${species[0].toUpperCase() + species.slice(1)}</span></label>`).join('')}</div>
+        <div class="reward-species">${(data.rewards.species || ['fox', 'rabbit', 'bear', 'cat']).map(species => `<label class="reward-species-option"><input type="radio" name="reward-species" value="${species}" ${species === p.species ? 'checked' : ''}>${rewardCompanionSVG({ species, name: species, equipped: '' }, 'small')}<span>${species[0].toUpperCase() + species.slice(1)}</span></label>`).join('')}</div>
         <div class="reward-profile-actions"><label>Companion name<input id="reward-name" maxlength="24" required value="${escapeHtml(p.name)}"></label><button type="submit" class="btn btn-p">${saving ? 'Saving…' : 'Save companion'}</button></div>
       </fieldset></form>
     </section>

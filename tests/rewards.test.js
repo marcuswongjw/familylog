@@ -214,3 +214,17 @@ test('new wardrobe items spend stars once, stay owned on retry, and can be equip
   assert.equal(profile(h).equipped,itemId);assert.ok(profile(h).owned.includes(itemId));
  }
 });
+
+test('new companions and life jacket retain member ownership and spending rules',()=>{
+ const h=harness();for(let i=0;i<3;i++)complete(h,activity(h));
+ assert.equal(h.write({note:'buy_reward_item',item_id:'life-jacket'},child).status,'ok');
+ assert.equal(profile(h).balance,3);assert.equal(profile(h,'Meaghan').balance,0);
+ for(const species of ['turtle','dolphin','penguin','otter']){assert.equal(h.write({note:'save_companion',species,companion_name:'Sunny',equipped:'life-jacket'},child).status,'ok');assert.equal(profile(h).species,species);assert.equal(profile(h).equipped,'life-jacket');assert.notEqual(profile(h,'Meaghan').species,species);}
+ assert.equal(h.write({note:'save_companion',species:'dolphin',companion_name:'Sunny',equipped:'life-jacket'},sibling).status,'error');
+});
+test('family goal unlocks at its exact threshold and purchases preserve progress',()=>{
+ const h=harness();for(let i=0;i<7;i++)complete(h,activity(h));assert.equal(h.c.getRewards_(h.ss).family.unlocked,false);
+ complete(h,activity(h));assert.equal(h.c.getRewards_(h.ss).family.unlocked,true);
+ assert.equal(h.write({note:'buy_reward_item',item_id:'life-jacket'},child).status,'ok');
+ assert.equal(h.c.getRewards_(h.ss).family.earned,40);assert.equal(h.c.getRewards_(h.ss).family.unlocked,true);
+});
