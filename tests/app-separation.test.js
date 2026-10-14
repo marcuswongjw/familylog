@@ -20,3 +20,11 @@ test('separate builds exclude the other app screens and parent excludes unused F
  assert.ok(!family.includes('id="s-expenses"'));assert.ok(!family.includes('id="s-us"'));assert.ok(family.includes('id="s-habits"'));
  assert.ok(parents.includes('id="s-expenses"'));assert.ok(!parents.includes('id="s-habits"'));assert.ok(!parents.includes('firebase-firestore-compat.js'));assert.ok(parents.includes('firebase-auth-compat.js'));assert.ok(parents.includes('data-app="parents"'));
 });
+test('old URLs redirect only to a reachable new domain and preserve deep links without sending credentials',async()=>{
+ const vm=require('node:vm'),source=fs.readFileSync('index.html','utf8');
+ for(const mode of ['family','parents'])for(const ready of [true,false,'dns-error']){
+  let target=null,call=null;const script=appHTML(source,mode).match(/<script>(if\(location\.hostname[^<]*)<\/script>/)[1];
+  vm.runInNewContext(script,{location:{hostname:'marcuswongjw.github.io',search:'?open=habits',hash:'#habits',replace:url=>target=url},fetch:async(url,options)=>{call={url,options};if(ready==='dns-error')throw Error('DNS');return {ok:ready}}});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(call.options.credentials,'omit');assert.equal(call.url,'https://'+mode+'.marcusw.xyz/');assert.equal(target,ready===true?'https://'+mode+'.marcusw.xyz/?open=habits#habits':null);
+ }
+});

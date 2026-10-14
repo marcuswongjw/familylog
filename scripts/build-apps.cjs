@@ -29,7 +29,7 @@ function appHTML(source,mode){
  }
  walk(tree);
  let result=html.serialize(tree);
- result=result.replace('</head>',`<script>if(location.hostname==='marcuswongjw.github.io'){location.replace('https://${parents?'parents':'family'}.marcusw.xyz/'+location.search+location.hash);}</script></head>`);
+ result=result.replace('</head>',`<script>if(location.hostname==='marcuswongjw.github.io'){fetch('https://${parents?'parents':'family'}.marcusw.xyz/',{method:'HEAD',cache:'no-store',credentials:'omit'}).then(r=>{if(r.ok)location.replace('https://${parents?'parents':'family'}.marcusw.xyz/'+location.search+location.hash);}).catch(()=>{});}</script></head>`);
  if(parents){
   result=result.replace('Our family. Our little world.','Household money. A private corner for us.').replace('Who’s coming home?','Who’s signing in?').replace('<h1>Wong’s Nest</h1>','<h1>Parents’ Corner</h1>');
   result=result.replace('</body>','<div hidden><div id="reward-home"></div><div id="rewards-container"></div></div></body>');
