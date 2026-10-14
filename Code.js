@@ -318,7 +318,7 @@ function sendNightBeforeDigest(now) {
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  try { syncCalendarEventTasks_(ss, tomorrowEvents); } catch (se) { console.log('syncCalendarEventTasks_ in nightly error: ' + se); }
+  try { if (!FAMILY_SERVICE_FORWARDING_ || FAMILY_BACKEND_MODE_) syncCalendarEventTasks_(ss, tomorrowEvents); } catch (se) { console.log('syncCalendarEventTasks_ in nightly error: ' + se); }
   var tdSheet = ss.getSheetByName('ToDo');
   var openTasks = [];
   if (tdSheet) {
@@ -685,6 +685,10 @@ function doGet(e) {
 
     // Default-deny: EVERY action requires a verified family token except
     // the expense-approval endpoints, which are opened from signed email links.
+    if (FAMILY_BACKEND_MODE_) {
+      if (action === 'health') { SpreadsheetApp.getActiveSpreadsheet().getId(); CalendarApp.getCalendarById(CALENDAR_ID).getName(); return respondJSONP({status:'ready',backend:'family'},''); }
+      return respondJSONP({status:'error',message:'Use authenticated POST requests.'}, '');
+    }
     var openActions = ['confirm_expense_page', 'submit_confirmed_expense'];
     if (openActions.indexOf(action) === -1) {
       verifiedEmail = verifyFirebaseToken(idToken);
@@ -702,6 +706,8 @@ function doGet(e) {
       );
     }
 
+    if (FAMILY_SERVICE_FORWARDING_ && action === 'get_all') return respondJSONP(legacySplitDashboard_({idToken:idToken},verifiedEmail),callback);
+    if (FAMILY_SERVICE_FORWARDING_ && familyReadAction_(action)) return respondJSONP(familyForward_({action:action,idToken:idToken}),callback);
     var output;
     switch (action) {
       case 'get_all':       output = getAllDashboardData(verifiedEmail); break;
@@ -735,6 +741,7 @@ function doGet(e) {
         var writeData = {};
         try { writeData = JSON.parse(e.parameter.data || '{}'); } catch(pe) {}
         writeData._verifiedEmail = verifiedEmail;
+        writeData.idToken = idToken;
         output = handleWrite(writeData);
         break;
       default: output = { error: 'unknown action: ' + action };
@@ -750,6 +757,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+    if (FAMILY_BACKEND_MODE_ && data.action === 'reminder_snapshot') throw new Error('Unavailable in family service');
     if (data.action === 'reminder_snapshot') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
     // The token is mandatory. The old check only ran `if (data.idToken)`,
     // so omitting the token skipped verification entirely — an
@@ -762,7 +770,14 @@ function doPost(e) {
 
     // Prefer POST for all app traffic so idTokens never appear in URLs / proxy logs.
     var action = toStr(data.action).toLowerCase().trim();
+    if (FAMILY_BACKEND_MODE_) {
+      if (action === 'get_all') action = 'get_family_dashboard';
+      if (!familyReadAction_(action) && !(action === 'write' && familyWriteNote_(data.note))) return ContentService.createTextOutput(JSON.stringify({status:'error',message:'Unavailable in family service'})).setMimeType(ContentService.MimeType.JSON);
+    } else if (FAMILY_SERVICE_FORWARDING_ && familyReadAction_(action)) {
+      return ContentService.createTextOutput(JSON.stringify(familyForward_(data))).setMimeType(ContentService.MimeType.JSON);
+    }
     if (action === 'get_all') {
+      if (FAMILY_SERVICE_FORWARDING_) return ContentService.createTextOutput(JSON.stringify(legacySplitDashboard_(data,verified))).setMimeType(ContentService.MimeType.JSON);
       return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified)))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -783,6 +798,10 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({status:'ok',events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})})).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === 'get_events' || action === 'get_todos' || action === 'get_birthdays') {
+      var rows = action === 'get_events' ? memberEvents_(getEvents(),verified) : action === 'get_todos' ? getTodos(null,verified) : getBirthdays();
+      return ContentService.createTextOutput(JSON.stringify(rows)).setMimeType(ContentService.MimeType.JSON);
+    }
     if (action === 'get_rewards') {
       return ContentService.createTextOutput(JSON.stringify({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())})).setMimeType(ContentService.MimeType.JSON);
     }
@@ -805,6 +824,8 @@ function doPost(e) {
 // at the same moment can't interleave read-modify-write sequences
 // (e.g. a delete-by-row landing while another handler is mid-update).
 function handleWrite(data) {
+  if (FAMILY_BACKEND_MODE_ && !familyWriteNote_(data.note)) return {status:'error',message:'Unavailable in family service'};
+  if (!FAMILY_BACKEND_MODE_ && FAMILY_SERVICE_FORWARDING_ && familyWriteNote_(data.note)) return familyForward_(Object.assign({},data,{action:'write'}));
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
@@ -1531,9 +1552,9 @@ function handleWriteInner_(data) {
 function recordActivity_(ss, user, action, category, description, details) {
   try {
     ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('ActivityLog');
+    var sheet = ss.getSheetByName(activitySheetName_());
     if (!sheet) {
-      sheet = ss.insertSheet('ActivityLog');
+      sheet = ss.insertSheet(activitySheetName_());
       sheet.appendRow(['Timestamp', 'User', 'Action', 'Category', 'Description', 'Details']);
     }
     sheet.appendRow([new Date().toISOString(), user || 'Family', action, category, description, details || '']);
@@ -1547,9 +1568,11 @@ function getActivityLog(ss, allTodos, habitLogs, scope) {
   var list = [];
   var seen = {};
 
-  var sheet = ss.getSheetByName('ActivityLog');
+  var sheet = ss.getSheetByName(activitySheetName_());
+  if (!sheet && FAMILY_BACKEND_MODE_) sheet = ss.getSheetByName('ActivityLog');
   if (sheet) {
     var vals = sheet.getDataRange().getValues();
+    if (FAMILY_BACKEND_MODE_) { var legacy = ss.getSheetByName('ActivityLog'); if (legacy && legacy !== sheet) vals = [vals[0]].concat(legacy.getDataRange().getValues().slice(1), vals.slice(1)); }
     for (var i = vals.length - 1; i >= 1 && list.length < 50; i--) {
       var r = vals[i];
       if (!r[0]) continue;

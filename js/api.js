@@ -19,7 +19,8 @@
           idToken: idToken,
           user: user || 'Unknown'
         });
-        const response = await fetch(GAS_URL, {
+        const endpoint = typeof FAMILY_GAS_URL !== 'undefined' && !(typeof isParentApp === 'function' && isParentApp()) && body.note !== 'configure_reminder_bridge' ? FAMILY_GAS_URL : GAS_URL;
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(payload),

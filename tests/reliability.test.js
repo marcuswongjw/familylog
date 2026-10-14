@@ -110,3 +110,9 @@ test('late calendar hydration cannot overwrite a successful write or switched ac
   assert.ok(!(h.c.data.events||[]).some(e=>e.id==='stale'));if(!switchAccount)assert.equal(h.c.data.todos[0].id,'saved');
  }
 });
+test('transport routes family reads and writes separately while parents and reminder setup stay original',async()=>{
+ for(const [parent,body,expected] of [[false,{action:'get_family_core'},'family'],[false,{action:'write',note:'log_habit'},'family'],[true,{action:'get_parent_dashboard'},'mock'],[true,{action:'write',note:'add_expense'},'mock'],[false,{action:'write',note:'configure_reminder_bridge'},'mock']]){
+  const h=fixture();h.c.FAMILY_GAS_URL='family';h.c.isParentApp=()=>parent;let endpoint;h.c.fetch=async url=>{endpoint=url;return {ok:true,json:async()=>({status:'ok'})}};
+  await h.c.gasRequest(body);assert.equal(endpoint,expected);
+ }
+});

@@ -17,6 +17,7 @@ if [[ ! -f "$HOME/.clasprc.json" ]]; then
   exit 1
 fi
 
+node scripts/check-family-backend.cjs
 "${CLASP[@]}" push --force
 "${CLASP[@]}" deploy -i "$DEPLOYMENT_ID" -d "Code.js $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "Apps Script web app updated. GAS_URL is unchanged."

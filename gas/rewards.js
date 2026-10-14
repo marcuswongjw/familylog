@@ -142,13 +142,14 @@ function operationContext_(ss,data,email,note) {
   if (!/^[A-Za-z0-9-]{16,80}$/.test(data.operation_id)) throw new Error('Invalid operation ID.');
   var fields={};Object.keys(data).sort().forEach(function(k){if(k[0]!=='_' && ['idToken','user','action','operation_id'].indexOf(k)<0) fields[k]=data[k];});
   var op={id:'op'+schoolHash_(email+'|'+note+'|'+data.operation_id),fingerprint:schoolHash_(JSON.stringify(fields)),note:note,email:email};
-  var sheet=ss.getSheetByName('Operations');
+  var sheet=ss.getSheetByName(operationSheetName_());
   var row=sheet && sheet.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});
+  if(!row && FAMILY_BACKEND_MODE_){var legacy=ss.getSheetByName('Operations');row=legacy && legacy.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});}
   if(row){if(row[1]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');op.cached=JSON.parse(row[4]);}
   return op;
 }
 function operationFinish_(ss,op,result) {
-  if(op){var sheet=ss.getSheetByName('Operations');if(!sheet){sheet=ss.insertSheet('Operations');sheet.appendRow(['ID','Fingerprint','Action','Email','Result','At']);}sheet.appendRow([op.id,op.fingerprint,op.note,op.email,JSON.stringify(result),new Date()]);SpreadsheetApp.flush();}
+  if(op){var sheet=ss.getSheetByName(operationSheetName_());if(!sheet){sheet=ss.insertSheet(operationSheetName_());sheet.appendRow(['ID','Fingerprint','Action','Email','Result','At']);}sheet.appendRow([op.id,op.fingerprint,op.note,op.email,JSON.stringify(result),new Date()]);SpreadsheetApp.flush();}
   return result;
 }
 function operationRecover_(ss,op,sheet,idColumn,hashColumn) {

@@ -25,6 +25,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     const VAPID_KEY = 'BAs6TNKZd4jhJwSXah-Q5DQtVG0h0uaoQmopSBG9gu1AtvaHRKqAeG8ZvW3Og2PrJpLz_VxXoxzhvS5nrbt6HUU';
 
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
+    const FAMILY_GAS_URL = 'https://script.google.com/macros/s/AKfycbxm__4eECo8jb61787ZSIEZpK7y7xXpaWs9IjD8kyPvpE5mpvFSVGOcWNazZUTcPZORGQ/exec';
 
     const MEMBERS = [
       { name:'Marcus',  emoji:'👨', email:'marcuswongjw@gmail.com' },
