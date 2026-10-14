@@ -105,14 +105,17 @@
       let timer;
       try {
         const timeout=new Promise(resolve=>{timer=setTimeout(()=>resolve({status:'error',message:'The family server took too long to respond. Please try again.'}),45000);});
-        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_dashboard'}),timeout]);
+        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core'}),timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');
           return false;
         }
         if(typeof setRewardLoadState==='function')setRewardLoadState(false,r.rewards?.members?.some(p=>p.member===user)?'':'The server did not return your companion data. Please try again.');
+        const needsCalendar = !Object.prototype.hasOwnProperty.call(r, 'events') && !(typeof isParentApp === 'function' && isParentApp());
+        if (needsCalendar) { r.events = data.events || []; r.calendarState = 'loading'; }
         applyDashboardPayload(r);
+        if (needsCalendar) hydrateFamilyCalendar(active);
         if(typeof markDashboardRefreshed==='function')markDashboardRefreshed();
         return true;
       } catch(err) {
@@ -122,6 +125,18 @@
         }
         return false;
       } finally { clearTimeout(timer); }
+    }
+
+    async function hydrateFamilyCalendar(active) {
+      const result = await gasRequest({action:'get_family_calendar'});
+      // A save, refresh, or account switch invalidates this calendar response.
+      if (!active()) return;
+      if (!result || result.status === 'error') {
+        data.calendarState = 'error';
+        render(section); renderHome();
+        return;
+      }
+      applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready'}));
     }
 
     async function saveConfirmed(payload) {

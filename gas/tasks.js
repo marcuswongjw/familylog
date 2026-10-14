@@ -1,10 +1,13 @@
 function getTodos(ss, verifiedEmail, includeDone) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  var tdSheet;
-  try { tdSheet = ensureTodoIds_(ss); } finally { lock.releaseLock(); }
-  var tdVals = tdSheet.getDataRange().getValues();
+  var tdSheet = ss.getSheetByName('ToDo');
+  var tdVals = tdSheet ? tdSheet.getDataRange().getValues() : [];
+  var needsMigration = !tdVals[0] || tdVals[0][7] !== 'ID' || tdVals[0][12] !== 'Reward Member' || tdVals.some(function(row, i) { return i > 0 && row[1] && !row[7]; });
+  if (needsMigration) {
+    var lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try { tdSheet = ensureTodoIds_(ss); tdVals = tdSheet.getDataRange().getValues(); } finally { lock.releaseLock(); }
+  }
   var tz     = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < tdVals.length; i++) {

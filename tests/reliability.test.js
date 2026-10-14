@@ -28,7 +28,7 @@ test('latest refresh wins and writes invalidate earlier dashboard reads',async()
  const h=fixture(), a=defer(),b=defer();let n=0;h.c.gasRequest=()=>++n===1?a.promise:b.promise;
  const first=h.c.loadData(), second=h.c.loadData();b.resolve({events:[{id:'new'}],isAdult:true});assert.equal(await second,true);
  a.resolve({events:[{id:'old'}],isAdult:true});assert.equal(await first,false);assert.equal(h.c.data.events[0].id,'new');
- const d=defer();h.c.gasRequest=body=>body.action==='get_family_dashboard'?d.promise:Promise.resolve({status:'ok'});
+ const d=defer();h.c.gasRequest=body=>body.action==='get_family_core'?d.promise:Promise.resolve({status:'ok'});
  const stale=h.c.loadData();await h.c.gPost({note:'add_todo'});d.resolve({events:[{id:'stale'}]});assert.equal(await stale,false);
 });
 test('child payload discards retained private entries and cannot grant parent access',()=>{
@@ -58,7 +58,7 @@ for(const fn of ['submitEvent','submitTask','submitBirthday','submitBudget','sub
 }
 test('schedule reports partial checklist failure without retrying the saved event',async()=>{
  const h=fixture(),notes=[];h.c.gasRequest=async body=>{notes.push(body.note || body.action);return notes.length===1?{status:'ok'}:{status:'error'};};
- await h.c.submitSchedule({});assert.deepEqual(notes,['add_event','add_todo','get_family_dashboard']);assert.ok(h.calls.messages[0][0].includes('incomplete'));assert.equal(h.calls.messages[0][1],true);assert.ok(h.calls.closed.includes('m-timetable-add'));
+ await h.c.submitSchedule({});assert.deepEqual(notes,['add_event','add_todo','get_family_core']);assert.ok(h.calls.messages[0][0].includes('incomplete'));assert.equal(h.calls.messages[0][1],true);assert.ok(h.calls.closed.includes('m-timetable-add'));
 });
 test('calendar Undo cancels persistent deletion and survives dashboard reload',async()=>{
  const h=fixture();let removed=false;const event={id:'e'};h.c.data.events=[event];h.c.gasRequest=async body=>{if(body.note==='delete_event')removed=true;return {status:'ok',events:removed?[]:[event],isAdult:true};};
@@ -96,3 +96,17 @@ test('stale session response cannot change the new account loading state',async(
 test('transport bounds the fetch and reports a readable timeout instead of a network exception',async()=>{const h=fixture();let signal;h.c.fetch=async(_,options)=>{signal=options.signal;const err=new Error('aborted');err.name='TimeoutError';throw err;};const result=await h.c.gasRequest({action:'get_all'});assert.ok(signal);assert.equal(result.status,'error');assert.match(result.message,/too long/);assert.doesNotMatch(result.message,/save|aborted/);});
 
 test('writes have a separate confirmation window while refresh requests remain bounded',async()=>{const h=fixture(),limits=[];h.c.AbortSignal={timeout:ms=>{limits.push(ms);return {};}};await h.c.gasRequest({action:'write',note:'set_habit_rewards'});await h.c.gasRequest({action:'get_all'});assert.deepEqual(limits,[120000,45000]);});
+
+test('family core renders before calendar and calendar failure retains core data',async()=>{
+ const h=fixture(),calendar=defer();h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[{id:'core'}],rewards:{},isAdult:true}):calendar.promise;
+ assert.equal(await h.c.loadData(),true);assert.equal(h.c.data.todos[0].id,'core');assert.equal(h.c.data.calendarState,'loading');
+ calendar.resolve({status:'error'});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,'error');assert.equal(h.c.data.todos[0].id,'core');
+});
+test('late calendar hydration cannot overwrite a successful write or switched account',async()=>{
+ for(const switchAccount of [false,true]){
+  const h=fixture(),calendar=defer();h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[],isAdult:true}):body.action==='get_family_calendar'?calendar.promise:Promise.resolve({status:'ok'});
+  await h.c.loadData();if(switchAccount)h.c.clearSessionState();else {await h.c.gPost({note:'add_todo'});h.c.data.todos=[{id:'saved'}];}
+  calendar.resolve({status:'ok',events:[{id:'stale'}],todos:[]});await new Promise(r=>setImmediate(r));
+  assert.ok(!(h.c.data.events||[]).some(e=>e.id==='stale'));if(!switchAccount)assert.equal(h.c.data.todos[0].id,'saved');
+ }
+});

@@ -101,7 +101,7 @@
       if(searchCalQuery) evs = evs.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
       const container = document.getElementById('cal-list');
       if(!container) return;
-      if(!evs.length){ container.innerHTML = '<div class="empty"><div class="ei">📅</div>No upcoming events</div>'; return; }
+      if(!evs.length){ container.innerHTML = '<div class="empty" role="status"><div class="ei">📅</div>' + (data.calendarState === 'loading' ? 'Loading the family calendar…' : data.calendarState === 'error' ? 'Calendar could not refresh. Please try refreshing again.' : 'No upcoming events') + '</div>'; return; }
       container.innerHTML = evs.map(e => `
         <div class="row">
           <div style="font-size:22px;flex-shrink:0;">📅</div>

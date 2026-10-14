@@ -208,3 +208,9 @@ CI runs Node regressions, Chromium failure flows and actual Firestore/Storage em
 The controlled Pages release builds both outputs. Cloudflare Workers in `hosting/` map each requested domain to its static Pages artifact path. They accept only static GET/HEAD paths, never proxy application APIs, and do not forward auth/cookies/body/personal query to the static origin. Parent app loads Firebase Auth only and uses `parents-sw.js`; family keeps its Firebase services and reminder worker. Each origin has an independent login/cache. Backend ownership is unchanged.
 
 Family companion visits are in the `companions` route: all family members can view names, species and equipped accessories, with greeting animations and no controls for editing other members. Habit star allocations, task reward rules and family goal selection live in the parent-only `reward-admin` route within Wong’s Nest. Private finance stays in Parents’ Corner. Backend reward ownership and parent authorization are unchanged; session reset clears both pages.
+
+## Family dashboard loading
+
+The family client requests `get_family_core` first. It returns tasks, habits, companions and family records without calling Calendar or calendar-task reconciliation. Once rendered, `get_family_calendar` loads events, reconciles preparation tasks, and returns updated task lists. Calendar has a separate loading/error state; errors never mean there are no events. Account/session and dashboard generation checks reject late hydration after a save, refresh or account change. Normal ToDo reads acquire a script lock only when legacy IDs or headers need migration.
+
+These endpoints currently use the existing Apps Script deployment. A separate family Apps Script project is staged; production cutover must wait for verified spreadsheet/calendar access and family-only write routing. The authoritative spreadsheet remains shared.

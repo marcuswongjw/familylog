@@ -28,3 +28,13 @@ test('old URLs redirect only to a reachable new domain and preserve deep links w
   await new Promise(resolve=>setImmediate(resolve));assert.equal(call.options.credentials,'omit');assert.equal(call.url,'https://'+mode+'.marcusw.xyz/');assert.equal(target,ready===true?'https://'+mode+'.marcusw.xyz/?open=habits#habits':null);
  }
 });
+
+test('family core never waits for Calendar and excludes private data',()=>{
+ const h=harness();for(const fn of [...privateReads,'getEvents','syncCalendarEventTasks_'])h.c[fn]=()=>{throw Error('Unexpected slow read '+fn)};
+ const r=h.c.getAllDashboardData('marcuswongjw@gmail.com','family-core');assert.equal(r.events,undefined);assert.ok(r.rewards);assert.equal(r.expenses.total,0);
+});
+test('normal task reads do not acquire a write lock; legacy IDs still migrate',()=>{
+ const h=harness();h.c.getTodos(h.ss,'marcuswongjw@gmail.com',true);
+ h.c.LockService.getScriptLock=()=>{throw Error('Unexpected lock')};
+ assert.equal(h.c.getTodos(h.ss,'marcuswongjw@gmail.com',true).length,0);
+});

@@ -772,6 +772,17 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(dashboard)).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (action === 'get_family_core') {
+      return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified, 'family-core'))).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (action === 'get_family_calendar') {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var events = getEvents();
+      syncCalendarEventTasks_(ss, events);
+      var tasks = getTodos(ss, verified, true);
+      return ContentService.createTextOutput(JSON.stringify({status:'ok',events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})})).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === 'get_rewards') {
       return ContentService.createTextOutput(JSON.stringify({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())})).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1634,15 +1645,16 @@ function getActivityLog(ss, allTodos, habitLogs, scope) {
 function getAllDashboardData(verifiedEmail, scope) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
-  var includePrivate = adult && scope !== 'family';
-  var events = getEvents();
-  try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
+  var coreOnly = scope === 'family-core';
+  var includePrivate = adult && scope !== 'family' && !coreOnly;
+  var events = coreOnly ? null : getEvents();
+  if (!coreOnly) try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
   var allTodos = getTodos(ss, verifiedEmail, true);
   var habits = getHabits(ss, verifiedEmail);
   var habitLogs = getHabitLogs(ss, verifiedEmail);
   // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
-    events:    memberEvents_(events, verifiedEmail),
+    events:    coreOnly ? undefined : memberEvents_(events, verifiedEmail),
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     completedTasks: allTodos.filter(function(t) { return t.status.toLowerCase() === 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
@@ -1661,7 +1673,7 @@ function getAllDashboardData(verifiedEmail, scope) {
     habits:         habits,
     habitLogs:      habitLogs,
     rewards:        getRewards_(ss),
-    activityLog:    adult ? getActivityLog(ss, allTodos, habitLogs, scope) : [],
+    activityLog:    adult ? getActivityLog(ss, allTodos, habitLogs, coreOnly ? 'family' : scope) : [],
     expenseGroups:  includePrivate ? EXPENSE_GROUPS : {},
     isAdult:        adult,
     memberName:     memberNameFromEmail_(verifiedEmail) || '',

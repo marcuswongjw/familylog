@@ -736,8 +736,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       });
       document.getElementById('dash-summary').innerHTML = `
         <div class="dash-stat" onclick="goTo('tasks')" style="cursor:pointer;"><span class="num">${needsYou.length}</span><span class="lbl">Needs a hand</span><small>Little things to take care of</small></div>
-        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsToday.length}</span><span class="lbl">On today</span><small>In the family calendar</small></div>
-        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${evsTomorrow.length}</span><span class="lbl">Tomorrow</span><small>A little look ahead</small></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${data.calendarState === 'loading' ? '…' : data.calendarState === 'error' ? '—' : evsToday.length}</span><span class="lbl">On today</span><small>In the family calendar</small></div>
+        <div class="dash-stat" onclick="goTo('calendar')" style="cursor:pointer;"><span class="num">${data.calendarState === 'loading' ? '…' : data.calendarState === 'error' ? '—' : evsTomorrow.length}</span><span class="lbl">Tomorrow</span><small>A little look ahead</small></div>
       `;
       const memberOrder = ['Mikaela', 'Meaghan', user, user === 'Marcus' ? 'Eleanor' : 'Marcus']
         .filter((m, i, arr) => m && m !== 'Everyone' && arr.indexOf(m) === i);
@@ -760,7 +760,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         <div class="card">
           <div class="card-hdr"><span class="card-title">Today at a glance</span></div>
           <div class="card-body">
-            ${!evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
+            ${data.calendarState === 'loading' ? '<div class="empty" role="status">Loading the family calendar…</div>' : data.calendarState === 'error' ? '<div class="empty" role="status">Calendar could not refresh. Please try refreshing again.</div>' : !evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
             ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
             ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '⏰'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
