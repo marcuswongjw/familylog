@@ -375,3 +375,10 @@ html[data-app="parents"] #notifBell{display:none}
 .companion-visit-card h3{margin:8px 0;font-size:22px;overflow-wrap:anywhere}.companion-visit-card p,.companion-visit-card small{color:var(--text-secondary);font-size:12px}
 .companion-greeting{border:0;background:transparent;cursor:pointer;border-radius:22px;padding:8px}.companion-greeting:focus-visible{outline:3px solid var(--primary);outline-offset:3px}.companion-greeting svg{width:140px;max-width:100%}
 @media(max-width:850px){.companion-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.companion-visit-card{padding:20px 12px}.companion-greeting svg{width:120px}}
+
+.habit-members-field { border:0; padding:0; margin:0 0 18px; min-width:0; }
+.habit-members-field legend { font-weight:600; margin-bottom:8px; }
+.habit-member-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.habit-member-options label { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border,#e7e1ed); border-radius:12px; cursor:pointer; min-height:44px; }
+.habit-member-options input { width:18px; height:18px; accent-color:var(--primary,#79618c); }
+.habit-members-field small { display:block; margin-top:8px; }

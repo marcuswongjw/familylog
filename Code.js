@@ -1452,7 +1452,9 @@ function handleWriteInner_(data) {
       var definition = sheets.habits.getDataRange().getValues().find(function(r, i) { return i > 0 && r[0] === habitId; });
       if (!definition) return { status: 'error', message: 'Choose an existing habit.' };
       // The definition controls identity; caller-supplied member/habit cannot spoof rewards.
-      var member = definition[1] === 'Everyone' ? (isAdultEmail_(verifiedEmail) ? (toStr(data.log_member) || user) : user) : toStr(definition[1]);
+      var assigned = habitMembers_(definition[1]);
+      var member = assigned.length > 1 ? (isAdultEmail_(verifiedEmail) ? (toStr(data.log_member) || (assigned.indexOf(user) !== -1 ? user : assigned[0])) : user) : assigned[0];
+      if (assigned.indexOf(member) === -1) return {status:'error',message:'This habit is not assigned to that person.'};
       if (REWARD_MEMBERS_.indexOf(member) === -1) return { status: 'error', message: 'Choose a family member to log for.' };
       if (definition[9] === 'paused' || definition[9] === 'archived') return { status: 'error', message: 'This habit is paused or archived.' };
       var habit = toStr(definition[2]);
@@ -1508,14 +1510,21 @@ function handleWriteInner_(data) {
       var index = rows.findIndex(function(r,i){return i > 0 && r[0] === habitId;});
       var editing = noteLower === 'edit_habit';
       if (editing && index < 1) return { status:'error', message:'Habit not found. Refresh before editing.' };
-      var member = editing ? toStr(rows[index][1]) : (toStr(data.member) || user);
-      if (FAMILY_MEMBERS.indexOf(member) < 0 || (!parent && member !== user)) return { status:'error', message:'You can only manage habits for yourself.' };
+      if (!editing && data.members === undefined && data.member && FAMILY_MEMBERS.indexOf(data.member) === -1) return {status:'error',message:'Choose a family member.'};
+      var existingMembers = editing ? habitMembers_(rows[index][1]) : [];
+      var assigned;
+      if (data.members !== undefined) {
+        if (!Array.isArray(data.members) || !data.members.length || data.members.length > 4 || data.members.some(function(m){return REWARD_MEMBERS_.indexOf(m) === -1;})) return {status:'error',message:'Choose at least one family member.'};
+        assigned = REWARD_MEMBERS_.filter(function(m){return data.members.indexOf(m) !== -1;});
+      } else assigned = editing ? existingMembers : habitMembers_(toStr(data.member) || user);
+      var member = assigned.length === 4 ? 'Everyone' : assigned.join(',');
+      if (!assigned.length || (!parent && (assigned.length !== 1 || assigned[0] !== user || (editing && (existingMembers.length !== 1 || existingMembers[0] !== user))))) return { status:'error', message:'You can only manage habits for yourself.' };
       var habit = toStr(data.habit).trim(), emoji = toStr(data.emoji).trim() || '⭐';
       if (!habit || habit.length > 80 || emoji.length > 12) return { status:'error', message:'Use a habit name up to 80 characters and a short emoji.' };
       var schedule = habitScheduleInput_(data);
       var state = editing ? (toStr(rows[index][9]) || 'active') : 'active';
       if (editing) {
-        sheets.habits.getRange(index+1,3,1,2).setValues([[schoolCell_(habit),schoolCell_(emoji)]]);
+        sheets.habits.getRange(index+1,2,1,3).setValues([[member,schoolCell_(habit),schoolCell_(emoji)]]);
         sheets.habits.getRange(index+1,7,1,5).setValues([[schedule.mode,schedule.days.join(','),schedule.target,state,new Date()]]);
       } else {
         habitId = Utilities.getUuid();
@@ -1781,10 +1790,10 @@ function getHabits(ss, verifiedEmail) {
     var r = rows[i];
     if (!r[0] || !r[2]) continue;
     if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[9] === 'archived') continue;
-    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[1] !== memberNameFromEmail_(verifiedEmail) && r[1] !== 'Everyone') continue;
+    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && habitMembers_(r[1]).indexOf(memberNameFromEmail_(verifiedEmail)) === -1) continue;
     result.push({
       id: toStr(r[0]),
-      member: toStr(r[1]),
+      member: toStr(r[1]), members: habitMembers_(r[1]),
       habit: toStr(r[2]),
       emoji: toStr(r[3]) || '⭐',
       createdBy: toStr(r[4]),
@@ -3169,4 +3178,9 @@ function getParentDashboardData(verifiedEmail) {
     fertility:getFertilityData(ss),appreciations:getAppreciationsData(ss),
     loveCheckins:getLoveCheckinsData(ss),intimacyLog:getIntimacyLogData(ss),
     bucketList:getBucketList(ss),expenseGroups:EXPENSE_GROUPS};
+}
+
+function habitMembers_(value) {
+  if (value === 'Everyone') return REWARD_MEMBERS_.slice();
+  return toStr(value).split(',').map(function(m){return m.trim();}).filter(function(m){return REWARD_MEMBERS_.indexOf(m) !== -1;});
 }

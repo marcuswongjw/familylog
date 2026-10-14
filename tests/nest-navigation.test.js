@@ -15,6 +15,7 @@ function fixture(adult = true) {
   const c=vm.createContext({window:{addEventListener(){}},document:{getElementById:id=>elements[id],querySelectorAll:q=>q==='.section'?pages:q.includes('nest-sidebar')?[]:nav},
     section:'home',user:adult?'Marcus':'Mikaela',MEMBERS:[{name:adult?'Marcus':'Mikaela',emoji:'avatar'}],isAdultUser:adult,timelineInterval:null,
     location:{hash:'',search:'',assign:url=>messages.push(url)},URLSearchParams,savePreference(){},startMemoriesListener(){},stopMemoriesListener(){},render:id=>renders.push(id),toast:m=>messages.push(m)});
+  vm.runInContext(fs.readFileSync(require.resolve('../js/habits.js'),'utf8'),c);
   vm.runInContext(fs.readFileSync(require.resolve('../js/nest.js'),'utf8'),c);
   const source=require('./helpers/app-source.cjs').readAppSource();
   vm.runInContext(source.split('\n')[0],c);

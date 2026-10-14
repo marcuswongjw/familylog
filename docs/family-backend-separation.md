@@ -1,6 +1,6 @@
 # Separate family backend
 
-The standalone family Apps Script service is deployed, but live traffic still uses the original service until its Google web-app authorization passes. Google still displays an authorization prompt on the versioned web-app endpoint after the reported editor authorization. Open the configured URL with `?action=health`, select Review permissions, and use the spreadsheet-owner account `marcuswongjw@gmail.com`. No credentials should be sent to Codex.
+The standalone family Apps Script service is authorized and its spreadsheet/calendar readiness check passes. Family traffic routes directly to it; the original project remains responsible for finance/private-parent records and existing mail/reminder integrations.
 
 `docs/family-backend.json` stores public project/deployment identifiers. `scripts/build-family-backend.cjs` binds the standalone service to the existing authoritative spreadsheet without copying records. `scripts/deploy-family-gas.sh` builds outside the repository and publishes a versioned deployment. It uses only Sheets, Calendar and external-request scopes, excluding Gmail/mail scopes. The runtime denies finance actions, private-parent dashboards, reminder snapshots and GET data requests. Firebase token verification and the family/parent ownership rules remain unchanged. Public `health` returns readiness only; no household records.
 

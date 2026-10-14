@@ -1,6 +1,6 @@
 # Architecture — Sheets vs Firebase
 
-Wong’s Nest and Parents’ Corner share **two backends on purpose**. Each owns a different kind of data. Do not dual-write the same feature to both.
+Wong’s Nest and Parents’ Corner use Firebase and two separate Apps Script services. Keep one authoritative writer for each feature.
 
 ```mermaid
 flowchart TB
@@ -16,7 +16,8 @@ flowchart TB
   end
 
   subgraph google [Google Workspace via Apps Script]
-    GAS[Apps Script modules]
+    GAS[Family Apps Script]
+    PARENT[Parent Apps Script]
     SH[(Google Sheets)]
     CAL[Google Calendar]
     MAIL[Gmail + email]
@@ -29,7 +30,11 @@ flowchart TB
   GAS -->|verify token + allowlist| Auth
   GAS --> SH
   GAS --> CAL
-  GAS --> MAIL
+  UI -->|parent requests| PARENT
+  PARENT -->|verify token + parent allowlist| Auth
+  PARENT --> SH
+  PARENT --> MAIL
+  PARENT -->|legacy family requests| GAS
 ```
 
 ---
@@ -213,4 +218,8 @@ Family companion visits are in the `companions` route: all family members can vi
 
 The family client requests `get_family_core` first. It returns tasks, habits, companions and family records without calling Calendar or calendar-task reconciliation. Once rendered, `get_family_calendar` loads events, reconciles preparation tasks, and returns updated task lists. Calendar has a separate loading/error state; errors never mean there are no events. Account/session and dashboard generation checks reject late hydration after a save, refresh or account change. Normal ToDo reads acquire a script lock only when legacy IDs or headers need migration.
 
-The separate family Apps Script service is deployed and tested; activation is waiting for its Google web-app authorization. See `docs/family-backend-separation.md` for routing, lock ownership and deployment order. The authoritative spreadsheet remains shared.
+The family and parent apps use separate Apps Script services. Family requests use the standalone family project; legacy family requests on the original service forward to it. See `docs/family-backend-separation.md` for routing, lock ownership and deployment order. The authoritative spreadsheet remains shared.
+
+## Habit assignments
+
+One habit ID may belong to a selected subset of family members. The Habits Member cell preserves legacy single names and Everyone, or stores comma-separated selected names. API responses include a normalized `members` array. Parents can change assignments while preserving ID/history/reward rules; children can create or edit only a habit solely assigned to themselves. Read filtering and logging enforce assigned membership on the server. Completion logs, weekly counts and reward earn IDs remain per person. Reminder planning also filters by assigned members.

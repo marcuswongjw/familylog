@@ -17,7 +17,7 @@ if [[ ! -f "$HOME/.clasprc.json" ]]; then
   exit 1
 fi
 
-node scripts/check-family-backend.cjs
+if rg -q 'FAMILY_SERVICE_FORWARDING_ = true' gas/backend.js; then node scripts/check-family-backend.cjs; fi
 "${CLASP[@]}" push --force
 "${CLASP[@]}" deploy -i "$DEPLOYMENT_ID" -d "Code.js $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "Apps Script web app updated. GAS_URL is unchanged."

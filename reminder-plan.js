@@ -27,7 +27,7 @@ function plan(snapshot,email,prefs,now=new Date()){
  if(s.habits)for(const h of snapshot.habits||[]){
   if((h.state||'active')!=='active')continue;
   for(const who of scope){
-   if(h.member!==who&&h.member!=='Everyone')continue;
+   if(h.member!=='Everyone'&&!(Array.isArray(h.members)?h.members:String(h.member||'').split(',').map(m=>m.trim())).includes(who))continue;
    const logs=(snapshot.habitLogs||[]).filter(l=>l.habitId===h.id&&l.member===who);
    if(logs.some(l=>l.date===date))continue;
    if(h.schedule==='weekdays'&&!(h.weekdays||[]).includes(new Date(date+'T00:00:00Z').getUTCDay()))continue;

@@ -106,7 +106,7 @@ function updateNestThemeIcon() {
 window.addEventListener('DOMContentLoaded',initNest);
 
 function nestVisibleHabits() {
-  return (data.habits || []).filter(h => isAdultUser || (h.state !== 'archived' && (h.member === user || h.member === 'Everyone')));
+  return (data.habits || []).filter(h => isAdultUser || (h.state !== 'archived' && habitMembers(h).includes(user)));
 }
 function nestFilterChildData() {
   if (isAdultUser) return;

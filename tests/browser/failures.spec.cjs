@@ -42,3 +42,11 @@ test('family gallery shows current companions without editing others; reward adm
  const first=page.locator('[data-habit-stars]').first();await first.fill('7');await page.locator('#reward-habit-form button[type="submit"]').click();await expect.poll(()=>page.evaluate(()=>data.rewards.rules.some(r=>r.type==='habit'&&r.stars===7))).toBe(true);
  await page.evaluate(()=>{user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';setAdultAccess(false);goTo('companions');});await expect(page.locator('.companion-visit-card')).toHaveCount(4);await page.evaluate(()=>goTo('reward-admin'));await expect(page.locator('#s-reward-admin')).not.toHaveClass(/active/);
 });
+test('habit form selects multiple people, edits assignment and limits logging to selected people',async({page})=>{
+ await page.evaluate(()=>openAddHabitModal());await page.locator('#hab-name').fill('Selected people habit');
+ await page.locator('#hab-member input[value="Marcus"]').uncheck();await page.locator('#hab-member input[value="Mikaela"]').check();await page.locator('#hab-member input[value="Meaghan"]').check();await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);
+ const id=await page.evaluate(()=>data.habits.find(h=>h.habit==='Selected people habit').id);
+ await page.evaluate(id=>openHabitLogModal(id),id);await expect(page.locator('#hl-member option')).toHaveText(['Mikaela','Meaghan']);await page.keyboard.press('Escape');
+ await page.evaluate(id=>openAddHabitModal(id),id);await expect(page.locator('#hab-member input[value="Mikaela"]')).toBeChecked();await expect(page.locator('#hab-member input[value="Meaghan"]')).toBeChecked();await page.locator('#hab-member input[value="Meaghan"]').uncheck();await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);
+ expect(await page.evaluate(id=>habitMembers(data.habits.find(h=>h.id===id)),id)).toEqual(['Mikaela']);
+});

@@ -10,3 +10,6 @@ test('completed, paused, rest-day and fulfilled weekly habits do not remind',()=
 test('reminder category switches suppress their category without fallback',()=>{assert.equal(plan(snapshot,child,{...prefs,packing:false,habits:false},now),null);assert.equal(plan(snapshot,parent,{...prefs,overdue:false},now),null);});
 test('digest ID is stable through scheduler retries and changes next day',()=>{const a=plan(snapshot,child,prefs,now);assert.equal(plan(snapshot,child,prefs,new Date('2026-10-05T11:15:00Z')).id,a.id);assert.notEqual(plan(snapshot,child,prefs,new Date('2026-10-06T11:00:00Z')).id,a.id);});
 test('invalid preferences and unknown recipients are rejected',()=>{assert.throws(()=>settings({hour:24}));assert.throws(()=>settings({enabled:'yes'}));assert.equal(plan(snapshot,'outside@example.com',prefs,now),null);});
+test('selected shared habits remind only assigned people and respect individual completions',()=>{
+ const s={todos:[],habits:[{id:'shared',member:'Mikaela,Meaghan',members:['Mikaela','Meaghan'],habit:'Read together'}],habitLogs:[]};assert.equal(plan(s,parent,prefs,now),null);assert.equal(plan(s,child,prefs,now).count,1);s.habitLogs.push({habitId:'shared',member:'Mikaela',date:'2026-10-05'});assert.equal(plan(s,child,prefs,now),null);assert.equal(plan(s,'meaghanwongzx@gmail.com',prefs,now).count,1);
+});

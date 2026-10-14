@@ -26,7 +26,7 @@ function habitScheduleLabel(h) {
   return 'Every day';
 }
 function habitForMember(member, date) {
-  return (data.habits || []).filter(h => (h.member === member || h.member === 'Everyone') && habitDue(h,member,date));
+  return (data.habits || []).filter(h => habitMembers(h).includes(member) && habitDue(h,member,date));
 }
 function habitPendingKey(id, member, date) { return `${id}:${member}:${date}`; }
 function habitProgressLabel(h, member, date) {
@@ -39,3 +39,9 @@ function childNextStep(tasks, habits, member, date) {
   const habit = habits.find(h => !habitDone(h,member,date));
   return habit ? {type:'habit',id:habit.id,title:habit.habit} : null;
 }
+
+function habitMembers(h) {
+  if (h.member === 'Everyone') return ['Marcus','Eleanor','Mikaela','Meaghan'];
+  return (Array.isArray(h.members) ? h.members : String(h.member || '').split(',')).map(m=>m.trim()).filter(m=>['Marcus','Eleanor','Mikaela','Meaghan'].includes(m));
+}
+function habitShared(h) { return habitMembers(h).length > 1; }

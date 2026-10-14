@@ -171,8 +171,8 @@ function rewardHabitRulesHTML() {
   const habits = data.habits || [];
   return `<section class="reward-habit-settings"><h3>Stars for every habit</h3><p class="reward-muted">Choose the stars each family member earns on a scheduled habit day. Set 0 to turn its reward off.</p>
     ${habits.length ? `<form id="reward-habit-form"><fieldset ${rewardPending.has('habit-rules') ? 'disabled' : ''}>
-      <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(h.member)} · ${escapeHtml(habitScheduleLabel(h))}${h.state&&h.state!=='active'?' · '+escapeHtml(h.state):''}</small></div>
-        <label>Stars<input type="number" data-habit-stars="${escapeHtml(h.id)}" value="${escapeHtml(rewardHabitDrafts.get(currentUserEmail + ':' + h.id) ?? rewardStars('habit',h.id))}" min="0" max="100" step="1" required aria-label="Stars for ${escapeHtml(h.habit)} (${escapeHtml(h.member)})"></label></div>`).join('')}</div>
+      <div class="reward-habit-list">${habits.map(h => `<div class="reward-habit-row"><div><strong>${escapeHtml(h.habit)}</strong><small>${escapeHtml(habitMembers(h).join(', '))} · ${escapeHtml(habitScheduleLabel(h))}${h.state&&h.state!=='active'?' · '+escapeHtml(h.state):''}</small></div>
+        <label>Stars<input type="number" data-habit-stars="${escapeHtml(h.id)}" value="${escapeHtml(rewardHabitDrafts.get(currentUserEmail + ':' + h.id) ?? rewardStars('habit',h.id))}" min="0" max="100" step="1" required aria-label="Stars for ${escapeHtml(h.habit)} (${escapeHtml(habitMembers(h).join(', '))})"></label></div>`).join('')}</div>
       <div class="reward-habit-save"><button type="submit" class="btn btn-p">${rewardChecking.has('habit-rules') ? 'Checking save…' : rewardPending.has('habit-rules') ? 'Saving…' : 'Save habit stars'}</button><small>Whole numbers from 0 to 100. Earned once per member each day.</small></div>
     </fieldset></form>` : '<p class="reward-muted">Add a habit in Habits to choose its star reward here.</p>'}
   </section>`;

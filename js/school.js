@@ -553,7 +553,7 @@ function renderSchoolHome() {
                   <div class="school-habit-item" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border-color, #e2e8f0);border-radius:8px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                       <span style="font-size:18px;">${escapeHtml(h.emoji || '✨')}</span>
-                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}<small class="habit-home-meta">${escapeHtml(habitProgressLabel(h,child,day))}${h.member==='Everyone'?' · shared':''}</small></span>
+                      <span style="font-size:13px;font-weight:600;">${escapeHtml(h.habit)}${rewardBadge('habit', h.id)}<small class="habit-home-meta">${escapeHtml(habitProgressLabel(h,child,day))}${habitShared(h)?' · shared':''}</small></span>
                     </div>
                     ${logged ? `
                       <span style="font-size:12px;color:var(--success);font-weight:600;display:flex;align-items:center;gap:4px;">

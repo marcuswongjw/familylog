@@ -35,3 +35,19 @@ test('completed ordinary tasks survive dashboard refresh and remain child-scoped
  const other=h.write({note:'add_todo',todo_task:'Other child',todo_assignee:'Meaghan'}).id;h.write({note:'complete_todo',todo_id:own},child);h.write({note:'complete_todo',todo_id:other},sibling);
  const dashboard=h.c.getAllDashboardData(child);assert.equal(dashboard.completedTasks.length,1);assert.equal(dashboard.completedTasks[0].id,own);assert.equal(dashboard.completedTasks[0].status,'Done');
 });
+test('selected shared members get separate progress and rewards; unselected people are denied',()=>{
+ const h=fixedHarness(),r=add(h,'Mikaela',{members:['Mikaela','Meaghan']});assert.equal(r.status,'ok');const id=r.id;
+ const own=h.c.getHabits(h.ss,child).find(x=>x.id===id);assert.deepEqual(Array.from(own.members),['Mikaela','Meaghan']);assert.ok(h.c.getHabits(h.ss,sibling).some(x=>x.id===id));
+ const single=add(h,'Mikaela',{members:['Marcus','Mikaela']}).id;assert.ok(!h.c.getHabits(h.ss,sibling).some(x=>x.id===single));assert.equal(log(h,single,sibling).status,'error');assert.equal(log(h,id,parent,{log_member:'Marcus'}).status,'error');
+ h.write({note:'set_habit_rewards',rules:[{source_id:id,stars:5}]});assert.equal(log(h,id,child,{log_member:'Marcus'}).log.member,'Mikaela');assert.equal(log(h,id,sibling).award.stars,5);assert.equal(log(h,id,sibling).award.stars,0);
+ const rewards=h.c.getRewards_(h.ss);for(const name of ['Mikaela','Meaghan'])assert.equal(rewards.members.find(m=>m.member===name).balance,5);assert.equal(rewards.members.find(m=>m.member==='Marcus').balance,0);
+});
+test('parents can change assignment without losing habit ID, history or reward rules; children cannot reassign',()=>{
+ const h=fixedHarness(),id=add(h).id;log(h,id);h.write({note:'set_habit_rewards',rules:[{source_id:id,stars:3}]});
+ assert.equal(h.write({note:'edit_habit',habit_id:id,habit:'Read together',members:['Mikaela','Meaghan']}).status,'ok');assert.equal(h.c.getHabitLogs(h.ss,child).filter(l=>l.habitId===id).length,1);assert.equal(h.c.getRewards_(h.ss).rules.find(r=>r.sourceId===id).stars,3);
+ for(const members of [['Marcus'],['Mikaela','Meaghan']])assert.equal(h.write({note:'edit_habit',habit_id:id,habit:'Changed',members},child).status,'error');
+ for(const members of [[],['Unknown'],['Everyone'],['Marcus','Eleanor','Mikaela','Meaghan','Unknown']])assert.equal(add(h,'Mikaela',{members}).status,'error');
+});
+test('front-end member filtering handles selected subsets and legacy Everyone',()=>{
+ const subset={id:'subset',member:'Mikaela,Meaghan'},c=frontend({habits:[subset,{id:'all',member:'Everyone'}]});assert.equal(c.habitForMember('Mikaela','2026-10-08').length,2);assert.equal(c.habitForMember('Marcus','2026-10-08').length,1);assert.equal(c.habitShared(subset),true);
+});
