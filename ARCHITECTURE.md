@@ -223,3 +223,9 @@ The family and parent apps use separate Apps Script services. Family requests us
 ## Habit assignments
 
 One habit ID may belong to a selected subset of family members. The Habits Member cell preserves legacy single names and Everyone, or stores comma-separated selected names. API responses include a normalized `members` array. Parents can change assignments while preserving ID/history/reward rules; children can create or edit only a habit solely assigned to themselves. Read filtering and logging enforce assigned membership on the server. Completion logs, weekly counts and reward earn IDs remain per person. Reminder planning also filters by assigned members.
+
+## Expense and calendar identity
+
+Expense rows use immutable IDs (G), operation fingerprints (H), and deletion status (I). Deleted rows are retained for retry recovery and excluded from all spending totals/reports. Bank approvals derive their destination ID from the signed pending ID. Legacy row-number delete requests must refresh instead of targeting a guessed record.
+
+Calendar REST reads expand recurring instances. Recurring event IDs are `instance:<REST ID>`; one-off IDs remain legacy iCalUIDs for existing links. Series iCalUIDs are metadata, never a recurring occurrence mutation target. Moves preserve elapsed timed duration or the all-day date span. Generated preparation keys use the occurrence ID and retain historical task identity when migrating a matching legacy due date. See `docs/p1-fixes-2026-10-15.md`.

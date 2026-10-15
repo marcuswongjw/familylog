@@ -48,7 +48,7 @@ http.createServer(async(req,res)=>{
    else if(d.action==='get_all'||d.action==='get_family_dashboard'||d.action==='get_family_core'||d.action==='get_family_calendar'){
     const all=h.c.getTodos(h.ss,d.email,true);
     const links=h.c.schoolEventLinks_();
-    result={rewards:h.c.getRewards_(h.ss),habits:h.c.getHabits(h.ss,d.email),habitLogs:h.c.getHabitLogs(h.ss,d.email),todos:all.filter(t=>t.status!=='Done'),completedTasks:all.filter(t=>t.status==='Done'),schoolTasks:all.filter(t=>t.sourceId),schoolPlans:h.c.schoolReadPlans_(h.ss,adult),events:[...h.calendar.values()].map(e=>({id:e.iCalUID,title:e.summary,dateRaw:(e.start.dateTime||e.start.date).slice(0,10),date:(e.start.dateTime||e.start.date).slice(0,10),time:e.start.dateTime?.slice(11,16)||'All day',tags:links[e.iCalUID]?[links[e.iCalUID].child]:[],location:e.location,notes:'',duration:1})),isAdult:adult,memberName:h.c.memberNameFromEmail_(d.email),expenses:{total:0},expenseGroups:{},bucketList:[]};
+    result={rewards:h.c.getRewards_(h.ss),habits:h.c.getHabits(h.ss,d.email),habitLogs:h.c.getHabitLogs(h.ss,d.email),todos:all.filter(t=>t.status!=='Done'),completedTasks:all.filter(t=>t.status==='Done'),schoolTasks:all.filter(t=>t.sourceId),schoolPlans:h.c.schoolReadPlans_(h.ss,adult),events:h.c.getEvents(),isAdult:adult,memberName:h.c.memberNameFromEmail_(d.email),expenses:{total:0},expenseGroups:{},bucketList:[]};
     if(d.action==='get_family_core')delete result.events;
    }else if(d.action==='get_rewards')result={status:'ok',rewards:h.c.getRewards_(h.ss)};
    else result=h.write(d,d.email);

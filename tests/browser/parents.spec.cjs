@@ -21,3 +21,12 @@ test('all migrated parent screens render and modal keyboard behavior stays intac
  for(const route of ['budgets','recurring','us','fertility']){await page.evaluate(id=>goTo(id),route);await expect(page.locator('#s-'+route)).toHaveClass(/active/);}
  await page.evaluate(()=>{goTo('expenses');document.querySelector('#nav-expenses').focus();openM('m-expense')});await page.keyboard.press('Escape');await expect(page.locator('#nav-expenses')).toBeFocused();
 });
+test('two parent tabs delete expenses by permanent ID and Undo preserves the selected record',async({page,context})=>{
+ page.on('dialog',d=>d.accept());const ids=await page.evaluate(async()=>{const ids=[];for(const name of ['P1 expense A','P1 expense B','P1 expense C']){const r=await gPost({note:'add_expense',ex_desc:name,ex_amount:1,ex_date:schoolToday(),ex_account:'Family',ex_category:'Other'});ids.push(r.id);}await loadData();goTo('expenses');return ids;});
+ const other=await context.newPage();other.on('dialog',d=>d.accept());await other.goto('/parents/');await expect(other.locator('#app-screen')).toHaveClass(/active/);
+ await page.evaluate(id=>{delExp(id);_flushPendingUndo();},ids[0]);
+ await expect.poll(()=>page.evaluate(async id=>{await loadData();return data.expenses.rows.some(r=>r.id===id)},ids[0])).toBe(false);
+ await other.evaluate(id=>{goTo('expenses');delExp(id);undoLast();},ids[1]);expect(await other.evaluate(id=>data.expenses.rows.some(r=>r.id===id),ids[1])).toBe(true);
+ await other.evaluate(id=>{delExp(id);_flushPendingUndo();},ids[1]);await expect.poll(()=>other.evaluate(async id=>{await loadData();return data.expenses.rows.some(r=>r.id===id)},ids[1])).toBe(false);
+ await other.reload();await expect(other.locator('#app-screen')).toHaveClass(/active/);expect(await other.evaluate(ids=>ids.map(id=>data.expenses.rows.some(r=>r.id===id)),ids)).toEqual([false,false,true]);await other.close();
+});

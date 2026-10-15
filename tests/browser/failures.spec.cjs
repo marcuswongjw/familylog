@@ -50,3 +50,7 @@ test('habit form selects multiple people, edits assignment and limits logging to
  await page.evaluate(id=>openAddHabitModal(id),id);await expect(page.locator('#hab-member input[value="Mikaela"]')).toBeChecked();await expect(page.locator('#hab-member input[value="Meaghan"]')).toBeChecked();await page.locator('#hab-member input[value="Meaghan"]').uncheck();await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);
  expect(await page.evaluate(id=>habitMembers(data.habits.find(h=>h.id===id)),id)).toEqual(['Mikaela']);
 });
+test('an all-day calendar move reaches the real backend handler and survives refresh',async({page})=>{
+ const result=await page.evaluate(async()=>{const date=schoolToday(),next=schoolDayOffset(date,1);const created=await gPost({note:'add_event',event_title:'P1 all-day move',event_date:date,event_time:'',event_member:'Mikaela'});const moved=await gPost({note:'update_event_date',event_id:created.id,new_date:next});await loadData();return {created,moved,next,id:created.id};});
+ expect(result.created.status).toBe('ok');expect(result.moved.status).toBe('ok');await expect.poll(()=>page.evaluate(id=>data.events.find(e=>e.id===id)?.dateRaw,result.id)).toBe(result.next);await page.reload();await expect(page.locator('#app-screen')).toHaveClass(/active/);await expect.poll(()=>page.evaluate(id=>data.events.find(e=>e.id===id)?.dateRaw,result.id)).toBe(result.next);
+});

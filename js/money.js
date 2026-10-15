@@ -71,7 +71,7 @@
 
                   <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                     <div style="font-size:15px;font-weight:700;color:#1e293b;">$${r.amount.toFixed(2)}</div>
-                    <button onclick="delExp(${r.rowNum})" style="color:#9898aa;font-size:12px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9898aa'">Delete</button>
+                    <button onclick="delExp('${escapeHtml(r.id)}')" style="color:#9898aa;font-size:12px;border:none;background:transparent;cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9898aa'">Delete</button>
                   </div>
                 </div>
               `;
@@ -80,13 +80,13 @@
         </div>
       `;
     }
-    function delExp(n) {
-      const exp = data.expenses.rows.find(r => r.rowNum === n);
+    function delExp(id) {
+      const exp = data.expenses.rows.find(r => r.id === id);
       if(!exp) return;
       if(!confirm('Delete expense?')) return;
-      data.expenses.rows = data.expenses.rows.filter(r => r.rowNum !== n);
+      data.expenses.rows = data.expenses.rows.filter(r => r.id !== id);
       data.expenses.total -= exp.amount;
-      pushUndo(() => { data.expenses.rows.push(exp); data.expenses.total += exp.amount; renderExpenses(); }, 'Expense deleted', { note: 'delete_expense', row_id: n });
+      pushUndo(() => { data.expenses.rows.push(exp); data.expenses.total += exp.amount; renderExpenses(); }, 'Expense deleted', { note: 'delete_expense', expense_id: id });
       renderExpenses();
     }
 

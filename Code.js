@@ -373,7 +373,7 @@ function sendExpenseSummary(now) {
   var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
   var totals = {}; var byAccount = {}; var monthTotal = 0;
   for (var i = 1; i < eVals.length; i++) {
-    var row = eVals[i]; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
+    var row = eVals[i]; if (toStr(row[8]) === 'Deleted') continue; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
     if (rowDate.getMonth() === thisMonth && rowDate.getFullYear() === thisYear) {
       var amount = parseFloat(row[4]) || 0; var category = toStr(row[3]) || 'Other'; var account = toStr(row[2]) || 'Family';
       monthTotal += amount; totals[category] = (totals[category] || 0) + amount; byAccount[account] = (byAccount[account] || 0) + amount;
@@ -401,7 +401,7 @@ function sendExpenseReport(now) {
   var eVals = expSheet.getDataRange().getValues();
   var totals = {}; var byAccount = {}; var monthTotal = 0; var allRows = [];
   for (var i = 1; i < eVals.length; i++) {
-    var row = eVals[i]; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
+    var row = eVals[i]; if (toStr(row[8]) === 'Deleted') continue; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
     if (rowDate.getMonth() === targetMonth && rowDate.getFullYear() === targetYear) {
       var amount = parseFloat(row[4]) || 0; var category = toStr(row[3]) || 'Other';
       var desc = toStr(row[5]) || ''; var account = toStr(row[2]) || 'Family';
@@ -505,7 +505,7 @@ function checkBudgetAlerts() {
     var targetCategories = EXPENSE_GROUPS[group] || [];
 
     for (var i = 1; i < expVals.length; i++) {
-      var eRow = expVals[i]; var rowDate = new Date(eRow[1]);
+      var eRow = expVals[i]; if (toStr(eRow[8]) === 'Deleted') continue; var rowDate = new Date(eRow[1]);
       if (isNaN(rowDate.getTime())) rowDate = new Date(eRow[0]);
       if (rowDate.getMonth() !== thisMonth || rowDate.getFullYear() !== thisYear) continue;
 
@@ -638,7 +638,7 @@ function processRecurringExpenses() {
   if (recVals.length <= 1) return;
 
   var expSheet = ss.getSheetByName('Expenses');
-  if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
+  if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note','ID','Operation Fingerprint','Status']); }
 
   var now    = new Date();
   var today  = now.getDate();
@@ -654,7 +654,7 @@ function processRecurringExpenses() {
     var account  = toStr(row[2]) || 'Family';
     var category = toStr(row[3]) || 'Other';
     var dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    expSheet.appendRow([new Date(), dateOnly, account, category, amount, name + ' (recurring)']);
+    expSheet.appendRow([new Date(), dateOnly, account, category, amount, schoolCell_(name + ' (recurring)'), 'exp_'+Utilities.getUuid(),'','']);
     logged.push({ name: name, amount: amount, account: account });
   }
 
@@ -686,7 +686,7 @@ function doGet(e) {
     // Default-deny: EVERY action requires a verified family token except
     // the expense-approval endpoints, which are opened from signed email links.
     if (FAMILY_BACKEND_MODE_) {
-      if (action === 'health') { SpreadsheetApp.getActiveSpreadsheet().getId(); CalendarApp.getCalendarById(CALENDAR_ID).getName(); return respondJSONP({status:'ready',backend:'family'},''); }
+      if (action === 'health') { SpreadsheetApp.getActiveSpreadsheet().getId(); CalendarApp.getCalendarById(CALENDAR_ID).getName(); calendarApi_('get','?singleEvents=true&maxResults=1&timeMin='+encodeURIComponent(new Date().toISOString())); return respondJSONP({status:'ready',backend:'family'},''); }
       return respondJSONP({status:'error',message:'Use authenticated POST requests.'}, '');
     }
     var openActions = ['confirm_expense_page', 'submit_confirmed_expense'];
@@ -945,9 +945,8 @@ function handleWriteInner_(data) {
       if (!eventId) return { status: 'error', message: 'Missing event ID' };
       var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
       if (schoolEventLinks_()[eventId]) return { status: 'error', message: 'School events are linked to a reviewed plan. Edit the event in Google Calendar and adjust its preparation tasks together.' };
-      var ev = calendar.getEventById(eventId);
-      var evTitle = ev ? ev.getTitle() : '';
-      if (ev) ev.deleteEvent();
+      var target = calendarTarget_(eventId);
+      var evTitle = calendarDelete_(target);
       var calSheet = ss.getSheetByName('Calendar');
       if (calSheet) {
         var cVals = calSheet.getDataRange().getValues();
@@ -973,20 +972,10 @@ function handleWriteInner_(data) {
 
       var calendar = CalendarApp.getCalendarById(CALENDAR_ID);
       if (schoolEventLinks_()[eventId]) return { status: 'error', message: 'School events are linked to a reviewed plan. Edit the event in Google Calendar and adjust its preparation tasks together.' };
-      var ev = calendar.getEventById(eventId);
-      if (!ev) return { status: 'error', message: 'Event not found in calendar' };
-
-      // Parse new date and time from existing event
-      var startTime = ev.getStartTime();
-      var endTime = ev.getEndTime();
-      var newStart = parseEventDate(newDateStr, Utilities.formatDate(startTime, Session.getScriptTimeZone(), 'HH:mm'));
-      var newEnd = parseEventDate(newDateStr, Utilities.formatDate(endTime, Session.getScriptTimeZone(), 'HH:mm'));
-      if (ev.isAllDayEvent()) {
-        // For all-day events, we only set the new start date
-        ev.setDate(newStart, newStart);
-      } else {
-        ev.setTime(newStart, newEnd);
-      }
+      var target = calendarTarget_(eventId);
+      if (!target) return {status:'error',message:'Event not found in calendar'};
+      var movedTitle = calendarMove_(target,newDateStr);
+      var newStart = parseEventDate(newDateStr,'');
 
       // Update the Calendar sheet
       var calSheet = ss.getSheetByName('Calendar');
@@ -1000,7 +989,7 @@ function handleWriteInner_(data) {
         }
       }
       console.log('✅ Event date updated: ' + eventId + ' to ' + newDateStr);
-      recordActivity_(ss, user, 'event_edit', 'Calendar', user + ' moved event "' + ev.getTitle() + '" to ' + newDateStr);
+      recordActivity_(ss, user, 'event_edit', 'Calendar', user + ' moved event "' + movedTitle + '" to ' + newDateStr);
       return { status: 'ok' };
     }
 
@@ -1113,10 +1102,11 @@ function handleWriteInner_(data) {
       if (!validateString(desc, 200)) return { status: 'error', message: 'Description too long' };
 
       var expSheet = ss.getSheetByName('Expenses');
-      if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
+      if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note','ID','Operation Fingerprint','Status']); }
       var parsedDate = parseEventDate(date, '');
       var existing = operationRecover_(ss,operation,expSheet,6,7); if (existing) return existing;
-      expSheet.appendRow([new Date(), parsedDate, account, category, amount, schoolCell_(desc), operation ? operation.id : '', operation ? operation.fingerprint : '']);
+      var expenseId = operation ? operation.id : 'exp_'+Utilities.getUuid();
+      expSheet.appendRow([new Date(), parsedDate, account, schoolCell_(category), amount, schoolCell_(desc), expenseId, operation ? operation.fingerprint : '','']);
       // NOTE: the sheet is intentionally NOT re-sorted here. Sorting on
       // every insert shuffled every row number, so a delete sent from a
       // client that loaded before someone else's add could remove the
@@ -1124,7 +1114,7 @@ function handleWriteInner_(data) {
       // instead, so the app still shows newest-first.
       console.log('✅ Expense added');
       recordActivity_(ss, user, 'expense_add', 'Expenses', user + ' added expense: $' + amount.toFixed(2) + ' for ' + desc, category + ' (' + account + ')');
-      return operationFinish_(ss,operation,{ status: 'ok', id: operation ? operation.id : '' });
+      return operationFinish_(ss,operation,{ status: 'ok', id: expenseId });
     }
 
     // ── CHAT: Firebase-owned — never write to Sheets ──
@@ -1137,11 +1127,13 @@ function handleWriteInner_(data) {
 
     // ── EXPENSE: delete ──
     if (noteLower === 'delete_expense') {
-      var rowNum = parseInt(toStr(data.row_id));
-      if (isNaN(rowNum) || rowNum < 1) return { status: 'error', message: 'Invalid row ID' };
+      var expenseId = toStr(data.expense_id);
+      if (!expenseId) return {status:'error',message:'Refresh Expenses before deleting. A stable expense ID is required.'};
       var expSheet = ss.getSheetByName('Expenses');
-      if (expSheet) expSheet.deleteRow(rowNum);
-      console.log('✅ Expense deleted: ' + rowNum);
+      var expenseRows = expSheet ? expSheet.getDataRange().getValues() : [];
+      var expenseIndex = expenseRows.findIndex(function(r,i){return i > 0 && toStr(r[6]) === expenseId;});
+      if (expenseIndex < 1) return {status:'error',message:'Expense not found. Refresh before deleting.'};
+      expSheet.getRange(expenseIndex+1,9).setValue('Deleted');
       recordActivity_(ss, user, 'expense_delete', 'Expenses', user + ' deleted an expense');
       return { status: 'ok' };
     }
@@ -2867,7 +2859,11 @@ function handleSubmitConfirmedExpenseInner_(params) {
   for (var i = 1; i < vals.length; i++) {
     if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
   }
-  if (rowIdx === -1) return { status: 'error', message: 'This transaction was already processed' };
+  if (rowIdx === -1) {
+    var expenses = ss.getSheetByName('Expenses'), importId='bank_'+schoolHash_(id);
+    var recovered = expenses && expenses.getDataRange().getValues().some(function(r,i){return i > 0 && r[6] === importId;});
+    return {status:recovered?'ok':'error',message:'This transaction was already processed'};
+  }
 
   // Amount + date always come from the pending row (bank alert), not the form.
   var sheetDateStr = toStr(vals[rowIdx - 1][1]);
@@ -2882,9 +2878,11 @@ function handleSubmitConfirmedExpenseInner_(params) {
     var category = toStr(params.category) || toStr(vals[rowIdx - 1][3]) || 'Misc';
     if (category.length > 100) category = category.substring(0, 100);
     var expSheet = ss.getSheetByName('Expenses');
-    if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note']); }
+    if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note','ID','Operation Fingerprint','Status']); }
     var parsedDate = parseEventDate(sheetDateStr, '');
-    expSheet.appendRow([new Date(), parsedDate, account, category, sheetAmount, desc]);
+    var importId = 'bank_'+schoolHash_(id);
+    var imported = expSheet.getDataRange().getValues().some(function(r,i){return i > 0 && r[6] === importId;});
+    if (!imported) expSheet.appendRow([new Date(), parsedDate, account, schoolCell_(category), sheetAmount, schoolCell_(desc),importId,'','']);
     pendingSheet.deleteRow(rowIdx);
     return { status: 'ok', message: 'Expense of $' + sheetAmount.toFixed(2) + ' logged to ' + category + '!' };
   } else {

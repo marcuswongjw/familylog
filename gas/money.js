@@ -10,7 +10,7 @@ function getExpensesData(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
   if (!expSheet) return emptyExpensesPayload_();
-  var eVals      = expSheet.getDataRange().getValues();
+  var eVals      = expenseRows_(ss);
   var tz         = Session.getScriptTimeZone();
   var now        = new Date();
   var thisMonth  = now.getMonth();
@@ -43,6 +43,7 @@ function getExpensesData(ss) {
   var lastMonthPersonalTotal = 0;
   for (var i = 1; i < eVals.length; i++) {
     var row = eVals[i];
+    if (toStr(row[8]) === 'Deleted') continue;
     var rowDate = new Date(row[1]);
     if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
     if (isNaN(rowDate.getTime())) continue;
@@ -76,7 +77,7 @@ function getExpensesData(ss) {
         familyByCategory[cat] = (familyByCategory[cat] || 0) + amount;
       }
       rows.push({
-        rowNum: i + 1,
+        id: toStr(row[6]), rowNum: i + 1,
         date: Utilities.formatDate(rowDate, tz, 'dd MMM'),
         account: acc,
         category: cat,
@@ -124,7 +125,7 @@ function getBudgets(ss) {
     var spent = 0;
     var targetCategories = EXPENSE_GROUPS[gn] || [];
     for (var j = 1; j < eVals.length; j++) {
-      var eRow = eVals[j];
+      var eRow = eVals[j]; if (toStr(eRow[8]) === 'Deleted') continue;
       var eDate = new Date(eRow[1]); if (isNaN(eDate.getTime())) eDate = new Date(eRow[0]);
       if (eDate.getMonth() !== thisMonth || eDate.getFullYear() !== thisYear) continue;
       var eAcc = toStr(eRow[2]) || 'Family';
@@ -137,4 +138,22 @@ function getBudgets(ss) {
     budgets.push({ group: gn, budget: parseFloat(bRow[1]) || 0, spent: spent, account: budgetAcc, setBy: toStr(bRow[3]) });
   }
   return budgets;
+}
+
+// Legacy rows get immutable IDs once; deletion never shifts another client's target.
+function expenseRows_(ss) {
+  var sheet = ss.getSheetByName('Expenses');
+  if (!sheet) return [];
+  var rows = sheet.getDataRange().getValues();
+  if (!rows[0] || rows[0][6] !== 'ID' || rows[0][8] !== 'Status' || rows.some(function(r,i){return i > 0 && (r[0] || r[1] || r[5]) && !r[6];})) {
+    var lock = LockService.getScriptLock(); lock.waitLock(10000);
+    try {
+      rows = sheet.getDataRange().getValues();
+      sheet.getRange(1,7,1,3).setValues([['ID','Operation Fingerprint','Status']]);
+      var ids=rows.slice(1).map(function(r){return [r[6] || ((r[0] || r[1] || r[5]) ? 'exp_'+Utilities.getUuid() : '')];});
+      if(ids.length)sheet.getRange(2,7,ids.length,1).setValues(ids);
+      rows = sheet.getDataRange().getValues();
+    } finally { lock.releaseLock(); }
+  }
+  return rows;
 }
