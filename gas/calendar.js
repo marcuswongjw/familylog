@@ -1,9 +1,9 @@
 // Authoritative Calendar read and task reconciliation share the family writer lock.
-function calendarPreparation_(ss, strict) {
+function calendarPreparation_Measured_(ss, strict) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var lock = LockService.getScriptLock(), held = false, events;
   try {
-    lock.waitLock(30000); held = true;
+    perfStage_('lock_wait',function(){lock.waitLock(30000);}); held = true;
     events = getEvents();
     reconcileCalendarTasks_(ss, events);
     return {events:events, preparationState:'ready'};
@@ -17,7 +17,7 @@ function calendarPreparation_(ss, strict) {
 function reconcileCalendarTasks_(ss,events){
   var today=Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyy-MM-dd');
   var horizon=new Date(today+'T00:00:00Z');horizon.setUTCDate(horizon.getUTCDate()+7);var end=horizon.toISOString().slice(0,10);
-  var existing=ensureTodoIds_(ss),rows=existing.getDataRange().getValues(),sources={},desired={};
+  var existing=ensureTodoIds_(ss),rows=perfReadRows_(existing),sources={},desired={};
   rows.slice(1).forEach(function(r,i){if(r[8])sources[r[8]]={row:i+2,value:r};});
   events.forEach(function(ev){if(!ev.id||!/nat b training/i.test(ev.title||'')||!/^\d{4}-\d{2}-\d{2}$/.test(ev.dateRaw||''))return;
     var d=new Date(ev.dateRaw+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-1);var due=d.toISOString().slice(0,10),key='cal_natb_'+(ev.seriesId?schoolHash_(ev.id):toStr(ev.id).replace(/[^a-zA-Z0-9]/g,'_'));
@@ -58,7 +58,7 @@ function calendarApi_(method, path, body, etag) {
   }
   return code === 204 ? {} : JSON.parse(response.getContentText());
 }
-function getEvents() {
+function getEventsMeasured_() {
   var now = new Date(), start = new Date(now), end = new Date(now);
   start.setDate(now.getDate()-30); end.setDate(now.getDate()+90);
   var base = '?singleEvents=true&orderBy=startTime&maxResults=2500&timeMin='+encodeURIComponent(start.toISOString())+'&timeMax='+encodeURIComponent(end.toISOString());
@@ -66,6 +66,7 @@ function getEvents() {
   do {
     var page=calendarApi_('get',base+(token?'&pageToken='+encodeURIComponent(token):''));
     if (!page || (!Array.isArray(page.items) && !(page.kind === 'calendar#events' && page.items === undefined))) throw new Error('Could not read the family calendar. Please refresh again.');
+    perfCount_('calendar_pages',1);perfCount_('calendar_events',(page.items||[]).length);
     (page.items||[]).forEach(function(raw){
       if(raw.status === 'cancelled')return;
       var title=raw.summary||'',desc=raw.description||'',ical=raw.iCalUID||raw.id;

@@ -1,0 +1,20 @@
+{
+  "assets": {
+    "appJavaScript": {
+      "files": 18,
+      "rawBytes": 296546,
+      "gzipBytes": 85914
+    },
+    "styles": {
+      "files": 2,
+      "rawBytes": 89737,
+      "gzipBytes": 19083
+    },
+    "firebaseSdk": {
+      "files": 6,
+      "rawBytes": 588151,
+      "gzipBytes": 174548
+    }
+  },
+  "note": "Pass a Loading check JSON or Apps Script timing JSONL export for measured percentiles. Asset sizes are not loading-time measurements."
+}

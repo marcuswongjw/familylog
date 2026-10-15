@@ -8,14 +8,14 @@
   <meta name="apple-mobile-web-app-title" content="Wong’s Nest">
   <meta name="theme-color" content="#F8F6F2">
   <title>Wong’s Nest — Our family, together</title>
-  <link rel="manifest" href="manifest.json?v=44">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=44">
-  <link rel="shortcut icon" href="favicon.png?v=44" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=44">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=44">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=44">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=44">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=44">
+  <link rel="manifest" href="manifest.json?v=45">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=45">
+  <link rel="shortcut icon" href="favicon.png?v=45" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=45">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=45">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=45">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=45">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=45">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -26,8 +26,8 @@
   <script src="assets/firebase-storage-compat-9.23.0.js"></script>
   <script src="assets/firebase-functions-compat-9.23.0.js"></script>
   <script src="assets/firebase-messaging-compat-9.23.0.js"></script>
-  <link rel="stylesheet" href="css/styles.css?v=44">
-  <link rel="stylesheet" href="css/nest.css?v=44">
+  <link rel="stylesheet" href="css/styles.css?v=45">
+  <link rel="stylesheet" href="css/nest.css?v=45">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -334,6 +334,7 @@
     </div>
   </div>
 
+  <div class="overlay" id="m-loading-check"><div class="modal"><div class="modal-title">Loading check</div><div class="modal-body" id="loading-check-body"></div><div style="padding:16px;display:flex;gap:8px"><button class="btn btn-s" id="loading-check-refresh" onclick="measureLoadingRefresh()">Measure refresh</button><button class="btn btn-s" onclick="downloadLoadingCheck()">Download measurements</button><button class="btn btn-s" onclick="closeM('m-loading-check')">Close</button></div></div></div>
   <!-- ─── MODALS ────────────────────────────────────────── -->
 
   <!-- Add Event -->
@@ -689,21 +690,22 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/rewards-art.js?v=44"></script>
-  <script src="js/rewards.js?v=44"></script>
-  <script src="js/habits.js?v=44"></script>
-  <script src="js/school.js?v=44"></script>
-  <script src="js/nest.js?v=44"></script>
-  <script src="js/operations.js?v=44"></script>
-  <script src="js/memories.js?v=44"></script>
-  <script src="js/notifications.js?v=44"></script>
-  <script src="js/status.js?v=44"></script>
-  <script src="js/session.js?v=44"></script>
-  <script src="js/api.js?v=44"></script>
-  <script src="js/calendar.js?v=44"></script>
-  <script src="js/money.js?v=44"></script>
-  <script src="js/modals.js?v=44"></script>
-  <script src="js/parents.js?v=44"></script>
-  <script src="js/app.js?v=44"></script>
+  <script src="js/rewards-art.js?v=45"></script>
+  <script src="js/rewards.js?v=45"></script>
+  <script src="js/habits.js?v=45"></script>
+  <script src="js/school.js?v=45"></script>
+  <script src="js/nest.js?v=45"></script>
+  <script src="js/operations.js?v=45"></script>
+  <script src="js/memories.js?v=45"></script>
+  <script src="js/notifications.js?v=45"></script>
+  <script src="js/status.js?v=45"></script>
+  <script src="js/session.js?v=45"></script>
+  <script src="js/performance.js?v=45"></script>
+  <script src="js/api.js?v=45"></script>
+  <script src="js/calendar.js?v=45"></script>
+  <script src="js/money.js?v=45"></script>
+  <script src="js/modals.js?v=45"></script>
+  <script src="js/parents.js?v=45"></script>
+  <script src="js/app.js?v=45"></script>
 </body>
 </html>

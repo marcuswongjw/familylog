@@ -103,3 +103,14 @@ test('installed app shell starts offline with cached versioned assets and local 
  await page.evaluate(()=>navigator.serviceWorker.ready);await expect.poll(()=>page.evaluate(()=>!!navigator.serviceWorker.controller)).toBe(true);await context.setOffline(true);await page.reload();await expect(page.locator('#app-screen')).toHaveClass(/active/);await expect(page.locator('#connection-status')).toContainText('Offline');
  const sdk=await page.evaluate(async()=>{const r=await fetch('assets/firebase-firestore-compat-9.23.0.js');return {ok:r.ok,type:r.headers.get('content-type')}});expect(sdk.ok).toBe(true);expect(sdk.type).toContain('javascript');
 });
+
+test('Loading check shows real server stages and exports only numeric diagnostics',async({page})=>{
+ await page.evaluate(async()=>{
+  const original=fetch;window.fetch=(url,options)=>url===FAMILY_GAS_URL||url===GAS_URL?original('/api',{...options,body:JSON.stringify({...JSON.parse(options.body),email:currentUserEmail})}):original(url,options);
+  gasRequest=productionGasRequest;resetNestPerformance();await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));goTo('more');
+ });
+ await page.getByRole('button',{name:'Loading check',exact:false}).click();await expect(page.locator('#m-loading-check')).toHaveClass(/open/);await expect(page.locator('#loading-check-body')).toContainText('Server: Family overview');await expect(page.locator('#loading-check-body')).toContainText('rows scanned');
+ const report=await page.evaluate(()=>exportNestPerformance());expect(report.samples.some(s=>s.source==='server'&&s.counts.sheet_reads>0)).toBe(true);expect(report.samples.some(s=>s.source==='browser'&&s.stages.network)).toBe(true);expect(JSON.stringify(report)).not.toMatch(/marcuswong|mikaelawong|idToken|fixture-token|Pack school bag|Read for ten/);
+ const before=report.samples.filter(s=>s.endpoint==='core_ready').length;await page.getByRole('button',{name:'Measure refresh',exact:true}).click();await expect(page.getByRole('button',{name:'Measure refresh',exact:true})).toBeEnabled();expect(await page.evaluate(()=>exportNestPerformance().samples.filter(s=>s.endpoint==='core_ready').length)).toBeGreaterThan(before);
+ await page.keyboard.press('Escape');await page.evaluate(async()=>{await fixtureLogin('Mikaela');resetNestPerformance();goTo('more')});await expect(page.getByRole('button',{name:'Loading check',exact:false})).toHaveCount(0);await page.evaluate(()=>showLoadingCheck());await expect(page.locator('#m-loading-check')).not.toHaveClass(/open/);
+});

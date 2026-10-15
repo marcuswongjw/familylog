@@ -50,12 +50,11 @@ http.createServer(async(req,res)=>{
    let body='';for await(const chunk of req)body+=chunk;
    const d=JSON.parse(body), adult=h.c.isAdultEmail_(d.email);
    let result;
-   if(d.action==='get_parent_dashboard'){result=h.c.getParentDashboardData(d.email);}
-   else if(d.action==='get_all'||d.action==='get_family_dashboard'||d.action==='get_family_core'||d.action==='get_family_calendar'){
-    const all=h.c.getTodos(h.ss,d.email,true);
-    const links=h.c.schoolEventLinks_();
-    result={rewards:h.c.getRewards_(h.ss),habits:h.c.getHabits(h.ss,d.email),habitLogs:h.c.getHabitLogs(h.ss,d.email),todos:all.filter(t=>t.status!=='Done'),completedTasks:all.filter(t=>t.status==='Done'),schoolTasks:all.filter(t=>t.sourceId),schoolPlans:h.c.schoolReadPlans_(h.ss,adult),events:h.c.getEvents(),isAdult:adult,memberName:h.c.memberNameFromEmail_(d.email),expenses:{total:0},expenseGroups:{},bucketList:[]};
-    if(d.action==='get_family_core')delete result.events;
+   if(['get_parent_dashboard','get_all','get_family_dashboard','get_family_core','get_family_calendar'].includes(d.action)){
+    const previous=h.c.FAMILY_BACKEND_MODE_;h.c.FAMILY_BACKEND_MODE_=d.action!=='get_parent_dashboard';
+    h.c.ContentService={MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>JSON.parse(text)})};
+    h.c.verifyFirebaseToken=()=>h.c.perfStage_('auth',()=>h.c.isAllowedEmail_(d.email)?d.email:null);
+    try{result=h.c.doPost({postData:{contents:JSON.stringify(d)}});}finally{h.c.FAMILY_BACKEND_MODE_=previous;}
    }else if(d.action==='get_rewards')result={status:'ok',rewards:h.c.getRewards_(h.ss)};
    else result=h.write(d,d.email);
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;

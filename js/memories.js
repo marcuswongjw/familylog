@@ -53,12 +53,15 @@ function startMemoriesListener(){
   const account=currentUserEmail,generation=sessionGeneration,revision=++memoryListenerRevision;
   let query=db.collection('memories').orderBy('timestamp','desc');
   query=memoryBoundary?query.endAt(memoryBoundary):query.limit(MEMORY_PAGE_SIZE);
+  const readyTiming=typeof startNestTiming==='function'?startNestTiming('memories_ready','load'):null;let firstSnapshot=true;
   memoriesUnsubscribe=query.onSnapshot(snapshot=>{
     if(account!==currentUserEmail||generation!==sessionGeneration||revision!==memoryListenerRevision)return;
     memoryOlder.clear();
     memoryLatest=new Map(snapshot.docs.map(doc=>[doc.id,memoryFromDoc(doc)]));
     if(!memoryBoundary&&!memoryLoadingOlder){memoryCursor=snapshot.docs.at(-1)||null;memoryHasMore=snapshot.docs.length===MEMORY_PAGE_SIZE;}
+    if(firstSnapshot&&readyTiming)advanceNestTiming(readyTiming,'render');
     mergeMemoryPages();
+    if(firstSnapshot&&readyTiming)finishNestTiming(readyTiming);firstSnapshot=false;
   },()=>{if(account===currentUserEmail&&generation===sessionGeneration&&revision===memoryListenerRevision)showError('Could not load memories.');});
 }
 function stopMemoriesListener(){memoryListenerRevision++;if(memoriesUnsubscribe){memoriesUnsubscribe();memoriesUnsubscribe=null;}}

@@ -174,3 +174,6 @@ Deployment includes Apps Script, Firebase Functions and Firestore/Storage rules,
 Run `npm test`, `npm run test:browser`, and (with Java 21) `npm run test:rules`. CI runs these on pushes/PRs; production publishing is a separate manually dispatched workflow after verification. See [testing and deployment](docs/testing-and-deployment.md) for mock/emulator boundaries, failure traces and backend credential setup.
 
 Session reset, API requests, calendar/money views, memories and modal behavior now live in separate client modules. Apps Script has separate auth, calendar, tasks, money and rewards files under `gas/`; deploy them together. The header status shows offline/last-refreshed state, and offline reward writes are refused rather than queued. Generic modals trap keyboard focus, close with Escape/backdrop and return focus to their opener.
+
+
+Parents can open **More → Loading check** to view this tab’s loading timings and download a numbers-only report. It measures browser stages, server work and rows scanned without collecting household records. See [loading measurements](docs/performance-measurements.md) before interpreting small samples or planning another infrastructure change.

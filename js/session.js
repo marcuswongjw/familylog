@@ -1,4 +1,5 @@
     function clearSessionState() {
+      if(typeof resetNestPerformance==='function')resetNestPerformance();
       if(typeof resetConnectionStatus==='function')resetConnectionStatus();
       sessionGeneration++; dashboardGeneration++;
       if (_pendingUndo) { clearTimeout(_pendingUndo.timer); _pendingUndo = null; }

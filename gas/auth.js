@@ -16,7 +16,7 @@ function memberNameFromEmail_(email) {
 // ─── EXPENSE APPROVAL SIGNING ─────────────────────────────
 // Links in approval emails carry id + exp + HMAC so guessing pending
 // IDs is not enough to approve/reject expenses.
-function verifyFirebaseToken(idToken) {
+function verifyFirebaseTokenMeasured_(idToken) {
   if (!idToken) {
     console.log('❌ No token provided');
     return null;

@@ -17,7 +17,7 @@ function appHTML(source,mode){
    if(!parents&&privatePages.includes(page))return false;
    if(parents&&page==='home')node.childNodes=html.parseFragment('<div class="sec-body"></div>').childNodes;
   }
-  if(classes.includes('overlay')&&(parents?!privateModals.includes(id):privateModals.includes(id)))return false;
+  if(classes.includes('overlay')&&id!=='m-loading-check'&&(parents?!privateModals.includes(id):privateModals.includes(id)))return false;
   if(classes.includes('drawer-item')){
    const match=attr(node,'onclick').match(/navigateDrawer\('([^']+)'\)/);
    if(match&&(parents?!privatePages.includes(match[1]):privatePages.includes(match[1])))return false;

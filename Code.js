@@ -247,7 +247,7 @@ function sendMorningDigest(now) {
 
   var tdSheet = ss.getSheetByName('ToDo');
   if (tdSheet) {
-    var tdVals = tdSheet.getDataRange().getValues(); var taskItems = '';
+    var tdVals = perfReadRows_(tdSheet); var taskItems = '';
     for (var i = 1; i < tdVals.length; i++) {
       var row = tdVals[i];
       if (!row || ['done', 'deleted'].indexOf(toStr(row[5]).toLowerCase()) !== -1) continue;
@@ -324,7 +324,7 @@ function sendNightBeforeDigest(now) {
   var tdSheet = ss.getSheetByName('ToDo');
   var openTasks = [];
   if (tdSheet) {
-    var tdVals = tdSheet.getDataRange().getValues();
+    var tdVals = perfReadRows_(tdSheet);
     for (var i = 1; i < tdVals.length; i++) {
       var row = tdVals[i];
       if (!row || ['done', 'deleted'].indexOf(toStr(row[5]).toLowerCase()) !== -1) continue;
@@ -371,7 +371,7 @@ function getDailyVerse() {
 function sendExpenseSummary(now) {
   var ss       = SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses'); if (!expSheet) return;
-  var eVals    = expSheet.getDataRange().getValues();
+  var eVals    = perfReadRows_(expSheet);
   var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
   var totals = {}; var byAccount = {}; var monthTotal = 0;
   for (var i = 1; i < eVals.length; i++) {
@@ -400,7 +400,7 @@ function sendExpenseReport(now) {
   var expSheet    = ss.getSheetByName('Expenses'); if (!expSheet) return;
   var lastMonth   = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   var targetMonth = lastMonth.getMonth(); var targetYear = lastMonth.getFullYear();
-  var eVals = expSheet.getDataRange().getValues();
+  var eVals = perfReadRows_(expSheet);
   var totals = {}; var byAccount = {}; var monthTotal = 0; var allRows = [];
   for (var i = 1; i < eVals.length; i++) {
     var row = eVals[i]; if (toStr(row[8]) === 'Deleted') continue; var rowDate = new Date(row[1]); if (isNaN(rowDate.getTime())) rowDate = new Date(row[0]);
@@ -448,7 +448,7 @@ function checkUpcomingBirthdays() {
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
   var bdSheet = ss.getSheetByName('Birthdays');
   if (!bdSheet) return;
-  var bdVals = bdSheet.getDataRange().getValues();
+  var bdVals = perfReadRows_(bdSheet);
   if (bdVals.length <= 1) return;
 
   var now      = new Date();
@@ -490,8 +490,8 @@ function checkBudgetAlerts() {
   var bdgSheet = ss.getSheetByName('Budgets');
   var expSheet = ss.getSheetByName('Expenses');
   if (!bdgSheet || !expSheet) return [];
-  var bdgVals = bdgSheet.getDataRange().getValues();
-  var expVals = expSheet.getDataRange().getValues();
+  var bdgVals = perfReadRows_(bdgSheet);
+  var expVals = perfReadRows_(expSheet);
   if (bdgVals.length <= 1 || expVals.length <= 1) return [];
 
   var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
@@ -597,7 +597,7 @@ function estimateCycleLengthDays_(periodStarts) {
 function checkFertilityNotifications(now) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var fertSheet = ss.getSheetByName('Fertility'); if (!fertSheet) return;
-  var fertVals  = fertSheet.getDataRange().getValues();
+  var fertVals  = perfReadRows_(fertSheet);
   var starts    = getPeriodStarts_(fertVals);
   if (starts.length === 0) return;
   var lastPeriodStart = starts[starts.length - 1];
@@ -636,7 +636,7 @@ function processRecurringExpenses() {
   var ss       = SpreadsheetApp.getActiveSpreadsheet();
   var recSheet = ss.getSheetByName('RecurringExpenses');
   if (!recSheet) return;
-  var recVals = recSheet.getDataRange().getValues();
+  var recVals = perfReadRows_(recSheet);
   if (recVals.length <= 1) return;
 
   var expSheet = ss.getSheetByName('Expenses');
@@ -761,65 +761,64 @@ function doGet(e) {
   }
 }
 
-function doPost(e) {
+function doPostInner_(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-    if (data.action === 'verify_reminder_snapshot') return ContentService.createTextOutput(JSON.stringify({status:!FAMILY_BACKEND_MODE_ && reminderAuthorized_(data) ? 'ok' : 'error'})).setMimeType(ContentService.MimeType.JSON);
-    if (data.action === 'reminder_snapshot' || data.action === 'prepare_family_tasks') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
+    if(perfContext_)perfContext_.endpoint=PERF_ENDPOINTS_.indexOf(data.action)>=0?data.action:'other';
+    if (data.action === 'verify_reminder_snapshot') return perfJson_({status:!FAMILY_BACKEND_MODE_ && reminderAuthorized_(data) ? 'ok' : 'error'});
+    if (data.action === 'reminder_snapshot' || data.action === 'prepare_family_tasks') return perfJson_(reminderSnapshot_(data));
     // The token is mandatory. The old check only ran `if (data.idToken)`,
     // so omitting the token skipped verification entirely — an
     // unauthenticated write path for anyone who knew the URL.
     var verified = verifyFirebaseToken(data.idToken);
     if (!verified) {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return perfJson_({ status: 'error', message: 'Unauthorized' });
     }
 
+    if(perfContext_)perfContext_.adult=isAdultEmail_(verified);
     // Prefer POST for all app traffic so idTokens never appear in URLs / proxy logs.
     var action = toStr(data.action).toLowerCase().trim();
     if (FAMILY_BACKEND_MODE_) {
       if (action === 'get_all') action = 'get_family_dashboard';
-      if (!familyReadAction_(action) && !(action === 'write' && familyWriteNote_(data.note))) return ContentService.createTextOutput(JSON.stringify({status:'error',message:'Unavailable in family service'})).setMimeType(ContentService.MimeType.JSON);
+      if (!familyReadAction_(action) && !(action === 'write' && familyWriteNote_(data.note))) return perfJson_({status:'error',message:'Unavailable in family service'});
     } else if (FAMILY_SERVICE_FORWARDING_ && familyReadAction_(action)) {
-      return ContentService.createTextOutput(JSON.stringify(familyForward_(data))).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_(familyForward_(data));
     }
     if (action === 'get_all') {
-      if (FAMILY_SERVICE_FORWARDING_) return ContentService.createTextOutput(JSON.stringify(legacySplitDashboard_(data,verified))).setMimeType(ContentService.MimeType.JSON);
-      return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified)))
-        .setMimeType(ContentService.MimeType.JSON);
+      if (FAMILY_SERVICE_FORWARDING_) return perfJson_(legacySplitDashboard_(data,verified));
+      return perfJson_(getAllDashboardData(verified));
     }
 
     if (action === 'get_family_dashboard' || action === 'get_parent_dashboard') {
       var dashboard = action === 'get_family_dashboard' ? getAllDashboardData(verified, 'family') : getParentDashboardData(verified);
-      return ContentService.createTextOutput(JSON.stringify(dashboard)).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_(dashboard);
     }
 
     if (action === 'get_family_core') {
-      return ContentService.createTextOutput(JSON.stringify(getAllDashboardData(verified, 'family-core'))).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_(getAllDashboardData(verified, 'family-core'));
     }
     if (action === 'get_family_calendar') {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var preparation = calendarPreparation_(ss, false), events = preparation.events;
       var tasks = getTodos(ss, verified, true);
-      return ContentService.createTextOutput(JSON.stringify({status:'ok',preparationState:preparation.preparationState,dataWarnings:schoolRecordWarnings_(ss,isAdultEmail_(verified)),events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})})).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_({status:'ok',preparationState:preparation.preparationState,dataWarnings:schoolRecordWarnings_(ss,isAdultEmail_(verified)),events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})});
     }
 
     if (action === 'get_events' || action === 'get_todos' || action === 'get_birthdays') {
       var rows = action === 'get_events' ? memberEvents_(getEvents(),verified) : action === 'get_todos' ? getTodos(null,verified) : getBirthdays();
-      return ContentService.createTextOutput(JSON.stringify(rows)).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_(rows);
     }
     if (action === 'get_rewards') {
-      return ContentService.createTextOutput(JSON.stringify({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())})).setMimeType(ContentService.MimeType.JSON);
+      return perfJson_({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())});
     }
 
     // Default: write (note field). Explicit action=write also accepted.
     data._verifiedEmail = verified;
     var result = handleWrite(data);
-    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+    return perfJson_(result);
   } catch (err) {
     console.log('❌ doPost error: ' + err.stack);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Internal server error' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return perfJson_({ status: 'error', message: 'Internal server error' });
   }
 }
 
@@ -834,7 +833,7 @@ function handleWrite(data) {
   if (!FAMILY_BACKEND_MODE_ && FAMILY_SERVICE_FORWARDING_ && familyWriteNote_(data.note)) return familyForward_(Object.assign({},data,{action:'write'}));
   var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    perfStage_('lock_wait',function(){lock.waitLock(10000);});
   } catch (e) {
     return { status: 'error', message: 'Server busy — please try again in a moment.' };
   }
@@ -939,7 +938,7 @@ function handleWriteInner_(data) {
       if (!calSheet) { calSheet = ss.insertSheet('Calendar'); calSheet.appendRow(['Title', 'Date', 'Time', 'Added By', 'Notes', 'Google Event ID']); }
       var calNotes = eventNotes;
       if (eventLocation) calNotes = (calNotes ? calNotes + '\n' : '') + 'Location: ' + eventLocation;
-      var calendarRows = calSheet.getDataRange().getValues();
+      var calendarRows = perfReadRows_(calSheet);
       if (!calendarRows.some(function(r,i){return i>0 && r[5]===createdEvent.getId();})) calSheet.appendRow([schoolCell_(title), startDate, timeStr, user, schoolCell_(calNotes), createdEvent.getId(), operation ? operation.fingerprint : '', member]);
       console.log('✅ Event added: ' + title + (member ? ' [' + member + ']' : ''));
       recordActivity_(ss, user, 'event_add', 'Calendar', user + ' added event: "' + title + '" on ' + dateStr, (member ? 'For ' + member : ''));
@@ -956,7 +955,7 @@ function handleWriteInner_(data) {
       var evTitle = calendarDelete_(target);
       var calSheet = ss.getSheetByName('Calendar');
       if (calSheet) {
-        var cVals = calSheet.getDataRange().getValues();
+        var cVals = perfReadRows_(calSheet);
         for (var ci = 1; ci < cVals.length; ci++) {
           if (toStr(cVals[ci][5]) === eventId) {
             if (!evTitle && cVals[ci][0]) evTitle = toStr(cVals[ci][0]);
@@ -987,7 +986,7 @@ function handleWriteInner_(data) {
       // Update the Calendar sheet
       var calSheet = ss.getSheetByName('Calendar');
       if (calSheet) {
-        var cVals = calSheet.getDataRange().getValues();
+        var cVals = perfReadRows_(calSheet);
         for (var ci = 1; ci < cVals.length; ci++) {
           if (toStr(cVals[ci][5]) === eventId) {
             calSheet.getRange(ci + 1, 2).setValue(newStart);
@@ -1030,7 +1029,7 @@ function handleWriteInner_(data) {
     if (['complete_todo', 'delete_todo', 'help_todo'].indexOf(noteLower) !== -1) {
       var tdSheet = ensureTodoIds_(ss);
       var taskId = toStr(data.todo_id);
-      var rows = tdSheet.getDataRange().getValues();
+      var rows = perfReadRows_(tdSheet);
       var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[7] === taskId; });
       if (rowIndex < 1) return { status: 'error', message: 'Task not found. Refresh the app before trying again.' };
       var taskRow = rows[rowIndex];
@@ -1072,7 +1071,7 @@ function handleWriteInner_(data) {
       if (FAMILY_MEMBERS.indexOf(assignee) === -1) return { status: 'error', message: 'Invalid assignee' };
 
       var tdSheet = ensureTodoIds_(ss);
-      var rows = tdSheet.getDataRange().getValues();
+      var rows = perfReadRows_(tdSheet);
       var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[7] === taskId; });
       if (rowIndex < 1) return { status: 'error', message: 'Task not found. Refresh the app before trying again.' };
       var taskRow = rows[rowIndex];
@@ -1138,7 +1137,7 @@ function handleWriteInner_(data) {
       var expenseId = toStr(data.expense_id);
       if (!expenseId) return {status:'error',message:'Refresh Expenses before deleting. A stable expense ID is required.'};
       var expSheet = ss.getSheetByName('Expenses');
-      var expenseRows = expSheet ? expSheet.getDataRange().getValues() : [];
+      var expenseRows = expSheet ? perfReadRows_(expSheet) : [];
       var expenseIndex = expenseRows.findIndex(function(r,i){return i > 0 && toStr(r[6]) === expenseId;});
       if (expenseIndex < 1) return {status:'error',message:'Expense not found. Refresh before deleting.'};
       expSheet.getRange(expenseIndex+1,9).setValue('Deleted');
@@ -1207,7 +1206,7 @@ function handleWriteInner_(data) {
 
       var bdgSheet = ss.getSheetByName('Budgets');
       if (!bdgSheet) { bdgSheet = ss.insertSheet('Budgets'); bdgSheet.appendRow(['Group', 'Monthly Budget', 'Account', 'Set By', 'Updated At']); }
-      var bdgVals = bdgSheet.getDataRange().getValues();
+      var bdgVals = perfReadRows_(bdgSheet);
       var found = false;
       for (var i = 1; i < bdgVals.length; i++) {
         if (toStr(bdgVals[i][0]).toLowerCase() === group.toLowerCase() &&
@@ -1231,7 +1230,7 @@ function handleWriteInner_(data) {
       if (!group) return { status: 'error', message: 'Group name required' };
       var bdgSheet = ss.getSheetByName('Budgets');
       if (bdgSheet) {
-        var bdgVals = bdgSheet.getDataRange().getValues();
+        var bdgVals = perfReadRows_(bdgSheet);
         for (var i = 1; i < bdgVals.length; i++) {
           if (toStr(bdgVals[i][0]).toLowerCase() === group.toLowerCase() &&
               toStr(bdgVals[i][2] || 'Family').toLowerCase() === budgetAcc.toLowerCase()) {
@@ -1384,7 +1383,7 @@ function handleWriteInner_(data) {
       if (!delId) return { status: 'error', message: 'Missing id' };
       var delSheet = ss.getSheetByName('IntimacyLog');
       if (!delSheet) return { status: 'error', message: 'Not found' };
-      var delVals = delSheet.getDataRange().getValues();
+      var delVals = perfReadRows_(delSheet);
       for (var di = 1; di < delVals.length; di++) {
         if (toStr(delVals[di][0]) === delId) {
           delSheet.deleteRow(di + 1);
@@ -1418,7 +1417,7 @@ function handleWriteInner_(data) {
       if (!id) return { status: 'error', message: 'Item ID required' };
       var bucketSheet = ss.getSheetByName('BucketList');
       if (!bucketSheet) return { status: 'error', message: 'BucketList sheet not found' };
-      var vals = bucketSheet.getDataRange().getValues();
+      var vals = perfReadRows_(bucketSheet);
       var foundRow = -1;
       for (var bi = 1; bi < vals.length; bi++) {
         if (toStr(vals[bi][0]) === id) { foundRow = bi + 1; break; }
@@ -1442,7 +1441,7 @@ function handleWriteInner_(data) {
       if (!id) return { status: 'error', message: 'Item ID required' };
       var bucketSheet = ss.getSheetByName('BucketList');
       if (!bucketSheet) return { status: 'error', message: 'BucketList sheet not found' };
-      var vals = bucketSheet.getDataRange().getValues();
+      var vals = perfReadRows_(bucketSheet);
       for (var bi = 1; bi < vals.length; bi++) {
         if (toStr(vals[bi][0]) === id) { bucketSheet.deleteRow(bi + 1); break; }
       }
@@ -1454,7 +1453,7 @@ function handleWriteInner_(data) {
     if (noteLower === 'log_habit') {
       var sheets = ensureHabitSheets_(ss);
       var habitId = toStr(data.habit_id);
-      var definition = sheets.habits.getDataRange().getValues().find(function(r, i) { return i > 0 && r[0] === habitId; });
+      var definition = perfReadRows_(sheets.habits).find(function(r, i) { return i > 0 && r[0] === habitId; });
       if (!definition) return { status: 'error', message: 'Choose an existing habit.' };
       // The definition controls identity; caller-supplied member/habit cannot spoof rewards.
       var assigned = habitMembers_(definition[1]);
@@ -1470,14 +1469,14 @@ function handleWriteInner_(data) {
       if (dateStr > today) return { status: 'error', message: 'Log your habit after you have done it.' };
       var notes = toStr(data.notes);
       if (notes.length > 1000) return { status: 'error', message: 'Keep notes under 1,000 characters.' };
-      var existing = sheets.logs.getDataRange().getValues().find(function(r, i) {
+      var existing = perfReadRows_(sheets.logs).find(function(r, i) {
         var day = r[4] instanceof Date ? Utilities.formatDate(r[4], 'Asia/Singapore', 'yyyy-MM-dd') : toStr(r[4]);
         return i > 0 && r[1] === habitId && r[2] === member && day === dateStr;
       });
       var logId = existing ? toStr(existing[0]) : Utilities.getUuid();
       if (!existing) sheets.logs.appendRow([logId, habitId, member, schoolCell_(habit), dateStr, schoolCell_(notes), user, new Date()]);
       SpreadsheetApp.flush();
-      var eligible = habitScheduled_(definition, dateStr, member, sheets.logs.getDataRange().getValues());
+      var eligible = habitScheduled_(definition, dateStr, member, perfReadRows_(sheets.logs));
       var award = dateStr === today && eligible ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
       if (!existing) {
         var logger = (user === member ? user : user + ' for ' + member);
@@ -1493,7 +1492,7 @@ function handleWriteInner_(data) {
       var logId = toStr(data.id || data.log_id);
       if (!logId) return { status: 'error', message: 'Log ID required' };
       var sheets = ensureHabitSheets_(ss);
-      var rows = sheets.logs.getDataRange().getValues();
+      var rows = perfReadRows_(sheets.logs);
       var rowIndex = rows.findIndex(function(r, i) { return i > 0 && r[0] === logId; });
       if (rowIndex < 1) return { status: 'error', message: 'Log entry not found' };
       var parent = isAdultEmail_(verifiedEmail);
@@ -1511,7 +1510,7 @@ function handleWriteInner_(data) {
     // Habit lifecycle preserves IDs, logs and the immutable reward ledger.
     if (noteLower === 'add_habit' || noteLower === 'edit_habit') {
       var sheets = ensureHabitSheets_(ss), parent = isAdultEmail_(verifiedEmail);
-      var habitId = toStr(data.habit_id), rows = sheets.habits.getDataRange().getValues();
+      var habitId = toStr(data.habit_id), rows = perfReadRows_(sheets.habits);
       var index = rows.findIndex(function(r,i){return i > 0 && r[0] === habitId;});
       var editing = noteLower === 'edit_habit';
       if (editing && index < 1) return { status:'error', message:'Habit not found. Refresh before editing.' };
@@ -1544,7 +1543,7 @@ function handleWriteInner_(data) {
     if (noteLower === 'set_habit_state' || noteLower === 'delete_habit') {
       if (!isAdultEmail_(verifiedEmail)) return {status:'error',message:'Only parents can pause or archive habits.'};
       var sheets = ensureHabitSheets_(ss), habitId = toStr(data.habit_id || data.id);
-      var index = sheets.habits.getDataRange().getValues().findIndex(function(r,i){return i > 0 && r[0] === habitId;});
+      var index = perfReadRows_(sheets.habits).findIndex(function(r,i){return i > 0 && r[0] === habitId;});
       if (index < 1) return {status:'error',message:'Habit not found.'};
       var state = noteLower === 'delete_habit' ? 'archived' : toStr(data.state);
       if (['active','paused','archived'].indexOf(state) < 0) return {status:'error',message:'Choose active, paused or archived.'};
@@ -1581,7 +1580,7 @@ function recordActivity_(ss, user, action, category, description, details) {
   }
 }
 
-function getActivityLog(ss, allTodos, habitLogs, scope) {
+function getActivityLogMeasured_(ss, allTodos, habitLogs, scope) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var list = [];
   var seen = {};
@@ -1589,8 +1588,8 @@ function getActivityLog(ss, allTodos, habitLogs, scope) {
   var sheet = ss.getSheetByName(activitySheetName_());
   if (!sheet && FAMILY_BACKEND_MODE_) sheet = ss.getSheetByName('ActivityLog');
   if (sheet) {
-    var vals = sheet.getDataRange().getValues();
-    if (FAMILY_BACKEND_MODE_) { var legacy = ss.getSheetByName('ActivityLog'); if (legacy && legacy !== sheet) vals = [vals[0]].concat(legacy.getDataRange().getValues().slice(1), vals.slice(1)); }
+    var vals = perfReadRows_(sheet);
+    if (FAMILY_BACKEND_MODE_) { var legacy = ss.getSheetByName('ActivityLog'); if (legacy && legacy !== sheet) vals = [vals[0]].concat(perfReadRows_(legacy).slice(1), vals.slice(1)); }
     for (var i = vals.length - 1; i >= 1 && list.length < 50; i--) {
       var r = vals[i];
       if (!r[0]) continue;
@@ -1683,7 +1682,7 @@ function getActivityLog(ss, allTodos, habitLogs, scope) {
   return list.slice(0, 50);
 }
 
-function getAllDashboardData(verifiedEmail, scope) {
+function getAllDashboardDataMeasured_(verifiedEmail, scope) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
   var coreOnly = scope === 'family-core';
@@ -1731,7 +1730,7 @@ function getAllDashboardData(verifiedEmail, scope) {
   };
 }
 
-function getBucketList(ss) {
+function getBucketListMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('BucketList');
   if (!sheet) {
@@ -1740,7 +1739,7 @@ function getBucketList(ss) {
     sheet.appendRow(['ID', 'Item', 'AddedBy', 'Completed', 'CompletedAt']);
     return [];
   }
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   var result = [];
   for (var i = 1; i < vals.length; i++) {
     var row = vals[i];
@@ -1764,7 +1763,7 @@ function ensureHabitSheets_(ss) {
     hSheet.appendRow(['ID', 'Member', 'Habit', 'Emoji', 'CreatedBy', 'CreatedAt']);
     hSheet.appendRow(['default_meaghan_violin', 'Meaghan', 'Violin practice', '🎻', 'System', new Date()]);
   }
-  if (hSheet.getDataRange().getValues()[0][6] !== 'Schedule') hSheet.getRange(1, 7, 1, 5).setValues([['Schedule', 'Weekdays', 'WeeklyTarget', 'State', 'UpdatedAt']]);
+  if (perfReadRows_(hSheet)[0][6] !== 'Schedule') hSheet.getRange(1, 7, 1, 5).setValues([['Schedule', 'Weekdays', 'WeeklyTarget', 'State', 'UpdatedAt']]);
   var hlSheet = ss.getSheetByName('HabitLogs');
   if (!hlSheet) {
     hlSheet = ss.insertSheet('HabitLogs');
@@ -1792,10 +1791,10 @@ function habitScheduled_(definition, date, member, logs) {
   return Object.keys(days).length < (Number(definition[8]) || 3);
 }
 
-function getHabits(ss, verifiedEmail) {
+function getHabitsMeasured_(ss, verifiedEmail) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ensureHabitSheets_(ss);
-  var rows = sheets.habits.getDataRange().getValues();
+  var rows = perfReadRows_(sheets.habits);
   var result = [];
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
@@ -1815,10 +1814,10 @@ function getHabits(ss, verifiedEmail) {
   return result;
 }
 
-function getHabitLogs(ss, verifiedEmail) {
+function getHabitLogsMeasured_(ss, verifiedEmail) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ensureHabitSheets_(ss);
-  var rows = sheets.logs.getDataRange().getValues();
+  var rows = perfReadRows_(sheets.logs);
   var tz = Session.getScriptTimeZone();
   var result = [];
   var cutoff = new Date();
@@ -1849,7 +1848,7 @@ function getBirthdays(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var bdSheet = ss.getSheetByName('Birthdays');
   if (!bdSheet) return [];
-  var bdVals = bdSheet.getDataRange().getValues();
+  var bdVals = perfReadRows_(bdSheet);
   var now    = new Date(); var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   var tz     = Session.getScriptTimeZone();
   var result = [];
@@ -1881,7 +1880,7 @@ function getMemoriesLegacySheet_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var memSheet = ss.getSheetByName('Memories');
   if (!memSheet) return [];
-  var memVals = memSheet.getDataRange().getValues();
+  var memVals = perfReadRows_(memSheet);
   var tz      = Session.getScriptTimeZone();
   var result  = [];
   for (var i = 1; i < memVals.length; i++) {
@@ -1904,11 +1903,11 @@ function getMemoriesLegacySheet_(ss) {
   return result.slice(0, 200);
 }
 
-function getFertilityData(ss) {
+function getFertilityDataMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var fertSheet = ss.getSheetByName('Fertility');
   if (!fertSheet) return {};
-  var fertVals        = fertSheet.getDataRange().getValues();
+  var fertVals        = perfReadRows_(fertSheet);
   var lastPeriodStart = null;
   var lastOvulation = null;
   var symptoms = [];
@@ -1991,11 +1990,11 @@ function getFertilityData(ss) {
   return result;
 }
 
-function getRecurring(ss) {
+function getRecurringMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var recSheet = ss.getSheetByName('RecurringExpenses');
   if (!recSheet) return [];
-  var recVals = recSheet.getDataRange().getValues();
+  var recVals = perfReadRows_(recSheet);
   var now     = new Date(); var today = now.getDate();
   var result  = [];
   for (var i = 1; i < recVals.length; i++) {
@@ -2016,7 +2015,7 @@ function getTravelData(ss) {
     travelSheet = ss.insertSheet('Travel');
     travelSheet.appendRow(['ID', 'Date', 'City', 'Country', 'Lat', 'Lng', 'Members', 'Notes', 'Timestamp']);
   }
-  var vals = travelSheet.getDataRange().getValues();
+  var vals = perfReadRows_(travelSheet);
   var tz = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < vals.length; i++) {
@@ -2040,14 +2039,14 @@ function getTravelData(ss) {
   return result;
 }
 
-function getAppreciationsData(ss) {
+function getAppreciationsDataMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('Appreciations');
   if (!sheet) {
     sheet = ss.insertSheet('Appreciations');
     sheet.appendRow(['Timestamp', 'Sender', 'Recipient', 'Message', 'RevealDate']);
   }
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   var tz = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < vals.length; i++) {
@@ -2066,14 +2065,14 @@ function getAppreciationsData(ss) {
   return result;
 }
 
-function getLoveCheckinsData(ss) {
+function getLoveCheckinsDataMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('LoveCheckins');
   if (!sheet) {
     sheet = ss.insertSheet('LoveCheckins');
     sheet.appendRow(['Timestamp', 'User', 'Battery', 'Moods', 'Notes', 'Focus']);
   }
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   var tz = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < vals.length; i++) {
@@ -2094,7 +2093,7 @@ function getLoveCheckinsData(ss) {
 }
 
 /** Private couple intimacy log (adults only). */
-function getIntimacyLogData(ss) {
+function getIntimacyLogDataMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('IntimacyLog');
   if (!sheet) {
@@ -2102,7 +2101,7 @@ function getIntimacyLogData(ss) {
     sheet.appendRow(['ID', 'Timestamp', 'LoggedBy', 'Date', 'Notes', 'Rating']);
     return [];
   }
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   var tz = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < vals.length; i++) {
@@ -2502,7 +2501,7 @@ function parseGenericExpense(body, msg) {
 // ---- DUPLICATE DETECTION (with txRef fallback) ----
 function findDuplicateInPending(sheet, amount, dateStr, merchant, txRef) {
   if (!sheet) return null;
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   if (vals.length <= 1) return null;
   var targetDate = parseEventDate(dateStr, '');
   if (!targetDate) return null;
@@ -2529,7 +2528,7 @@ function findDuplicateInPending(sheet, amount, dateStr, merchant, txRef) {
 
 function findDuplicateInExpenses(sheet, amount, dateStr, merchant, txRef) {
   if (!sheet) return null;
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   if (vals.length <= 1) return null;
   var targetDate = parseEventDate(dateStr, '');
   if (!targetDate) return null;
@@ -2672,7 +2671,7 @@ function proposeExpenseDetails(merchant) {
   var category = '';
   var account = 'Family';
   if (expSheet) {
-    var vals = expSheet.getDataRange().getValues();
+    var vals = perfReadRows_(expSheet);
     var mLower = merchant.toLowerCase();
     for (var i = vals.length - 1; i >= 1; i--) {
       var pastNote = toStr(vals[i][5]).toLowerCase();
@@ -2741,7 +2740,7 @@ function renderConfirmExpensePage(id, exp, sig) {
     return HtmlService.createHtmlOutput('<h3 style="font-family:sans-serif;text-align:center;margin-top:50px;color:#d9534f;">Error: PendingExpenses sheet not found.</h3>')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
-  var vals = sheet.getDataRange().getValues();
+  var vals = perfReadRows_(sheet);
   var rowIdx = -1;
   for (var i = 1; i < vals.length; i++) {
     if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
@@ -2851,7 +2850,7 @@ function handleSubmitConfirmedExpense(params) {
   // with other writes.
   var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    perfStage_('lock_wait',function(){lock.waitLock(10000);});
   } catch (e) {
     return { status: 'error', message: 'Server busy — please try again in a moment.' };
   }
@@ -2873,14 +2872,14 @@ function handleSubmitConfirmedExpenseInner_(params) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendingSheet = ss.getSheetByName('PendingExpenses');
   if (!pendingSheet) return { status: 'error', message: 'PendingExpenses sheet not found' };
-  var vals = pendingSheet.getDataRange().getValues();
+  var vals = perfReadRows_(pendingSheet);
   var rowIdx = -1;
   for (var i = 1; i < vals.length; i++) {
     if (toStr(vals[i][0]) === id) { rowIdx = i + 1; break; }
   }
   if (rowIdx === -1) {
     var expenses = ss.getSheetByName('Expenses'), importId='bank_'+schoolHash_(id);
-    var recovered = expenses && expenses.getDataRange().getValues().some(function(r,i){return i > 0 && r[6] === importId;});
+    var recovered = expenses && perfReadRows_(expenses).some(function(r,i){return i > 0 && r[6] === importId;});
     return {status:recovered?'ok':'error',message:'This transaction was already processed'};
   }
 
@@ -2900,7 +2899,7 @@ function handleSubmitConfirmedExpenseInner_(params) {
     if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note','ID','Operation Fingerprint','Status']); }
     var parsedDate = parseEventDate(sheetDateStr, '');
     var importId = 'bank_'+schoolHash_(id);
-    var imported = expSheet.getDataRange().getValues().some(function(r,i){return i > 0 && r[6] === importId;});
+    var imported = perfReadRows_(expSheet).some(function(r,i){return i > 0 && r[6] === importId;});
     if (!imported) expSheet.appendRow([new Date(), parsedDate, account, schoolCell_(category), sheetAmount, schoolCell_(desc),importId,'','']);
     pendingSheet.deleteRow(rowIdx);
     return { status: 'ok', message: 'Expense of $' + sheetAmount.toFixed(2) + ' logged to ' + category + '!' };
@@ -3015,7 +3014,7 @@ function addApprovedTrips() {
     { city: 'Shanghai', country: 'China', date: '2023-12-01', lat: 31.2304, lng: 121.4737, members: 'Marcus,Eleanor,Mikaela,Meaghan' },
     { city: 'Qingdao', country: 'China', date: '2025-09-01', lat: 36.0671, lng: 120.3826, members: 'Marcus,Eleanor,Mikaela,Meaghan' }
   ];
-  var existing = sheet.getDataRange().getValues();
+  var existing = perfReadRows_(sheet);
   var existingKeys = {};
   for (var i = 1; i < existing.length; i++) {
     var key = existing[i][2] + '|' + existing[i][3] + '|' + Utilities.formatDate(new Date(existing[i][1]), Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -3065,15 +3064,15 @@ function schoolStoredPlan_(row) {
 }
 function schoolStoredRows_(ss) {
   var sheet = ss.getSheetByName('SchoolAnnouncements');
-  return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r){return r[0];}) : [];
+  return sheet ? perfReadRows_(sheet).slice(1).filter(function(r){return r[0];}) : [];
 }
-function schoolRecordWarnings_(ss, adult) {
+function schoolRecordWarnings_Measured_(ss, adult) {
   if (!adult) return [];
   var count = 0;
   schoolStoredRows_(ss).forEach(function(r){try { schoolStoredPlan_(r); } catch (err) { count++; }});
   return count ? [count + ' school record(s) could not load. Other family data is available. Ask a parent to repair the SchoolAnnouncements records.'] : [];
 }
-function schoolReadPlans_(ss, adult) {
+function schoolReadPlans_Measured_(ss, adult) {
   if (!adult) return [];
   var plans = [];
   schoolStoredRows_(ss).forEach(function(r){try { plans.push(schoolStoredPlan_(r)); } catch (err) { console.log('Skipped damaged school record row'); }});
@@ -3163,7 +3162,7 @@ function schoolHandleWrite_(data, ss, email, user) {
   try {
     if (!isAdultEmail_(email)) throw new Error('Only parents can review and publish announcements.');
     var sheet = schoolSheet_(ss);
-    var rows = sheet.getDataRange().getValues();
+    var rows = perfReadRows_(sheet);
     if (data.note === 'save_school_draft') {
       var p = schoolValidatePlan_(data.plan, email);
       var index = rows.findIndex(function(r) { return r[0] === p.id; });
@@ -3190,7 +3189,7 @@ function schoolHandleWrite_(data, ss, email, user) {
       sheet.getRange(rowIndex + 1, 5).setValue(calendarId); SpreadsheetApp.flush();
     }
     var todos = ensureTodoIds_(ss);
-    var ids = todos.getDataRange().getValues().map(function(r) { return r[7]; });
+    var ids = perfReadRows_(todos).map(function(r) { return r[7]; });
     plan.tasks.forEach(function(t) {
       if (ids.indexOf(t.id) !== -1) return;
       todos.appendRow([new Date(), schoolCell_(t.title), t.assignee, t.due ? new Date(t.due + 'T12:00:00+08:00') : '', user, 'Open', '', t.id, plan.id, t.kind, plan.child, schoolCell_(t.evidence)]);
@@ -3205,7 +3204,7 @@ function schoolHandleWrite_(data, ss, email, user) {
 }
 
 // Parent app reads only private-parent domains; no Calendar/reconciliation/family reads.
-function getParentDashboardData(verifiedEmail) {
+function getParentDashboardDataMeasured_(verifiedEmail) {
   if (!isAdultEmail_(verifiedEmail)) return {status:'error',message:'This app is available only to parents.'};
   var ss=SpreadsheetApp.getActiveSpreadsheet();
   return {status:'ok',isAdult:true,memberName:memberNameFromEmail_(verifiedEmail),

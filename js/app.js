@@ -616,6 +616,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
 
       ];
       el.innerHTML = tiles.map(([id,title]) => `<button class="more-tile" onclick="goTo('${id}')"><span class="mi">${nestIcon(id)}</span><span class="ml">${title}</span><span class="nest-tile-description">${NEST_PAGES[id][1]}</span></button>`).join('');
+      if(isAdultUser)el.insertAdjacentHTML('beforeend',`<button class="more-tile" onclick="showLoadingCheck()"><span class="ml">Loading check</span><span class="nest-tile-description">See how long this session takes to load.</span></button>`);
       if(isAdultUser)el.insertAdjacentHTML('beforeend',`<a class="more-tile cross-app-link" href="https://${isParentApp()?'family':'parents'}.marcusw.xyz/"><span class="mi">${nestIcon(isParentApp()?'home':'us')}</span><span class="ml">${isParentApp()?'Wong’s Nest':'Parents’ Corner'} →</span><span class="nest-tile-description">${isParentApp()?'Family plans, habits and memories.':'Money, Just us and Wellbeing.'}</span></a>`);
     }
 

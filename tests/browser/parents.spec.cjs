@@ -30,3 +30,7 @@ test('two parent tabs delete expenses by permanent ID and Undo preserves the sel
  await other.evaluate(id=>{delExp(id);_flushPendingUndo();},ids[1]);await expect.poll(()=>other.evaluate(async id=>{await loadData();return data.expenses.rows.some(r=>r.id===id)},ids[1])).toBe(false);
  await other.reload();await expect(other.locator('#app-screen')).toHaveClass(/active/);expect(await other.evaluate(ids=>ids.map(id=>data.expenses.rows.some(r=>r.id===id)),ids)).toEqual([false,false,true]);await other.close();
 });
+
+test('parent app exposes the same session-only Loading check',async({page})=>{
+ await page.evaluate(async()=>{await loadData();goTo('more')});await page.getByRole('button',{name:'Loading check',exact:false}).click();await expect(page.locator('#m-loading-check')).toHaveClass(/open/);await expect(page.locator('#loading-check-body')).toContainText('Overview ready on screen');await page.keyboard.press('Escape');await expect(page.locator('#m-loading-check')).not.toHaveClass(/open/);
+});

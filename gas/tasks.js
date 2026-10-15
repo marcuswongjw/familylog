@@ -1,12 +1,12 @@
-function getTodos(ss, verifiedEmail, includeDone) {
+function getTodosMeasured_(ss, verifiedEmail, includeDone) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var tdSheet = ss.getSheetByName('ToDo');
-  var tdVals = tdSheet ? tdSheet.getDataRange().getValues() : [];
+  var tdVals = tdSheet ? perfReadRows_(tdSheet) : [];
   var needsMigration = !tdVals[0] || tdVals[0][7] !== 'ID' || tdVals[0][12] !== 'Reward Member' || tdVals.some(function(row, i) { return i > 0 && row[1] && !row[7]; });
   if (needsMigration) {
     var lock = LockService.getScriptLock();
     lock.waitLock(10000);
-    try { tdSheet = ensureTodoIds_(ss); tdVals = tdSheet.getDataRange().getValues(); } finally { lock.releaseLock(); }
+    try { tdSheet = ensureTodoIds_(ss); tdVals = perfReadRows_(tdSheet); } finally { lock.releaseLock(); }
   }
   var tz     = Session.getScriptTimeZone();
   var result = [];
@@ -40,7 +40,7 @@ function ensureTodoIds_(ss) {
     return sheet;
   }
   var headers = ['ID', 'Source ID', 'Kind', 'Child', 'Evidence'];
-  var rows = sheet.getDataRange().getValues();
+  var rows = perfReadRows_(sheet);
   if (rows[0] && rows[0][12] !== 'Reward Member') sheet.getRange(1, 13).setValue('Reward Member');
   if (!rows || rows.length === 0 || rows[0].length < 8 || rows[0][7] !== 'ID') {
     sheet.getRange(1, 8, 1, headers.length).setValues([headers]);

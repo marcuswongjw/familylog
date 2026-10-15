@@ -6,7 +6,7 @@ var FAMILY_READ_ACTIONS_ = ['get_family_core','get_family_calendar','get_family_
 var FAMILY_WRITE_NOTES_ = ['save_school_draft','publish_school_draft','set_reward_rule','set_habit_rewards','buy_reward_item','save_companion','set_family_goal','add_event','delete_event','update_event_date','add_todo','complete_todo','help_todo','delete_todo','edit_todo','add_birthday','log_habit','delete_habit_log','add_habit','edit_habit','set_habit_state','delete_habit'];
 function familyReadAction_(action) { return FAMILY_READ_ACTIONS_.indexOf(action) !== -1; }
 function familyWriteNote_(note) { return FAMILY_WRITE_NOTES_.indexOf(toStr(note).toLowerCase().trim()) !== -1; }
-function familyForward_(payload) {
+function familyForward_Measured_(payload) {
   if (!payload.idToken) return {status:'error',message:'Unauthorized'};
   var response = UrlFetchApp.fetch(FAMILY_SERVICE_URL_, {method:'post',contentType:'text/plain;charset=utf-8',payload:JSON.stringify(payload),muteHttpExceptions:true});
   if(response.getResponseCode() !== 200) throw new Error('Family backend unavailable');

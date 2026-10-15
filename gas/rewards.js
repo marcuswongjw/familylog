@@ -33,9 +33,9 @@ function rewardSheet_(ss, name, headers) {
 }
 function rewardRows_(ss, name) {
   var sheet = ss.getSheetByName(name);
-  return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }) : [];
+  return sheet ? perfReadRows_(sheet).slice(1).filter(function(r) { return r[0]; }) : [];
 }
-function getRewards_(ss, savedRules) {
+function getRewards_Measured_(ss, savedRules) {
   var ledger = rewardRows_(ss, 'RewardLedger');
   var profiles = rewardRows_(ss, 'Companions');
   var familyStars = 0;
@@ -81,7 +81,7 @@ function rewardHandleWrite_(data, ss, email, user) {
       if (!isAdultEmail_(email)) throw new Error('Only parents can choose which activities earn stars.');
       if (!Array.isArray(data.rules) || !data.rules.length || data.rules.length > 500) throw new Error('Choose the habits to update.');
       var habitSheet=ss.getSheetByName('Habits');
-      var habitIds=habitSheet?habitSheet.getDataRange().getValues().slice(1).map(function(r){return toStr(r[0]);}):[];
+      var habitIds=habitSheet?perfReadRows_(habitSheet).slice(1).map(function(r){return toStr(r[0]);}):[];
       var seen = {};
       var updates = data.rules.map(function(rule) {
         var sourceId = toStr(rule.source_id), stars = rule.stars;
@@ -92,7 +92,7 @@ function rewardHandleWrite_(data, ss, email, user) {
       });
       // Validate every row before a single write; preserve task and omitted habit rules.
       var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
-      var rows = rules.getDataRange().getValues().slice(1);
+      var rows = perfReadRows_(rules).slice(1);
       updates.forEach(function(update) {
         var index = rows.findIndex(function(row) { return row[0] === update[0]; });
         if (index < 0) rows.push(update); else rows[index] = update;
@@ -105,11 +105,11 @@ function rewardHandleWrite_(data, ss, email, user) {
       var type = toStr(data.source_type), sourceId = toStr(data.source_id), stars = Number(data.stars);
       if (['task', 'habit'].indexOf(type) === -1 || [0, 1, 3, 5].indexOf(stars) === -1) throw new Error('Choose 0, 1, 3 or 5 stars.');
       var sheet = type === 'task' ? ensureTodoIds_(ss) : ensureHabitSheets_(ss).habits;
-      var source = sheet.getDataRange().getValues().find(function(r, i) { return i > 0 && toStr(r[type === 'task' ? 7 : 0]) === sourceId; });
+      var source = perfReadRows_(sheet).find(function(r, i) { return i > 0 && toStr(r[type === 'task' ? 7 : 0]) === sourceId; });
       if (!source || (type === 'task' && ['Done', 'Deleted'].indexOf(source[5]) !== -1)) throw new Error('Choose an existing open task or habit.');
       var rules = rewardSheet_(ss, 'RewardRules', ['ID', 'Type', 'Source ID', 'Stars', 'Updated By', 'Updated At']);
       var id = type + ':' + sourceId;
-      var row = rules.getDataRange().getValues().findIndex(function(r) { return r[0] === id; });
+      var row = perfReadRows_(rules).findIndex(function(r) { return r[0] === id; });
       var values = [id, type, sourceId, stars, user, new Date()];
       if (row > 0) rules.getRange(row + 1, 1, 1, 6).setValues([values]); else rules.appendRow(values);
     } else if (note === 'buy_reward_item') {
@@ -128,7 +128,7 @@ function rewardHandleWrite_(data, ss, email, user) {
       var profile = getRewards_(ss).members.find(function(m) { return m.member === user; });
       if (equipped && profile.owned.indexOf(equipped) === -1) throw new Error('Unlock this accessory before wearing it.');
       var sheet = rewardSheet_(ss, 'Companions', ['Member', 'Species', 'Name', 'Equipped', 'Updated At']);
-      var row = sheet.getDataRange().getValues().findIndex(function(r) { return r[0] === user; });
+      var row = perfReadRows_(sheet).findIndex(function(r) { return r[0] === user; });
       var values = [user, species, schoolCell_(name), equipped, new Date()];
       if (row > 0) sheet.getRange(row + 1, 1, 1, 5).setValues([values]); else sheet.appendRow(values);
     }
@@ -143,8 +143,8 @@ function operationContext_(ss,data,email,note) {
   var fields={};Object.keys(data).sort().forEach(function(k){if(k[0]!=='_' && ['idToken','user','action','operation_id'].indexOf(k)<0) fields[k]=data[k];});
   var op={id:'op'+schoolHash_(email+'|'+note+'|'+data.operation_id),fingerprint:schoolHash_(JSON.stringify(fields)),note:note,email:email};
   var sheet=ss.getSheetByName(operationSheetName_());
-  var row=sheet && sheet.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});
-  if(!row && FAMILY_BACKEND_MODE_){var legacy=ss.getSheetByName('Operations');row=legacy && legacy.getDataRange().getValues().slice(1).find(function(r){return r[0]===op.id;});}
+  var row=sheet && perfReadRows_(sheet).slice(1).find(function(r){return r[0]===op.id;});
+  if(!row && FAMILY_BACKEND_MODE_){var legacy=ss.getSheetByName('Operations');row=legacy && perfReadRows_(legacy).slice(1).find(function(r){return r[0]===op.id;});}
   if(row){if(row[1]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');op.cached=JSON.parse(row[4]);}
   return op;
 }
@@ -154,7 +154,7 @@ function operationFinish_(ss,op,result) {
 }
 function operationRecover_(ss,op,sheet,idColumn,hashColumn) {
   if(!op)return null;
-  var row=sheet.getDataRange().getValues().slice(1).find(function(r){return r[idColumn]===op.id;});
+  var row=perfReadRows_(sheet).slice(1).find(function(r){return r[idColumn]===op.id;});
   if(!row)return null;if(row[hashColumn]!==op.fingerprint)throw new Error('This saved request changed. Start a new entry.');
   return operationFinish_(ss,op,{status:'ok',id:op.id});
 }
@@ -206,7 +206,7 @@ function reminderSnapshot_(data) {
 
 function manualEventMembers_(){
   var sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar'),members={};
-  if(sheet)sheet.getDataRange().getValues().slice(1).forEach(function(r){if(r[5]&&FAMILY_MEMBERS.indexOf(r[7])!==-1)members[toStr(r[5])]=r[7];});
+  if(sheet)perfReadRows_(sheet).slice(1).forEach(function(r){if(r[5]&&FAMILY_MEMBERS.indexOf(r[7])!==-1)members[toStr(r[5])]=r[7];});
   return members;
 }
 

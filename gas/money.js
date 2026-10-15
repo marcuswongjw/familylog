@@ -22,7 +22,7 @@ function emptyExpensesPayload_() {
   };
 }
 
-function getExpensesData(ss) {
+function getExpensesDataMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var expSheet = ss.getSheetByName('Expenses');
   if (!expSheet) return emptyExpensesPayload_();
@@ -124,14 +124,14 @@ function getExpensesData(ss) {
   };
 }
 
-function getBudgets(ss) {
+function getBudgetsMeasured_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var bdgSheet = ss.getSheetByName('Budgets');
   if (!bdgSheet) return [];
-  var bdgVals  = bdgSheet.getDataRange().getValues();
+  var bdgVals  = perfReadRows_(bdgSheet);
   if (bdgVals.length <= 1) return [];
   var expSheet = ss.getSheetByName('Expenses');
-  var eVals = expSheet ? expSheet.getDataRange().getValues() : [];
+  var eVals = expSheet ? perfReadRows_(expSheet) : [];
   var now = new Date(); var thisMonth = now.getMonth(); var thisYear = now.getFullYear();
   var budgets = [];
   for (var i = 1; i < bdgVals.length; i++) {
@@ -160,15 +160,15 @@ function getBudgets(ss) {
 function expenseRows_(ss) {
   var sheet = ss.getSheetByName('Expenses');
   if (!sheet) return [];
-  var rows = sheet.getDataRange().getValues();
+  var rows = perfReadRows_(sheet);
   if (!rows[0] || rows[0][6] !== 'ID' || rows[0][8] !== 'Status' || rows.some(function(r,i){return i > 0 && (r[0] || r[1] || r[5]) && !r[6];})) {
     var lock = LockService.getScriptLock(); lock.waitLock(10000);
     try {
-      rows = sheet.getDataRange().getValues();
+      rows = perfReadRows_(sheet);
       sheet.getRange(1,7,1,3).setValues([['ID','Operation Fingerprint','Status']]);
       var ids=rows.slice(1).map(function(r){return [r[6] || ((r[0] || r[1] || r[5]) ? 'exp_'+Utilities.getUuid() : '')];});
       if(ids.length)sheet.getRange(2,7,ids.length,1).setValues(ids);
-      rows = sheet.getDataRange().getValues();
+      rows = perfReadRows_(sheet);
     } finally { lock.releaseLock(); }
   }
   return rows;

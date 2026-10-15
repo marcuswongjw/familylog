@@ -7,12 +7,15 @@
       const account = currentUserEmail, generation = sessionGeneration;
       const active = () => account === currentUserEmail && generation === sessionGeneration;
       if(navigator.onLine===false){const message='You are offline. Changes are not queued; reconnect and try again.';showError(message);return {status:'error',message};}
+      const timing=typeof startNestTiming==='function'?startNestTiming(body.action):null;
+      let confirmed=false;
       startProgressBar();
       try {
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) { showError('Please log in'); return null; }
         const signal = AbortSignal.timeout(body.action === 'write' ? 120000 : 45000);
         const idToken = await tokenWithDeadline(currentUser,signal);
+        if(timing)advanceNestTiming(timing,'network');
         if (!active()) return null;
         lastIdToken = idToken;
         const payload = Object.assign({}, body, {
@@ -27,6 +30,7 @@
           signal
         });
         if (!active()) return null;
+        if(timing)advanceNestTiming(timing,'parse');
         let r;
         try {
           r = await response.json();
@@ -36,10 +40,12 @@
         }
         if (!active()) return null;
         if (!response.ok) { showError('Server unavailable. Your changes were not confirmed.'); return null; }
+        if(r?._performance&&typeof recordNestPerformance==='function'){recordNestPerformance(r._performance,'server');if(timing&&Number.isFinite(r._performance.totalMs)&&r._performance.totalMs>=0)timing.stages.server={ms:r._performance.totalMs,calls:1};delete r._performance;}
         if (r && r.status === 'error') {
           showError('Server error: ' + (r.message || 'unknown'));
           return r; // keep message for callers
         }
+        confirmed=!!r;
         return r;
       } catch (err) {
         if (!active()) return null;
@@ -47,6 +53,7 @@
         showError(message);
         return {status:'error',message};
       } finally {
+        if(timing&&active())finishNestTiming(timing,confirmed);
         finishProgressBar();
       }
     }
@@ -107,6 +114,7 @@
 
     /** Sheets-backed dashboard only (not memories). */
     async function loadData() {
+      const readyTiming=typeof startNestTiming==='function'?startNestTiming('core_ready','load'):null;
       if(typeof updateDeletionStatus==='function')updateDeletionStatus();
       const account = currentUserEmail, session = sessionGeneration, request = ++dashboardGeneration;
       const active=()=>account===currentUserEmail&&session===sessionGeneration&&request===dashboardGeneration;
@@ -124,7 +132,9 @@
         if(typeof setRewardLoadState==='function')setRewardLoadState(false,r.rewards?.members?.some(p=>p.member===user)?'':'The server did not return your companion data. Please try again.');
         const needsCalendar = !Object.prototype.hasOwnProperty.call(r, 'events') && !(typeof isParentApp === 'function' && isParentApp());
         if (needsCalendar) { r.events = data.events || []; r.calendarState = 'loading'; }
+        if(readyTiming)advanceNestTiming(readyTiming,'render');
         applyDashboardPayload(r);
+        if(readyTiming)finishNestTiming(readyTiming);
         if (needsCalendar) hydrateFamilyCalendar(active);
         if(typeof markDashboardRefreshed==='function')markDashboardRefreshed();
         return true;
@@ -139,6 +149,7 @@
     }
 
     async function hydrateFamilyCalendar(active) {
+      const readyTiming=typeof startNestTiming==='function'?startNestTiming('calendar_ready','load'):null;
       let timer;
       try {
         const timeout = new Promise(resolve => { timer = setTimeout(() => resolve({status:'error'}),45000); });
@@ -150,7 +161,9 @@
           render(section); renderHome();
           return;
         }
+        if(readyTiming)advanceNestTiming(readyTiming,'render');
         applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready'}));
+        if(readyTiming)finishNestTiming(readyTiming);
       } catch (err) {
         if (active()) { data.calendarState = 'error'; render(section); renderHome(); }
       } finally { clearTimeout(timer); }
