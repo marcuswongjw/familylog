@@ -220,27 +220,54 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     // ─── UNDO (deferred commit) ────────────────────────────────
     let _pendingUndo = null;
 
-    function _flushPendingUndo(useBeacon) {
-      if(!_pendingUndo) return;
-      clearTimeout(_pendingUndo.timer);
-      const item = _pendingUndo;
-      const payload = item.payload;
-      _pendingUndo = null;
-      if (item.account !== currentUserEmail || item.session !== sessionGeneration) return;
-      if(!payload) return;
-      if(useBeacon && navigator.sendBeacon) {
-        payload.user = user || 'Unknown';
-        payload.action = payload.action || 'write';
-        if(lastIdToken) payload.idToken = lastIdToken;
-        try { navigator.sendBeacon(GAS_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); } catch(e) {}
-      } else {
-        gPost(payload).then(result => {
-          if (item.account !== currentUserEmail || item.session !== sessionGeneration) return;
-          if (!result || result.status !== 'ok') {
-            item.restore(); showError('Deletion was not confirmed. The item has been restored; refresh to check.');
-          } else { loadData(); }
-        });
+    const deletionReceipts = new Map();
+    function pendingDeletionRecords(account = currentUserEmail) {
+      let records = deletionReceipts.get(account) || [];
+      try { records = JSON.parse(localStorage.getItem('nest_deletions_'+account) || JSON.stringify(records)); } catch (_) {}
+      return Array.isArray(records) ? records.filter(r=>r && ['delete_event','delete_expense','delete_recurring'].includes(r.payload?.note)) : [];
+    }
+    function storeDeletionRecords(account, records) {
+      deletionReceipts.set(account,records);
+      try { if(records.length)localStorage.setItem('nest_deletions_'+account,JSON.stringify(records));else localStorage.removeItem('nest_deletions_'+account); } catch (_) {}
+      updateDeletionStatus();
+    }
+    function updateDeletionStatus() {
+      const el=document.getElementById('deletion-status');if(!el)return;
+      const count=currentUserEmail?pendingDeletionRecords().length:0;el.hidden=!count;
+      el.innerHTML=count ? 'Deletion not confirmed. Refreshing does not confirm a deletion. <button type="button" onclick="retryPendingDeletions()">Retry deletion</button> <button type="button" onclick="stopDeletionRetries()">Stop retrying</button>' : '';
+    }
+    function rememberDeletion(item) {
+      const source=item.payload||{},payload={note:source.note};
+      // Retain only deletion identifiers, never an auth token or other form contents.
+      for(const key of ['event_id','expense_id','row_num'])if(source[key]!=null)payload[key]=source[key];
+      const id=JSON.stringify(payload),records=pendingDeletionRecords(item.account);
+      if(!records.some(r=>r.id===id))records.push({id,payload});
+      storeDeletionRecords(item.account,records);return id;
+    }
+    function forgetDeletion(account,id) { storeDeletionRecords(account,pendingDeletionRecords(account).filter(r=>r.id!==id)); }
+    async function retryPendingDeletions() {
+      const account=currentUserEmail,session=sessionGeneration;
+      for(const record of pendingDeletionRecords(account)) {
+        let result;try { result=await gPost(record.payload); } catch (_) {}
+        if(account!==currentUserEmail||session!==sessionGeneration)return;
+        if(result?.status!=='ok'){showError('Deletion was not confirmed. Reconnect and retry.');break;}
+        forgetDeletion(account,record.id);
       }
+      if(account===currentUserEmail&&session===sessionGeneration)await loadData();
+    }
+    function stopDeletionRetries() { storeDeletionRecords(currentUserEmail,[]);loadData(); }
+    function _flushPendingUndo(background) {
+      if(!_pendingUndo)return;
+      clearTimeout(_pendingUndo.timer);const item=_pendingUndo;_pendingUndo=null;
+      if(item.account!==currentUserEmail||item.session!==sessionGeneration||!item.payload)return;
+      const id=rememberDeletion(item);
+      // A hidden page cannot establish a confirmed result. Resume with fresh auth and an explicit retry.
+      if(background)return;
+      return Promise.resolve().then(()=>gPost(item.payload)).then(result=>{
+        if(item.account!==currentUserEmail||item.session!==sessionGeneration)return;
+        if(result?.status==='ok'){forgetDeletion(item.account,id);loadData();}
+        else { item.restore();showError('Deletion was not confirmed. The item has been restored; refresh to check.'); }
+      }).catch(()=>{if(item.account===currentUserEmail&&item.session===sessionGeneration){item.restore();showError('Deletion was not confirmed. Reconnect and retry.');}});
     }
 
     function pushUndo(restoreFn, message, commitPayload) {
@@ -270,7 +297,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       toast('Action undone.');
     }
     window.addEventListener('pagehide', () => _flushPendingUndo(true));
-    document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true); });
+    window.addEventListener('pageshow', () => { updateDeletionStatus();if(currentUserEmail&&pendingDeletionRecords().length)loadData(); });
+    document.addEventListener('visibilitychange', () => { if(document.hidden) _flushPendingUndo(true);else {updateDeletionStatus();if(currentUserEmail&&pendingDeletionRecords().length)loadData();} });
 
     // ─── LOGIN ──────────────────────────────────────────────────
     function buildLogin() {
@@ -430,7 +458,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     function mediaImgHtml(url, extraStyle) {
       if (!isSafeMediaUrl(url)) return '';
       const style = extraStyle || 'max-width:100%;max-height:220px;object-fit:cover;border-radius:8px;margin:8px 0;cursor:pointer;display:block;';
-      return `<img src="${escapeHtml(url)}" style="${style}" class="chat-bubble-img" onclick="openChatLightbox(this.src)" alt="">`;
+      return `<button type="button" aria-label="Open photo" style="border:0;padding:0;background:none;max-width:100%;display:block" onclick="openChatLightbox(this.querySelector('img').src)"><img src="${escapeHtml(url)}" style="${style}" class="chat-bubble-img" loading="lazy" alt="Memory photo"></button>`;
     }
 
     // ─── PROGRESS BAR ─────────────────────────────────────────
@@ -1967,16 +1995,11 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const img = document.getElementById('lightbox-img');
       if (lightbox && img) {
         img.src = url;
-        lightbox.classList.add('open');
+        modalOpened('chat-lightbox');
       }
     }
 
-    function closeChatLightbox() {
-      const lightbox = document.getElementById('chat-lightbox');
-      if (lightbox) {
-        lightbox.classList.remove('open');
-      }
-    }
+    function closeChatLightbox() { closeM('chat-lightbox'); }
 
     function toggleMenuDrawer(open) {
       const overlay = document.getElementById('drawer-overlay');
@@ -1984,10 +2007,10 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       if (overlay && drawer) {
         if (open) {
           overlay.classList.add('open');
-          drawer.classList.add('open');
+          modalOpened('menu-drawer');
         } else {
           overlay.classList.remove('open');
-          drawer.classList.remove('open');
+          closeM('menu-drawer');
         }
       }
     }

@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v43';
+const CACHE_NAME = 'wongs-nest-v44';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,14 @@ const ASSETS = [
   './js/calendar.js',
   './js/money.js',
   './js/modals.js',
+  './js/pwa-cache.js',
+  './assets/firebase-app-compat-9.23.0.js',
+  './assets/firebase-auth-compat-9.23.0.js',
+  './assets/firebase-firestore-compat-9.23.0.js',
+  './assets/firebase-storage-compat-9.23.0.js',
+  './assets/firebase-functions-compat-9.23.0.js',
+  './assets/firebase-messaging-compat-9.23.0.js',
+
 
   './js/notifications.js',
   './js/memories.js',
@@ -33,62 +41,8 @@ const ASSETS = [
   './favicon.svg'
 ];
 
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys.filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-
-  const url = new URL(event.request.url);
-  const sameOrigin = url.origin === self.location.origin;
-  const path = url.pathname || '';
-  // App shell & identity assets: always try network first so deploys are not stuck on stale SW cache
-  const isAppShell = event.request.mode === 'navigate'
-    || (sameOrigin && (
-      path.endsWith('/') ||
-      path.endsWith('.html') ||
-      path.endsWith('/familylog') ||
-      path.endsWith('/notifications.js') || path.endsWith('/memories.js') || path.endsWith('/operations.js') || path.endsWith('/habits.js') || path.endsWith('.js') || path.endsWith('/school.js') || path.endsWith('/rewards.js') || path.endsWith('/rewards-art.js') ||
-      path.endsWith('/styles.css') || path.endsWith('/nest.css') || path.endsWith('/nest.js') ||
-      path.includes('manifest.json') ||
-      path.endsWith('.png') || path.endsWith('.svg') ||
-      path.endsWith('firebase-messaging-sw.js')
-    ));
-
-  if (isAppShell) {
-    event.respondWith(
-      fetch(event.request)
-        .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(event.request, copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => caches.match(event.request).then(c => c || caches.match('./index.html')))
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request)
-      .then(cached => cached || fetch(event.request))
-  );
-});
+importScripts('./js/pwa-cache.js');
+installAppCache(CACHE_NAME,ASSETS);
 
 /**
  * Build a deep-link URL. Query param survives iOS PWA quirks better than hash alone.
@@ -146,8 +100,8 @@ self.addEventListener('notificationclick', event => {
 // Some platforms fire this when the user opens the app from a notification action
 self.addEventListener('notificationclose', () => { /* no-op */ });
 
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
+importScripts('./assets/firebase-app-compat-9.23.0.js');
+importScripts('./assets/firebase-messaging-compat-9.23.0.js');
 
 firebase.initializeApp({
   apiKey: "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",

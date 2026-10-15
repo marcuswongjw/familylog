@@ -18,7 +18,7 @@ test('parent dashboard has no Calendar/reconciliation or family-record dependenc
 test('separate builds exclude the other app screens and parent excludes unused Firebase SDKs',()=>{
  const source=fs.readFileSync('index.html','utf8'),family=appHTML(source,'family'),parents=appHTML(source,'parents');
  assert.ok(!family.includes('id="s-expenses"'));assert.ok(!family.includes('id="s-us"'));assert.ok(family.includes('id="s-habits"'));
- assert.ok(parents.includes('id="s-expenses"'));assert.ok(!parents.includes('id="s-habits"'));assert.ok(!parents.includes('firebase-firestore-compat.js'));assert.ok(parents.includes('firebase-auth-compat.js'));assert.ok(parents.includes('data-app="parents"'));
+ assert.ok(parents.includes('id="s-expenses"'));assert.ok(!parents.includes('id="s-habits"'));assert.ok(!parents.includes('firebase-firestore-compat-9.23.0.js'));assert.ok(parents.includes('firebase-auth-compat-9.23.0.js'));assert.ok(parents.includes('data-app="parents"'));
 });
 test('old URLs redirect only to a reachable new domain and preserve deep links without sending credentials',async()=>{
  const vm=require('node:vm'),source=fs.readFileSync('index.html','utf8');

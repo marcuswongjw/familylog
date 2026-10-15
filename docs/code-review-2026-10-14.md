@@ -144,6 +144,8 @@ Fix: remove unused event reads from reminder snapshots. Run required calendar re
 
 ### 14. P2 — Background Undo commits discard failures without confirmation
 
+**Fixed 15 October 2026.** Background beacon writes were removed. A hidden page retains only account-scoped deletion identifiers as unconfirmed receipts. Resume/reload shows a status and refreshes current data; the user can retry with fresh authentication or stop retrying. Foreground failures restore the local item and retain the receipt. A receipt is removed only after backend confirmation; rewards are never queued.
+
 Evidence: [beacon path](/Users/marcus/Documents/GitHub/familylog/js/app.js:231).
 
 On page hide/visibility change, pending deletion is cleared and sent with sendBeacon. Its false return and exceptions are ignored, and there is no receipt/recovery state. Offline transitions, an expired lastIdToken, a rejected request or a refused beacon can silently lose the deletion. The foreground confirmed-write path is stronger, but it is bypassed here.
@@ -151,6 +153,8 @@ On page hide/visibility change, pending deletion is cleared and sent with sendBe
 Fix: retain an account-scoped unconfirmed operation and verify it on resume; do not claim success from beacon acceptance. Provide clear pending/failed feedback without silently queuing reward completions. Regression: false beacon result, thrown beacon, expired auth and resume after an uncertain commit.
 
 ### 15. P2 — The photo lightbox crashes the generic keyboard focus handler
+
+**Fixed 15 October 2026.** Memory photos now open from native keyboard-operable buttons into a named dialog using the shared lifecycle. The mobile drawer shares focus trapping, Escape/backdrop dismissal and focus restoration; drawer entries support Enter/Space. Unknown overlays without a dialog are guarded. Logout closes the drawer.
 
 Evidence: [lightbox markup](/Users/marcus/Documents/GitHub/familylog/index.html:328), [Tab handler](/Users/marcus/Documents/GitHub/familylog/js/modals.js:14).
 
@@ -160,6 +164,8 @@ Fix: give the viewer a proper dialog container and use the shared lifecycle; gua
 
 ### 16. P2 — Failed asset requests can receive cached HTML as JavaScript/CSS
 
+**Fixed 15 October 2026.** Both workers use one app-shell cache helper. Only navigation can receive cached HTML; HTTP errors and wrong MIME types are rejected, including invalid existing cache entries. Revision queries normalize only within the matching worker revision. Install requires the complete shell. Existing Firebase 9.23.0 SDKs are locally bundled and precached, removing CDN availability from offline startup. Browser tests cover installed offline launch and cached SDK availability.
+
 Evidence: [family service-worker fallback](/Users/marcus/Documents/GitHub/familylog/firebase-messaging-sw.js:82), [unversioned precache](/Users/marcus/Documents/GitHub/familylog/firebase-messaging-sw.js:4), [versioned client imports](/Users/marcus/Documents/GitHub/familylog/index.html:690).
 
 The family worker falls back to index.html for every missing app-shell request, including scripts and styles. The precache uses unversioned paths while the page requests versioned URLs. After an update or a cold offline launch, a cache miss can therefore return HTML for a script, causing parsing failures. HTTP error responses are also cached in this branch. The parent worker already distinguishes navigation fallback and checks response.ok, so the behavior is inconsistent.
@@ -167,6 +173,8 @@ The family worker falls back to index.html for every missing app-shell request, 
 Fix: restrict HTML fallback to navigations, cache only successful responses, and align asset revision keys. Define and test offline startup behavior, including external Firebase SDK availability. Regression: newly activated worker, failed versioned JS request, failed CSS request and cached HTTP error. This review identified the code path; it did not perform an installed-PWA offline production test.
 
 ### 17. P2 — Text-cell protection and input validation are inconsistent
+
+**Fixed 15 October 2026.** Central money validators require full finite numeric inputs, integer days, valid celebration dates and allowlisted accounts/categories/groups. Private notes, appreciations, check-ins, recurring names, bucket items, habit log text, bank pending text and action logs use literal cell protection, including leading whitespace. Signed bank approval validates authoritative date/amount and corrected choices before consuming pending records. Invalid recurring rows cannot produce expenses.
 
 Evidence: [fertility notes](/Users/marcus/Documents/GitHub/familylog/Code.js:1172), [appreciations](/Users/marcus/Documents/GitHub/familylog/Code.js:1307), [check-ins](/Users/marcus/Documents/GitHub/familylog/Code.js:1327), [bank approval](/Users/marcus/Documents/GitHub/familylog/Code.js:2887).
 

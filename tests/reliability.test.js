@@ -143,3 +143,10 @@ test('failed refresh terminates calendar loading invalidated by that refresh',as
  const h=fixture();let coreReads=0;h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve(++coreReads===1?{todos:[],isAdult:true}:{status:'error'}):new Promise(()=>{});
  await h.c.loadData();assert.equal(h.c.data.calendarState,'loading');assert.equal(await h.c.loadData(),false);assert.equal(h.c.data.calendarState,'error');
 });
+
+test('background deletion never uses a beacon and retains an account-scoped unconfirmed retry',async()=>{
+ for(const beacon of [()=>false,()=>{throw Error('No beacon')}]){
+ const h=fixture();let calls=0;h.c.navigator.sendBeacon=()=>{calls++;return beacon()};h.c.data.events=[{id:'e'}];h.c.delEvent('e');h.c._flushPendingUndo(true);assert.equal(calls,0);assert.equal(h.c.pendingDeletionRecords().length,1);
+ h.c.currentUserEmail='mikaelawonght@gmail.com';assert.equal(h.c.pendingDeletionRecords().length,0);h.c.currentUserEmail='marcuswongjw@gmail.com';h.c.gasRequest=async()=>({status:'error'});await h.c.retryPendingDeletions();assert.equal(h.c.pendingDeletionRecords().length,1);h.c.gasRequest=async()=>({status:'ok',events:[]});await h.c.retryPendingDeletions();assert.equal(h.c.pendingDeletionRecords().length,0);
+ }
+});

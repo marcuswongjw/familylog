@@ -1,3 +1,19 @@
+// Write-boundary validators: reject partial numeric strings and unknown finance values.
+function fullNumber_(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) return NaN;
+  var number = Number(value); return Number.isFinite(number) ? number : NaN;
+}
+function financeAccount_(value) { return ['Family','Personal Account'].indexOf(value) !== -1; }
+function financeCategory_(value) {
+  return value === 'Other' || Object.keys(EXPENSE_GROUPS).some(function(group){return EXPENSE_GROUPS[group].indexOf(value) !== -1;});
+}
+function birthdayDate_(value, year) {
+  if (!/^\d{2}-\d{2}$/.test(value) || (year && (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 2100))) return false;
+  var iso = (year || '2000') + '-' + value, date = new Date(iso+'T00:00:00Z');
+  return !isNaN(date.getTime()) && date.toISOString().slice(0,10) === iso;
+}
+
 function emptyExpensesPayload_() {
   return {
     rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0,

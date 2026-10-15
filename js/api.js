@@ -99,6 +99,7 @@
         if (data.preparationState === 'error') messages.push('Calendar loaded, but preparation tasks could not refresh. Please try refreshing again.');
         warning.textContent = messages.join(' '); warning.hidden = !messages.length;
       }
+      if(typeof updateDeletionStatus==='function')updateDeletionStatus();
       buildDynamicSelectors();
       render(section);
       renderHome();
@@ -106,6 +107,7 @@
 
     /** Sheets-backed dashboard only (not memories). */
     async function loadData() {
+      if(typeof updateDeletionStatus==='function')updateDeletionStatus();
       const account = currentUserEmail, session = sessionGeneration, request = ++dashboardGeneration;
       const active=()=>account===currentUserEmail&&session===sessionGeneration&&request===dashboardGeneration;
       if(typeof setRewardLoadState==='function')setRewardLoadState(true);

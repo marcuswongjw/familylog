@@ -9,11 +9,13 @@
       if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
       const warning = document.getElementById('data-warning');
       if (warning) { warning.textContent = ''; warning.hidden = true; }
+      const deletionStatus=document.getElementById('deletion-status');if(deletionStatus){deletionStatus.hidden=true;deletionStatus.textContent='';}
       user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
       habitViewDate = ''; habitShowArchived = false; habitPerson = 'All'; habitLayout = 'cards'; pendingHabitLogs.clear();
       data = { memories: [] }; GROUPS = {}; bucketList = []; memImageBase64 = null;
       document.body.classList.add('is-child');
       document.querySelectorAll('.overlay').forEach(el => el.classList.remove('open'));
+      if(typeof toggleMenuDrawer==='function')toggleMenuDrawer(false);
       if(typeof modalOrigins!=='undefined')modalOrigins.clear();
       document.querySelectorAll('.overlay input, .overlay textarea, #fert-notes').forEach(el => {
         if (el.type !== 'checkbox' && el.type !== 'radio') el.value = '';

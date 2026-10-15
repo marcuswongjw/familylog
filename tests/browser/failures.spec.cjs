@@ -89,3 +89,17 @@ test('memory archive keeps its boundary after insertion and updates older record
  await page.evaluate(()=>{fixtureMemories=fixtureMemories.filter(d=>d.id!=='3').map(d=>d.id==='2'?{id:'2',data:()=>({memory:'Older memory edited',type:'Moment',timestamp:{toDate:()=>new Date(2026,0,2)}})}:d);emitFixtureMemories();});
  await expect(page.locator('#mem-list')).toContainText('Older memory edited');expect(await page.evaluate(()=>data.memories.some(m=>m.id==='3'))).toBe(false);
 });
+
+test('photo viewer and mobile drawer trap focus, close with Escape and restore the opener',async({page})=>{
+ await page.evaluate(()=>{document.querySelector('#mem-list').innerHTML=mediaImgHtml('https://example.com/photo.jpg');goTo('memories');document.querySelector('#mem-list').innerHTML=mediaImgHtml('https://example.com/photo.jpg');});
+ const photo=page.getByRole('button',{name:'Open photo'}).first();await photo.focus();await page.keyboard.press('Enter');await expect(page.locator('#chat-lightbox')).toHaveClass(/open/);await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'Close photo'})).toBeFocused();await page.keyboard.press('Escape');await expect(photo).toBeFocused();
+ await page.evaluate(()=>{document.querySelector('#notifBell').focus();toggleMenuDrawer(true)});await expect(page.locator('#menu-drawer')).toHaveAttribute('role','dialog');await page.keyboard.press('Shift+Tab');expect(await page.evaluate(()=>!!document.activeElement.closest('#menu-drawer'))).toBe(true);await page.keyboard.press('Escape');await expect(page.locator('#menu-drawer')).not.toHaveClass(/open/);await expect(page.locator('#notifBell')).toBeFocused();
+});
+test('background deletion survives reload without a beacon and retries only after user confirmation',async({page})=>{
+ const id=await page.evaluate(async()=>{const r=await gPost({note:'add_event',event_title:'Deferred delete regression',event_date:schoolToday(),event_member:'Mikaela'});await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));window.beaconCalls=0;navigator.sendBeacon=()=>{beaconCalls++;throw Error('Beacon unavailable')};delEvent(r.id);_flushPendingUndo(true);return r.id;});
+ expect(await page.evaluate(()=>beaconCalls)).toBe(0);await page.reload();await expect(page.locator('#deletion-status')).toBeVisible();await expect.poll(()=>page.evaluate(id=>data.events.some(e=>e.id===id),id)).toBe(true);await page.getByRole('button',{name:'Retry deletion',exact:true}).click();await expect(page.locator('#deletion-status')).toBeHidden();await expect.poll(()=>page.evaluate(id=>data.calendarState==='ready'&&!data.events.some(e=>e.id===id),id)).toBe(true);
+});
+test('installed app shell starts offline with cached versioned assets and local Firebase SDKs',async({page,context})=>{
+ await page.evaluate(()=>navigator.serviceWorker.ready);await expect.poll(()=>page.evaluate(()=>!!navigator.serviceWorker.controller)).toBe(true);await context.setOffline(true);await page.reload();await expect(page.locator('#app-screen')).toHaveClass(/active/);await expect(page.locator('#connection-status')).toContainText('Offline');
+ const sdk=await page.evaluate(async()=>{const r=await fetch('assets/firebase-firestore-compat-9.23.0.js');return {ok:r.ok,type:r.headers.get('content-type')}});expect(sdk.ok).toBe(true);expect(sdk.type).toContain('javascript');
+});

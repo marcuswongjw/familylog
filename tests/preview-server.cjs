@@ -64,10 +64,11 @@ http.createServer(async(req,res)=>{
   const url=(parentPage?req.url.replace('/parents/','/'):req.url).split('?')[0];
   if(url==='/'||url==='/index.html'){
    let html=appHTML(fs.readFileSync(path.join(root,'index.html'),'utf8'),parentPage?'parents':'family').replace(/<script src="https:[^>]+><\/script>/g,'').replace(/<link[^>]+href="https:[^>]+>/g,'');
+   html=html.replace(/<script src="assets\/firebase-[^"]+"><\/script>/g,'');
    html=html.replace('</head>',bootstrap+'</head>').replace('</body>',setup+'</body>');
    res.setHeader('Content-Type','text/html');res.end(html);return;
   }
-  if(!/^\/(js\/[\w.-]+\.js|css\/[\w.-]+\.css|assets\/[\w.-]+\.svg|[\w-]+\.png|favicon.svg|manifest.json|parents-sw.js)$/.test(url)){res.writeHead(404);res.end();return;}
+  if(!/^\/(js\/[\w.-]+\.js|css\/[\w.-]+\.css|assets\/[\w.-]+\.(?:svg|js)|[\w-]+\.png|favicon.svg|manifest.json|parents-sw.js|firebase-messaging-sw.js)$/.test(url)){res.writeHead(404);res.end();return;}
   const file=path.join(root,url);res.setHeader('Content-Type',url.endsWith('.js')?'application/javascript':url.endsWith('.css')?'text/css':url.endsWith('.json')?'application/json':url.endsWith('.svg')?'image/svg+xml':'image/png');res.end(fs.readFileSync(file));
  }catch(e){res.writeHead(500);res.end(JSON.stringify({status:'error',message:e.message}));}
 }).listen(4173,'127.0.0.1',()=>console.log('School UI fixture: http://127.0.0.1:4173 — mocked external services'));

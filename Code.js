@@ -649,14 +649,16 @@ function processRecurringExpenses() {
   for (var i = 1; i < recVals.length; i++) {
     var row = recVals[i]; if (!row[0]) continue;
     if (toStr(row[6]).toLowerCase() === 'false') continue;
-    var dueDay = parseInt(row[4]) || 1;
+    var dueDay = fullNumber_(row[4]);
+    if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) continue;
     if (dueDay !== today) continue;
     var name     = toStr(row[0]);
-    var amount   = parseFloat(row[1]) || 0;
+    var amount   = fullNumber_(row[1]);
     var account  = toStr(row[2]) || 'Family';
     var category = toStr(row[3]) || 'Other';
     var dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    expSheet.appendRow([new Date(), dateOnly, account, category, amount, schoolCell_(name + ' (recurring)'), 'exp_'+Utilities.getUuid(),'','']);
+    if (!Number.isFinite(amount) || amount < 0 || !financeAccount_(account) || !financeCategory_(category)) { console.log('Skipped invalid recurring record'); continue; }
+    expSheet.appendRow([new Date(), dateOnly, account, schoolCell_(category), amount, schoolCell_(name + ' (recurring)'), 'exp_'+Utilities.getUuid(),'','']);
     logged.push({ name: name, amount: amount, account: account });
   }
 
@@ -847,6 +849,7 @@ function handleWriteInner_(data) {
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var note      = toStr(data.note);
   var noteLower = note.toLowerCase().trim();
+  if (note.length > 80) return {status:'error',message:'Invalid action.'};
 
   // Identity is derived only from the verified Firebase email.
   // Client-supplied data.user is ignored (spoof protection).
@@ -876,8 +879,8 @@ function handleWriteInner_(data) {
     return parseEventDateStrict(d, '') !== null;
   }
   function validateAmount(a) {
-    var num = parseFloat(a);
-    return !isNaN(num) && num >= 0;
+    var num = fullNumber_(a);
+    return Number.isFinite(num) && num >= 0;
   }
   function validateString(s, maxLen) {
     maxLen = maxLen || 500;
@@ -901,7 +904,7 @@ function handleWriteInner_(data) {
       var eventLocation = toStr(data.event_location);
       var eventNotes = toStr(data.event_notes);
 
-      if (!validateDate(dateStr)) {
+      if (!dateStr || !validateDate(dateStr)) {
         return { status: 'error', message: 'Invalid event date' };
       }
       if (!validateString(title, 100)) {
@@ -1095,14 +1098,15 @@ function handleWriteInner_(data) {
     // ── EXPENSE: add ──
     if (noteLower === 'add_expense') {
       var desc = toStr(data.ex_desc);
-      var amount = parseFloat(data.ex_amount);
+      var amount = fullNumber_(data.ex_amount);
       var date = toStr(data.ex_date);
       var category = toStr(data.ex_category) || 'Other';
       var account = toStr(data.ex_account) || 'Family';
 
+      if (!financeAccount_(account) || !financeCategory_(category)) return {status:'error',message:'Choose a valid account and category.'};
       if (!desc) return { status: 'error', message: 'Description required' };
       if (!Number.isFinite(amount) || amount < 0) return { status: 'error', message: 'Invalid amount' };
-      if (!validateDate(date)) return { status: 'error', message: 'Invalid date' };
+      if (!date || !validateDate(date)) return { status: 'error', message: 'Invalid date' };
       if (!validateString(desc, 200)) return { status: 'error', message: 'Description too long' };
 
       var expSheet = ss.getSheetByName('Expenses');
@@ -1165,7 +1169,7 @@ function handleWriteInner_(data) {
       }
       var parsed = parseEventDate(fertDate, '');
       if (!parsed) return { status: 'error', message: 'Invalid date' };
-      fertSheet.appendRow([user, parsed, fertType, fertNotes, new Date()]);
+      fertSheet.appendRow([user, parsed, fertType, schoolCell_(fertNotes), new Date()]);
       console.log('✅ Fertility entry added: ' + fertType);
       return { status: 'ok' };
     }
@@ -1177,6 +1181,7 @@ function handleWriteInner_(data) {
       var date = toStr(data.date); // MM-DD
       var year = toStr(data.year);
       var notes = toStr(data.notes);
+      if (!birthdayDate_(date,year) || ['Birthday','Wedding Anniversary'].indexOf(type) < 0) return {status:'error',message:'Choose a valid celebration date and type.'};
       if (!name || !date) return { status: 'error', message: 'Name and date (MM-DD) required' };
       if (!validateString(name, 100)) return { status: 'error', message: 'Name too long' };
       if (!validateString(notes, 200)) return { status: 'error', message: 'Notes too long' };
@@ -1193,9 +1198,10 @@ function handleWriteInner_(data) {
     // ── BUDGET: set ──
     if (noteLower === 'set_budget') {
       var group = toStr(data.group);
-      var budget = parseFloat(data.budget);
+      var budget = fullNumber_(data.budget);
       var budgetAcc = toStr(data.account) || 'Family';
       if (!group) return { status: 'error', message: 'Group name required' };
+      if (!financeAccount_(budgetAcc) || !Object.prototype.hasOwnProperty.call(EXPENSE_GROUPS,group)) return {status:'error',message:'Choose a valid budget group and account.'};
       if (!Number.isFinite(budget) || budget < 0) return { status: 'error', message: 'Invalid budget amount' };
       if (!validateString(group, 100)) return { status: 'error', message: 'Group name too long' };
 
@@ -1249,28 +1255,30 @@ function handleWriteInner_(data) {
     // ── RECURRING: add ──
     if (noteLower === 'add_recurring') {
       var recName = toStr(data.rec_name);
-      var recAmount = parseFloat(data.rec_amount);
-      var recDay = parseInt(data.rec_day);
+      var recAmount = fullNumber_(data.rec_amount);
+      var recDay = fullNumber_(data.rec_day);
       var recCategory = toStr(data.rec_category) || 'Other';
       var recAccount = toStr(data.rec_account) || 'Family';
+      if (!financeAccount_(recAccount) || !financeCategory_(recCategory)) return {status:'error',message:'Choose a valid account and category.'};
       if (!recName) return { status: 'error', message: 'Name required' };
       if (!Number.isFinite(recAmount) || recAmount < 0) return { status: 'error', message: 'Invalid amount' };
-      if (isNaN(recDay) || recDay < 1 || recDay > 28) return { status: 'error', message: 'Day must be 1-28' };
+      if (!Number.isInteger(recDay) || recDay < 1 || recDay > 28) return { status: 'error', message: 'Day must be 1-28' };
       if (!validateString(recName, 100)) return { status: 'error', message: 'Name too long' };
 
       var recSheet = ss.getSheetByName('RecurringExpenses');
       if (!recSheet) { recSheet = ss.insertSheet('RecurringExpenses'); recSheet.appendRow(['Name', 'Amount', 'Account', 'Category', 'Day of Month', 'Added By', 'Active']); }
-      recSheet.appendRow([recName, recAmount, recAccount, recCategory, recDay, user, 'true']);
+      recSheet.appendRow([schoolCell_(recName), recAmount, recAccount, recCategory, recDay, user, 'true']);
       console.log('✅ Recurring added: ' + recName);
       return { status: 'ok' };
     }
 
     // ── RECURRING: delete ──
     if (noteLower === 'delete_recurring') {
-      var rowNum = parseInt(toStr(data.row_num));
-      if (isNaN(rowNum) || rowNum < 1) return { status: 'error', message: 'Invalid row number' };
+      var rowNum = fullNumber_(data.row_num);
+      if (!Number.isInteger(rowNum) || rowNum < 2) return { status: 'error', message: 'Invalid row number' };
       var recSheet = ss.getSheetByName('RecurringExpenses');
-      if (recSheet) recSheet.getRange(rowNum, 7).setValue('false');
+      if (!recSheet || rowNum > recSheet.getLastRow()) return {status:'error',message:'Recurring expense not found. Refresh before deleting.'};
+      recSheet.getRange(rowNum, 7).setValue('false');
       console.log('✅ Recurring disabled: ' + rowNum);
       return { status: 'ok' };
     }
@@ -1300,18 +1308,19 @@ function handleWriteInner_(data) {
       if (daysToFriday === 0 && now.getHours() >= 18) daysToFriday = 7;
       revealDate.setDate(now.getDate() + daysToFriday);
       revealDate.setHours(18, 0, 0, 0);
-      appSheet.appendRow([now, sender, recipient, message, revealDate]);
+      appSheet.appendRow([now, sender, recipient, schoolCell_(message), revealDate]);
       console.log('✅ Appreciation added from ' + sender);
       return { status: 'ok' };
     }
 
     // ── LOVE CHECKIN: add ──
     if (noteLower === 'add_love_checkin') {
-      var battery = parseInt(data.battery) || 5;
+      var battery = fullNumber_(data.battery);
       var moods = toStr(data.moods);
       var notes = toStr(data.notes);
       var focus = toStr(data.focus);
-      if (isNaN(battery) || battery < 1 || battery > 5) return { status: 'error', message: 'Battery must be 1-5' };
+      if (!Number.isInteger(battery) || battery < 1 || battery > 5) return { status: 'error', message: 'Battery must be 1-5' };
+      if (!validateString(moods, 200)) return {status:'error',message:'Moods too long'};
       if (!validateString(notes, 500)) return { status: 'error', message: 'Notes too long' };
       if (!validateString(focus, 200)) return { status: 'error', message: 'Focus too long' };
 
@@ -1320,7 +1329,7 @@ function handleWriteInner_(data) {
         checkinSheet = ss.insertSheet('LoveCheckins');
         checkinSheet.appendRow(['Timestamp', 'User', 'Battery', 'Moods', 'Notes', 'Focus']);
       }
-      checkinSheet.appendRow([new Date(), user, battery, moods, notes, focus]);
+      checkinSheet.appendRow([new Date(), user, battery, schoolCell_(moods), schoolCell_(notes), schoolCell_(focus)]);
       console.log('✅ Love check-in added for ' + user);
       return { status: 'ok' };
     }
@@ -1329,11 +1338,11 @@ function handleWriteInner_(data) {
     if (noteLower === 'add_intimacy') {
       var intimacyDate = toStr(data.intimacy_date).trim();
       var intimacyNotes = toStr(data.intimacy_notes);
-      var intimacyRating = parseInt(data.intimacy_rating, 10);
+      var intimacyRating = data.intimacy_rating == null || data.intimacy_rating === '' ? 0 : fullNumber_(data.intimacy_rating);
       if (!intimacyDate) return { status: 'error', message: 'Date required' };
       if (!validateDate(intimacyDate)) return { status: 'error', message: 'Invalid date' };
       if (!validateString(intimacyNotes, 500)) return { status: 'error', message: 'Notes too long' };
-      if (isNaN(intimacyRating) || intimacyRating < 1 || intimacyRating > 5) intimacyRating = 0;
+      if (!Number.isInteger(intimacyRating) || intimacyRating < 0 || intimacyRating > 5) return {status:'error',message:'Choose a rating from 1 to 5, or leave it blank.'};
 
       // Normalize to yyyy-MM-dd so the sheet round-trips without timezone shifts
       var intParsed = parseEventDateStrict(intimacyDate, '');
@@ -1350,7 +1359,7 @@ function handleWriteInner_(data) {
       var intNow = new Date();
       // Store Date column as ISO string (not Date object) — Sheets Date cells can
       // shift a day under UTC vs script timezone and disappear from the UI.
-      intSheet.appendRow([intId, intNow, user, intimacyDateIso, intimacyNotes, intimacyRating || '']);
+      intSheet.appendRow([intId, intNow, user, intimacyDateIso, schoolCell_(intimacyNotes), intimacyRating || '']);
       SpreadsheetApp.flush();
       console.log('✅ Intimacy logged by ' + user + ' date=' + intimacyDateIso);
       var intEntry = {
@@ -1398,7 +1407,7 @@ function handleWriteInner_(data) {
         bucketSheet.appendRow(['ID', 'Item', 'AddedBy', 'Completed', 'CompletedAt']);
       }
       var id = 'bkt_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-      bucketSheet.appendRow([id, item, user, 'false', '']);
+      bucketSheet.appendRow([id, schoolCell_(item), user, 'false', '']);
       console.log('✅ Bucket item added: ' + item);
       return { status: 'ok' };
     }
@@ -1466,7 +1475,7 @@ function handleWriteInner_(data) {
         return i > 0 && r[1] === habitId && r[2] === member && day === dateStr;
       });
       var logId = existing ? toStr(existing[0]) : Utilities.getUuid();
-      if (!existing) sheets.logs.appendRow([logId, habitId, member, habit, dateStr, schoolCell_(notes), user, new Date()]);
+      if (!existing) sheets.logs.appendRow([logId, habitId, member, schoolCell_(habit), dateStr, schoolCell_(notes), user, new Date()]);
       SpreadsheetApp.flush();
       var eligible = habitScheduled_(definition, dateStr, member, sheets.logs.getDataRange().getValues());
       var award = dateStr === today && eligible ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
@@ -1544,7 +1553,7 @@ function handleWriteInner_(data) {
     }
 
     // ── Unknown note ──
-    logSheet.appendRow([new Date(), user, 'General', note]);
+    logSheet.appendRow([new Date(), user, 'General', schoolCell_(note)]);
     console.log('ℹ️ Unknown note type: ' + note);
     // Do NOT return ok for unknown notes — that made saves look successful without writing data
     return { status: 'error', message: 'Unknown action: ' + note + '. Redeploy the latest Code.js if this is a new feature.' };
@@ -1566,7 +1575,7 @@ function recordActivity_(ss, user, action, category, description, details) {
       sheet = ss.insertSheet(activitySheetName_());
       sheet.appendRow(['Timestamp', 'User', 'Action', 'Category', 'Description', 'Details']);
     }
-    sheet.appendRow([new Date().toISOString(), user || 'Family', action, category, description, details || '']);
+    sheet.appendRow([new Date().toISOString(), user || 'Family', schoolCell_(action), schoolCell_(category), schoolCell_(description), schoolCell_(details || '')]);
   } catch (e) {
     console.log('recordActivity_ error: ' + e);
   }
@@ -2613,7 +2622,7 @@ function scanInboxForTransactions() {
           if (txRef) note += ' (Ref: ' + txRef + ')';
           // Unguessable id (uuid) — approval links also carry an HMAC
           var id = 'p_' + tpl.name + '_' + Utilities.getUuid().replace(/-/g, '');
-          pendingSheet.appendRow([id, dateStr, account, category, amount, note, new Date()]);
+          pendingSheet.appendRow([id, dateStr, account, schoolCell_(category), amount, schoolCell_(note), new Date()]);
           sendApprovalEmail(id, dateStr, amount, merchant, category, account);
           console.log('[' + tpl.name + '] Logged new pending: ' + merchant + ' ($' + amount + ')' + (txRef ? ' Ref: ' + txRef : ''));
         } else {
@@ -2877,16 +2886,16 @@ function handleSubmitConfirmedExpenseInner_(params) {
 
   // Amount + date always come from the pending row (bank alert), not the form.
   var sheetDateStr = toStr(vals[rowIdx - 1][1]);
-  var sheetAmount  = parseFloat(vals[rowIdx - 1][4]) || 0;
+  var sheetAmount  = fullNumber_(vals[rowIdx - 1][4]);
   var sheetNote    = toStr(vals[rowIdx - 1][5]);
 
   if (status === 'approve') {
     var desc = toStr(params.desc) || sheetNote;
     if (desc.length > 200) desc = desc.substring(0, 200);
     var account = toStr(params.account) || 'Family';
-    if (account !== 'Family' && account !== 'Personal Account') account = 'Family';
+    if (!financeAccount_(account)) return {status:'error',message:'Choose a valid account.'};
     var category = toStr(params.category) || toStr(vals[rowIdx - 1][3]) || 'Misc';
-    if (category.length > 100) category = category.substring(0, 100);
+    if (!financeCategory_(category) || !Number.isFinite(sheetAmount) || sheetAmount < 0 || !sheetDateStr || !parseEventDateStrict(sheetDateStr,'')) return {status:'error',message:'Invalid transaction date, amount or category.'};
     var expSheet = ss.getSheetByName('Expenses');
     if (!expSheet) { expSheet = ss.insertSheet('Expenses'); expSheet.appendRow(['Timestamp', 'Date', 'Account', 'Category', 'Amount', 'Note','ID','Operation Fingerprint','Status']); }
     var parsedDate = parseEventDate(sheetDateStr, '');
@@ -3028,7 +3037,7 @@ function addApprovedTrips() {
 function schoolHash_(value) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value).map(function(b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
 }
-function schoolCell_(s) { return /^[=+@-]/.test(s) ? "'" + s : s; }
+function schoolCell_(s) { return /^[\s\u0000-\u001f]*[=+@-]/.test(s) ? "'" + s : s; }
 function schoolDate_(value, optional) {
   if (!value && optional) return '';
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Choose a full date including the year.');

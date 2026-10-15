@@ -60,7 +60,7 @@ Kids’ accounts cannot open Us/Fertility (UI + server empty payloads / write de
 
 ```
 ARCHITECTURE.md         # Sheets vs Firebase ownership (read this first)
-index.html              # Shell markup + third-party CDN scripts
+index.html              # Shell markup + locally bundled Firebase scripts
 css/styles.css          # All app styles
 js/app.js               # Client: Firebase memories/auth + GAS for Sheets data
 Code.js                 # Apps Script: Sheets/Calendar/Gmail only (deploy separately)
