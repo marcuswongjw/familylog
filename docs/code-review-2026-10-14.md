@@ -64,6 +64,8 @@ Fix: assign a stable operation ID to all create flows and store it with the dest
 
 ### 6. P2 — A habit save during calendar loading can leave Calendar permanently “Loading”
 
+**Fixed 15 October 2026.** Saves now restart pending calendar hydration after confirmation or failure. Only the newest request in the same account/session may update the calendar or its loading state. Replacement requests have a bounded timeout; a failed core refresh also ends the calendar loading state it invalidated. Regressions cover habit/accessory writes, overlapping saves, stale responses, account switches, failures and timeouts, plus a browser save while Calendar is pending.
+
 Evidence: [calendar invalidation](/Users/marcus/Documents/GitHub/familylog/js/api.js:131), [write generation increments](/Users/marcus/Documents/GitHub/familylog/js/api.js:150), [habit completion](/Users/marcus/Documents/GitHub/familylog/js/app.js:2052).
 
 Every write invalidates calendar hydration. Ignoring a stale response is correct, but no replacement calendar request is scheduled and the loading flag is not cleared. Habit completion updates its local result without calling loadData. Reproduction: core loads, calendar remains pending, habit save succeeds, calendar resolves; calendarState remains loading. The existing test checks that stale calendar data is ignored, but not that loading eventually completes.

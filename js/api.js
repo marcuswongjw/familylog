@@ -109,6 +109,7 @@
         const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core'}),timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
+          if(data.calendarState === 'loading') { data.calendarState = 'error'; render(section); renderHome(); }
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');
           return false;
         }
@@ -121,6 +122,7 @@
         return true;
       } catch(err) {
         if(active()) {
+          if(data.calendarState === 'loading') { data.calendarState = 'error'; render(section); renderHome(); }
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,'Could not load your companions. Please try again.');
           showError('Could not refresh the family plan. Please try again.');
         }
@@ -129,15 +131,27 @@
     }
 
     async function hydrateFamilyCalendar(active) {
-      const result = await gasRequest({action:'get_family_calendar'});
-      // A save, refresh, or account switch invalidates this calendar response.
-      if (!active()) return;
-      if (!result || result.status === 'error') {
-        data.calendarState = 'error';
-        render(section); renderHome();
-        return;
-      }
-      applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready'}));
+      let timer;
+      try {
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve({status:'error'}),45000); });
+        const result = await Promise.race([gasRequest({action:'get_family_calendar'}),timeout]);
+        // Only the current request may finish loading or replace calendar/task data.
+        if (!active()) return;
+        if (!result || result.status === 'error') {
+          data.calendarState = 'error';
+          render(section); renderHome();
+          return;
+        }
+        applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready'}));
+      } catch (err) {
+        if (active()) { data.calendarState = 'error'; render(section); renderHome(); }
+      } finally { clearTimeout(timer); }
+    }
+
+    function restartPendingCalendar(account, session) {
+      if (account !== currentUserEmail || session !== sessionGeneration || data.calendarState !== 'loading') return;
+      const request = dashboardGeneration;
+      hydrateFamilyCalendar(() => account === currentUserEmail && session === sessionGeneration && request === dashboardGeneration);
     }
 
     async function saveConfirmed(payload) {
@@ -149,7 +163,6 @@
     /** GAS write for Sheets-owned features. Do not use for memories. */
     async function gPost(payload) {
       const account = currentUserEmail, session = sessionGeneration;
-      dashboardGeneration++;
       const note = String((payload && payload.note) || '').toLowerCase();
       if (note === 'add_chat_message' || note === 'add_memory') {
         console.error('gPost blocked: ' + note + ' is not Sheets-owned (see ARCHITECTURE.md)');
@@ -158,13 +171,21 @@
           message: note + ' is not available'
         });
       }
-      payload = await retrySafePayload(payload || {},account);
-      if (account !== currentUserEmail || session !== sessionGeneration) return null;
-      const result = await gasRequest(Object.assign({ action: 'write' }, payload));
-      if (account !== currentUserEmail || session !== sessionGeneration) return null;
       dashboardGeneration++;
-      if (result?.status === 'ok') confirmOperation(payload);
-      return result;
+      try {
+        payload = await retrySafePayload(payload || {},account);
+        if (account !== currentUserEmail || session !== sessionGeneration) return null;
+        const result = await gasRequest(Object.assign({ action: 'write' }, payload));
+        if (account !== currentUserEmail || session !== sessionGeneration) return null;
+        if (result?.status === 'ok') confirmOperation(payload);
+        return result;
+      } finally {
+        if (account === currentUserEmail && session === sessionGeneration) {
+          dashboardGeneration++;
+          // The old hydration was invalidated at save start, including failed saves.
+          restartPendingCalendar(account, session);
+        }
+      }
     }
 
     // Back-compat alias

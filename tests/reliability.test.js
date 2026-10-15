@@ -104,7 +104,7 @@ test('family core renders before calendar and calendar failure retains core data
 });
 test('late calendar hydration cannot overwrite a successful write or switched account',async()=>{
  for(const switchAccount of [false,true]){
-  const h=fixture(),calendar=defer();h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[],isAdult:true}):body.action==='get_family_calendar'?calendar.promise:Promise.resolve({status:'ok'});
+  const h=fixture(),calendar=defer(),replacement=defer();let reads=0;h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[],isAdult:true}):body.action==='get_family_calendar'?(++reads===1?calendar.promise:replacement.promise):Promise.resolve({status:'ok'});
   await h.c.loadData();if(switchAccount)h.c.clearSessionState();else {await h.c.gPost({note:'add_todo'});h.c.data.todos=[{id:'saved'}];}
   calendar.resolve({status:'ok',events:[{id:'stale'}],todos:[]});await new Promise(r=>setImmediate(r));
   assert.ok(!(h.c.data.events||[]).some(e=>e.id==='stale'));if(!switchAccount)assert.equal(h.c.data.todos[0].id,'saved');
@@ -115,4 +115,31 @@ test('transport routes family reads and writes separately while parents and remi
   const h=fixture();h.c.FAMILY_GAS_URL='family';h.c.isParentApp=()=>parent;let endpoint;h.c.fetch=async url=>{endpoint=url;return {ok:true,json:async()=>({status:'ok'})}};
   await h.c.gasRequest(body);assert.equal(endpoint,expected);
  }
+});
+
+test('saves during calendar loading restart hydration and settle on ready or error',async()=>{
+ for(const note of ['log_habit','buy_accessory'])for(const failed of [false,true]){
+  const h=fixture(),old=defer(),fresh=defer();let reads=0;
+  h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[],isAdult:true}):body.action==='get_family_calendar'?(++reads===1?old.promise:fresh.promise):Promise.resolve({status:failed?'error':'ok'});
+  await h.c.loadData();await h.c.gPost({note});assert.equal(reads,2);
+  old.resolve({events:[{id:'stale'}],todos:[]});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,'loading');assert.equal(h.c.data.events.length,0);
+  fresh.resolve(failed?{status:'error'}:{events:[{id:'fresh'}],todos:[{id:'packing'}]});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,failed?'error':'ready');if(!failed)assert.equal(h.c.data.events[0].id,'fresh');
+ }
+});
+test('only the newest hydration after overlapping saves may finish calendar loading',async()=>{
+ const h=fixture(),reads=[];h.c.gasRequest=body=>{if(body.action==='get_family_core')return Promise.resolve({todos:[],isAdult:true});if(body.action==='write')return Promise.resolve({status:'ok'});const d=defer();reads.push(d);return d.promise;};
+ await h.c.loadData();await h.c.gPost({note:'log_habit'});await h.c.gPost({note:'buy_accessory'});assert.equal(reads.length,3);
+ reads[1].resolve({events:[{id:'older'}]});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,'loading');
+ reads[2].resolve({events:[{id:'latest'}]});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,'ready');assert.equal(h.c.data.events[0].id,'latest');
+ reads[0].resolve({status:'error'});await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,'ready');
+});
+test('replacement calendar has a bounded timeout and cannot populate a switched account',async()=>{
+ for(const switchAccount of [false,true]){
+  const h=fixture();h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve({todos:[],isAdult:true}):body.action==='write'?Promise.resolve({status:'ok'}):new Promise(()=>{});
+  await h.c.loadData();await h.c.gPost({note:'log_habit'});if(switchAccount)h.c.clearSessionState();[...h.timers.values()].forEach(f=>f());await new Promise(r=>setImmediate(r));assert.equal(h.c.data.calendarState,switchAccount?undefined:'error');assert.equal(h.timers.size,0);
+ }
+});
+test('failed refresh terminates calendar loading invalidated by that refresh',async()=>{
+ const h=fixture();let coreReads=0;h.c.gasRequest=body=>body.action==='get_family_core'?Promise.resolve(++coreReads===1?{todos:[],isAdult:true}:{status:'error'}):new Promise(()=>{});
+ await h.c.loadData();assert.equal(h.c.data.calendarState,'loading');assert.equal(await h.c.loadData(),false);assert.equal(h.c.data.calendarState,'error');
 });

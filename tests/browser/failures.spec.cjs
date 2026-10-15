@@ -61,3 +61,17 @@ test('habit form retries a lost successful response without adding a second shar
  await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).toHaveClass(/open/);await expect(page.locator('#hab-submit')).toBeEnabled();await expect(page.locator('#hab-name')).toHaveValue('Retry shared reading');
  await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);expect(await page.evaluate(()=>data.habits.filter(h=>h.habit==='Retry shared reading').length)).toBe(1);
 });
+
+test('habit save during calendar loading recovers without a manual refresh',async({page})=>{
+ const result=await page.evaluate(async()=>{
+  const original=gasRequest,calendar=[];
+  gasRequest=payload=>payload.action==='get_family_calendar'?new Promise(resolve=>calendar.push(resolve)):original(payload);
+  await loadData();const initial=data.calendarState;
+  const saved=await gPost({note:'add_habit',habit:'Calendar loading regression',members:['Mikaela','Meaghan']});
+  calendar[0]({events:[{id:'stale-calendar'}],todos:[]});await new Promise(r=>setTimeout(r,0));const pending=data.calendarState;
+  calendar[1]({events:[],todos:[],completedTasks:[],schoolTasks:[]});await new Promise(r=>setTimeout(r,0));
+  return {initial,pending,status:saved.status,reads:calendar.length,final:data.calendarState,stale:data.events.some(e=>e.id==='stale-calendar')};
+ });
+ expect(result).toEqual({initial:'loading',pending:'loading',status:'ok',reads:2,final:'ready',stale:false});
+ await expect(page.locator('#dash-summary')).not.toContainText('Loading the family calendar');
+});
