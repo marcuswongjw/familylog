@@ -319,7 +319,7 @@ function sendNightBeforeDigest(now) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   // Generate the full preparation window before reading digest tasks, without a browser.
-  if (FAMILY_SERVICE_FORWARDING_ && !FAMILY_BACKEND_MODE_) reminderSnapshot_(signedReminderRequest_());
+  if (FAMILY_SERVICE_FORWARDING_ && !FAMILY_BACKEND_MODE_) { var preparationRequest = signedReminderRequest_(); preparationRequest.action = 'prepare_family_tasks'; reminderSnapshot_(preparationRequest); }
   else calendarPreparation_(ss, true);
   var tdSheet = ss.getSheetByName('ToDo');
   var openTasks = [];
@@ -763,7 +763,7 @@ function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
     if (data.action === 'verify_reminder_snapshot') return ContentService.createTextOutput(JSON.stringify({status:!FAMILY_BACKEND_MODE_ && reminderAuthorized_(data) ? 'ok' : 'error'})).setMimeType(ContentService.MimeType.JSON);
-    if (data.action === 'reminder_snapshot') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
+    if (data.action === 'reminder_snapshot' || data.action === 'prepare_family_tasks') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
     // The token is mandatory. The old check only ran `if (data.idToken)`,
     // so omitting the token skipped verification entirely — an
     // unauthenticated write path for anyone who knew the URL.

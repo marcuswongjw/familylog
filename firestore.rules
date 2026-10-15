@@ -31,19 +31,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── Memories (Firestore metadata; images live in Storage) ──
+    function validMemory(d, id, legacyImage) {
+      return d.keys().hasAll(['loggedByEmail','loggedBy','date','type','person','memory','imageUrl','imagePath','timestamp'])
+        && d.keys().hasOnly(['loggedByEmail','loggedBy','date','type','person','memory','imageUrl','imagePath','timestamp'])
+        && d.loggedByEmail is string && d.loggedByEmail == callerEmail()
+        && d.loggedBy == {'marcuswongjw@gmail.com':'Marcus','eleanor.jiamin@gmail.com':'Eleanor','mikaelawonght@gmail.com':'Mikaela','meaghanwongzx@gmail.com':'Meaghan'}[callerEmail()]
+        && d.date is string && (d.date.matches('[0-9]{4}-((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-8]))') || d.date.matches('([0-9]{2}(0[48]|[2468][048]|[13579][26])|(0[48]|[2468][048]|[13579][26])00)-02-29'))
+        && d.type in ['Moment','Quote','Milestone','💛 Moment','💬 Quote','🏆 Milestone']
+        && d.person in ['Everyone','Marcus','Eleanor','Mikaela','Meaghan']
+        && d.memory is string && d.memory.size() <= 5000
+        && d.timestamp is timestamp && d.timestamp <= request.time
+        && d.imageUrl is string && d.imageUrl.size() <= 2048 && d.imagePath is string
+        && (d.memory.size() > 0 || d.imageUrl.size() > 0)
+        && (legacyImage || (d.imagePath == '' && d.imageUrl == '') || (
+          id.matches('[a-f0-9-]{36}') && d.imagePath == 'memories/' + callerEmail() + '/' + id + '.jpg'
+          && d.imageUrl.matches('https://firebasestorage[.]googleapis[.]com/v0/b/familylog-86db6[.]firebasestorage[.]app/o/memories%2F' + callerEmail().replace('[.]','[.]').replace('@','%40') + '%2F' + id + '[.]jpg[?].*')
+        ));
+    }
     match /memories/{memoryId} {
       allow read: if isFamily();
-      allow create: if isFamily()
-        && request.resource.data.loggedByEmail is string
-        && request.resource.data.loggedByEmail.lower() == callerEmail();
+      allow create: if isFamily() && validMemory(request.resource.data, memoryId, false);
       allow update: if isFamily()
+        && resource.data.loggedByEmail is string && resource.data.loggedByEmail.lower() == callerEmail()
         && request.resource.data.loggedByEmail == resource.data.loggedByEmail
-        && resource.data.loggedByEmail is string
-        && resource.data.loggedByEmail.lower() == callerEmail();
-      allow delete: if isFamily()
-        && resource.data.loggedByEmail is string
-        && resource.data.loggedByEmail.lower() == callerEmail();
+        && validMemory(request.resource.data, memoryId,
+          request.resource.data.imageUrl == resource.data.get('imageUrl','') && request.resource.data.imagePath == resource.data.get('imagePath',''));
+      allow delete: if isFamily() && resource.data.loggedByEmail is string && resource.data.loggedByEmail.lower() == callerEmail();
     }
 
     // Deny everything else by default

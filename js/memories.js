@@ -1,6 +1,7 @@
 /* Keep an upload until metadata is confirmed, and page older memories on demand. */
 let memoryDraft=null;
 let memoryLatest=new Map(),memoryOlder=new Map(),memoryCursor=null,memoryHasMore=false,memoryLoadingOlder=false;
+let memoryBoundary=null,memoryListenerRevision=0;
 const MEMORY_PAGE_SIZE=50;
 async function saveMemoryDraft(input,active) {
   if(!memoryDraft)memoryDraft={id:crypto.randomUUID(),imagePath:'',imageUrl:''};
@@ -35,9 +36,12 @@ function discardMemoryUpload() {
     if(!doc.exists)return storage.ref(draft.imagePath).delete();
   }).catch(()=>{}); // Server cleanup handles abandoned uploads after 48 hours.
 }
-function resetMemorySession(){const body=typeof document!=='undefined'?document.querySelector('#m-memory .modal-body'):null;if(body)body.inert=false;memoryDraft=null;memoryLatest.clear();memoryOlder.clear();memoryCursor=null;memoryHasMore=false;memoryLoadingOlder=false;}
+function resetMemorySession(){const body=typeof document!=='undefined'?document.querySelector('#m-memory .modal-body'):null;if(body)body.inert=false;memoryListenerRevision++;memoryBoundary=null;memoryDraft=null;memoryLatest.clear();memoryOlder.clear();memoryCursor=null;memoryHasMore=false;memoryLoadingOlder=false;}
 function memoryFromDoc(doc){
-  const d=doc.data();return {id:doc.id,loggedBy:d.loggedBy||'Unknown',date:d.date?fmtDate(d.date):'',dateRaw:d.date||'',type:d.type||'Moment',person:d.person||'Everyone',memory:d.memory||'',imageUrl:d.imageUrl||'',timestamp:d.timestamp?.toDate?.()||new Date(0)};
+  const d=doc.data()||{},text=(value,fallback='',max=5000)=>typeof value==='string'?value.slice(0,max):fallback;
+  const date=text(d.date,'',10),validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(Date.parse(date));
+  let timestamp;try{timestamp=d.timestamp?.toDate?.();}catch(_){};
+  return {id:doc.id,loggedBy:text(d.loggedBy,'Unknown',80),date:validDate?fmtDate(date):'',dateRaw:validDate?date:'',type:text(d.type,'Moment',30),person:text(d.person,'Everyone',30),memory:text(d.memory),imageUrl:text(d.imageUrl,'',2048),timestamp:timestamp instanceof Date&&!Number.isNaN(timestamp.getTime())?timestamp:new Date(0)};
 }
 function mergeMemoryPages(){
   const map=new Map([...memoryOlder,...memoryLatest]);
@@ -46,22 +50,27 @@ function mergeMemoryPages(){
 }
 function startMemoriesListener(){
   if(memoriesUnsubscribe||!db)return;
-  const account=currentUserEmail,generation=sessionGeneration;
-  memoriesUnsubscribe=db.collection('memories').orderBy('timestamp','desc').limit(MEMORY_PAGE_SIZE).onSnapshot(snapshot=>{
-    if(account!==currentUserEmail||generation!==sessionGeneration)return;
+  const account=currentUserEmail,generation=sessionGeneration,revision=++memoryListenerRevision;
+  let query=db.collection('memories').orderBy('timestamp','desc');
+  query=memoryBoundary?query.endAt(memoryBoundary):query.limit(MEMORY_PAGE_SIZE);
+  memoriesUnsubscribe=query.onSnapshot(snapshot=>{
+    if(account!==currentUserEmail||generation!==sessionGeneration||revision!==memoryListenerRevision)return;
+    memoryOlder.clear();
     memoryLatest=new Map(snapshot.docs.map(doc=>[doc.id,memoryFromDoc(doc)]));
-    if(!memoryOlder.size&&!memoryLoadingOlder){memoryCursor=snapshot.docs.at(-1)||null;memoryHasMore=snapshot.docs.length===MEMORY_PAGE_SIZE;}
+    if(!memoryBoundary&&!memoryLoadingOlder){memoryCursor=snapshot.docs.at(-1)||null;memoryHasMore=snapshot.docs.length===MEMORY_PAGE_SIZE;}
     mergeMemoryPages();
-  },()=>{if(account===currentUserEmail&&generation===sessionGeneration)showError('Could not load memories.');});
+  },()=>{if(account===currentUserEmail&&generation===sessionGeneration&&revision===memoryListenerRevision)showError('Could not load memories.');});
 }
-function stopMemoriesListener(){if(memoriesUnsubscribe){memoriesUnsubscribe();memoriesUnsubscribe=null;}}
+function stopMemoriesListener(){memoryListenerRevision++;if(memoriesUnsubscribe){memoriesUnsubscribe();memoriesUnsubscribe=null;}}
 async function loadOlderMemories(){
   if(memoryLoadingOlder||!memoryHasMore||!memoryCursor)return;
   const account=currentUserEmail,generation=sessionGeneration;memoryLoadingOlder=true;renderMemories();
   try{
     const page=await db.collection('memories').orderBy('timestamp','desc').startAfter(memoryCursor).limit(MEMORY_PAGE_SIZE).get({source:'server'});
     if(account!==currentUserEmail||generation!==sessionGeneration)return;
-    page.docs.forEach(doc=>memoryOlder.set(doc.id,memoryFromDoc(doc)));memoryCursor=page.docs.at(-1)||memoryCursor;memoryHasMore=page.docs.length===MEMORY_PAGE_SIZE;mergeMemoryPages();
+    page.docs.forEach(doc=>memoryOlder.set(doc.id,memoryFromDoc(doc)));memoryCursor=page.docs.at(-1)||memoryCursor;memoryHasMore=page.docs.length===MEMORY_PAGE_SIZE;memoryBoundary=memoryCursor;mergeMemoryPages();
+    // Observe the entire loaded timestamp range, including its displaced boundary.
+    stopMemoriesListener();startMemoriesListener();
   }catch(_){if(account===currentUserEmail&&generation===sessionGeneration)showError('Could not load older memories. Try again when connected.');}
   finally{if(account===currentUserEmail&&generation===sessionGeneration){memoryLoadingOlder=false;renderMemories();}}
 }
@@ -72,13 +81,13 @@ async function loadOlderMemories(){
       const el   = document.getElementById('mem-list');
       if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>What would you like to remember about today?</div>'; return; }
 
-      const getIcon = t => t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛';
+      const getIcon = value => { const t=typeof value==='string'?value:''; return t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛'; };
 
       el.innerHTML = `
         <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
           ${mems.map(m => {
             const icon = getIcon(m.type);
-            const isQuote = m.type.includes('Quote');
+            const isQuote = typeof m.type==='string'&&m.type.includes('Quote');
 
             let contentHtml = '';
             if (isQuote) {

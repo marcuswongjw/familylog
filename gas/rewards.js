@@ -197,10 +197,11 @@ function reminderSnapshot_(data) {
     if (verified.status !== 'ok') return {status:'error',message:'Unauthorized'};
   } else {
     if (!reminderAuthorized_(data)) return {status:'error',message:'Unauthorized'};
-    if (FAMILY_SERVICE_FORWARDING_) return reminderBridgePost_(FAMILY_SERVICE_URL_,{action:'reminder_snapshot',timestamp:data.timestamp,signature:data.signature});
+    if (FAMILY_SERVICE_FORWARDING_) return reminderBridgePost_(FAMILY_SERVICE_URL_,{action:data.action === 'prepare_family_tasks' ? 'prepare_family_tasks' : 'reminder_snapshot',timestamp:data.timestamp,signature:data.signature});
   }
-  var ss=SpreadsheetApp.getActiveSpreadsheet(), preparation=calendarPreparation_(ss,true);
-  return {status:'ok',todos:getTodos(ss,null,false),habits:getHabits(ss),habitLogs:getHabitLogs(ss),events:preparation.events};
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  if (data.action === 'prepare_family_tasks') { calendarPreparation_(ss,true); return {status:'ok'}; }
+  return {status:'ok',todos:getTodos(ss,null,false),habits:getHabits(ss),habitLogs:getHabitLogs(ss)};
 }
 
 function manualEventMembers_(){

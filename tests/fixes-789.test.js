@@ -11,7 +11,7 @@ function bridge(){
 }
 test('scheduled signed snapshots create preparation through the family writer without dashboard reads',()=>{
  const {original,family}=bridge();family.c.getEvents=()=>[{id:'training',title:'Nat B Training',dateRaw:family.c.Utilities.formatDate(new Date(),'Asia/Singapore','yyyy-MM-dd')}];
- const request=original.c.signedReminderRequest_(),first=post(original,request);assert.equal(first.status,'ok');assert.equal(first.todos.length,2);assert.equal(original.sheets.ToDo,undefined);const ids=Array.from(first.todos,t=>t.id);
+ const request=original.c.signedReminderRequest_();assert.equal(post(original,{...request,action:'prepare_family_tasks'}).status,'ok');const first=post(original,request);assert.equal(first.status,'ok');assert.equal(first.todos.length,2);assert.equal(original.sheets.ToDo,undefined);const ids=Array.from(first.todos,t=>t.id);
  const retry=post(original,request);assert.deepEqual(Array.from(retry.todos,t=>t.id),ids);assert.equal(family.sheets.ToDo.rows.length,3);
 });
 test('unsigned, altered and expired reminder requests cannot read or reconcile family data',()=>{
@@ -19,8 +19,8 @@ test('unsigned, altered and expired reminder requests cannot read or reconcile f
  for(const p of [{action:'reminder_snapshot'}, {...valid,signature:'0'.repeat(64)},{...valid,timestamp:Date.now()-600000}])assert.equal(post(family,p).status,'error');
  assert.equal(reads,0);assert.equal(post(family,{...valid,action:'verify_reminder_snapshot'}).status,'error');
 });
-test('failed authoritative calendar snapshot does not deliver incomplete reminders or retire tasks',()=>{
- const {original,family}=bridge();family.c.getEvents=()=>{throw Error('Unavailable')};assert.equal(post(original,original.c.signedReminderRequest_()).status,'error');assert.equal(family.sheets.ToDo,undefined);
+test('failed calendar preparation does not retire tasks or block independent reminder snapshots',()=>{
+ const {original,family}=bridge();family.c.getEvents=()=>{throw Error('Unavailable')};assert.equal(post(original,{...original.c.signedReminderRequest_(),action:'prepare_family_tasks'}).status,'error');assert.equal(family.sheets.ToDo,undefined);assert.equal(post(original,original.c.signedReminderRequest_()).status,'ok');
 });
 test('calendar reads occur after the writer lock, so a move committed while waiting wins',()=>{
  const h=harness();h.c.Date=class extends Date{constructor(...args){super(...(args.length?args:['2026-10-15T04:00:00Z']))}};let held=false,wait;const event={id:'training',title:'Nat B Training',dateRaw:'2026-10-18'};
@@ -42,5 +42,5 @@ test('malformed school rows do not hide habits, companions, valid notices or cal
 test('an event entering the seven-day window gains preparation on the next scheduled snapshot',()=>{
  const {original,family}=bridge();let today='2026-10-15';family.c.Date=class extends Date{constructor(...args){super(...(args.length?args:[today+'T04:00:00Z']))}};
  family.c.getEvents=()=>[{id:'next-week',title:'Nat B Training',dateRaw:'2026-10-23'}];
- assert.equal(post(original,original.c.signedReminderRequest_()).todos.length,0);today='2026-10-16';const ready=post(original,original.c.signedReminderRequest_());assert.equal(ready.status,'ok');assert.equal(ready.todos.length,2);assert.ok(ready.todos.every(t=>t.dueRaw==='2026-10-22'));
+ const scheduled=()=>{const p=original.c.signedReminderRequest_();assert.equal(post(original,{...p,action:'prepare_family_tasks'}).status,'ok');return post(original,p);};assert.equal(scheduled().todos.length,0);today='2026-10-16';const ready=scheduled();assert.equal(ready.status,'ok');assert.equal(ready.todos.length,2);assert.ok(ready.todos.every(t=>t.dueRaw==='2026-10-22'));
 });

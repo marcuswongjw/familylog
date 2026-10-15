@@ -18,9 +18,15 @@ const root = path.resolve(__dirname, '..');
 const bootstrap = `
 <script>
 window.fixtureMemories=Array.from({length:80},(_,i)=>({id:String(80-i),data:()=>({memory:'Memory '+(80-i),date:'2026-10-05',loggedBy:'Marcus',timestamp:{toDate:()=>new Date(2026,0,80-i)}})}));
+window.fixtureMemoryListeners=new Set();
+window.emitFixtureMemories=()=>fixtureMemoryListeners.forEach(fn=>fn());
+function fixtureMemoryQuery(){let first=null,last=null,count=Infinity;
+ const docs=()=>fixtureMemories.filter(d=>(!first||Number(d.id)<Number(first.id))&&(!last||Number(d.id)>=Number(last.id))).slice(0,count);
+ return {where(){return this},orderBy(){return this},endAt(d){last=d;return this},limit(n){count=n;return this},startAfter(d){first=d;return this},get:async()=>({docs:docs()}),onSnapshot(cb){const notify=()=>cb({docs:docs(),forEach(fn){docs().forEach(fn)}});fixtureMemoryListeners.add(notify);notify();return()=>fixtureMemoryListeners.delete(notify)},doc:()=>({get:async()=>({exists:false}),set:async()=>{},delete:async()=>{}})};
+}
 window.firebase = {
  initializeApp(){},
- firestore: () => ({enablePersistence:()=>Promise.resolve(),collection:()=>({where(){return this},orderBy(){return this},limit(){return this},startAfter(){return this},get:async()=>({docs:fixtureMemories.slice(50)}),onSnapshot(cb){cb({docs:fixtureMemories.slice(0,50),forEach(){}});return ()=>{}},doc:()=>({get:async()=>({exists:false}),set:async()=>{},delete:async()=>{}})})}),
+ firestore: () => ({enablePersistence:()=>Promise.resolve(),collection:()=>fixtureMemoryQuery()}),
  storage: () => ({}),
  messaging: () => ({useServiceWorker(){},onMessage(){}}),
  functions: () => ({httpsCallable:name=>async payload=>name==='updateReminderSettings'?({data:{settings:payload?.settings||{enabled:false,packing:true,habits:true,overdue:true,includeChildren:false,hour:19,quietStart:21,quietEnd:7},bridgeReady:true}}):({data:{title:'Science Learning Journey',child:'Mikaela',sourceText:'',warnings:['The year is missing. Confirm the date.','End time not provided.'],event:{title:'Science Learning Journey',date:'',time:'07:15',endTime:'',location:'School',evidence:'Report at 7:15am on 23 September.'},tasks:[{title:'Pack water bottle',kind:'packing',due:'',evidence:'Bring a water bottle.'}]}})}),

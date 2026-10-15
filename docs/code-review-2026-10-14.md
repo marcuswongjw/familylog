@@ -74,7 +74,7 @@ Fix: use per-domain revisions or explicitly restart/cancel hydration after inval
 
 ### 7. P2 — Preparation generation depends on opening the family dashboard
 
-**Fixed 15 October 2026.** Signed scheduled reminder snapshots and the nightly digest now invoke preparation through the family service before reading tasks. The original runtime verifies the existing server-only HMAC; the family service verifies signatures through a fixed original-service verification endpoint and remains the only writer. No browser or additional credentials are required. Failed preparation fails the snapshot, allowing a later scheduled retry.
+**Fixed 15 October 2026.** Signed scheduled reminder snapshots and the nightly digest now invoke preparation through the family service before reading tasks. The original runtime verifies the existing server-only HMAC; the family service verifies signatures through a fixed original-service verification endpoint and remains the only writer. No browser or additional credentials are required. Preparation runs as a separate signed action before the independent task/habit snapshot; failed preparation does not block independent reminders (see #13).
 
 Evidence: [old nightly reconciliation disabled](/Users/marcus/Documents/GitHub/familylog/Code.js:321), [browser calendar reconciliation](/Users/marcus/Documents/GitHub/familylog/Code.js:794), [read-only reminder snapshot](/Users/marcus/Documents/GitHub/familylog/gas/rewards.js:177), [standalone deployment](/Users/marcus/Documents/GitHub/familylog/scripts/deploy-family-gas.sh:1).
 
@@ -104,6 +104,8 @@ Fix: validate each row separately, quarantine/report damaged records, and return
 
 ### 10. P2 — Memory pagination loses an entry when the live page grows
 
+**Fixed 15 October 2026.** Paging now extends a live query through the oldest loaded document boundary. New arrivals cannot evict the loaded boundary, and edits/deletions throughout the loaded range are observed. Listener revisions reject callbacks after replacement or account changes.
+
 Evidence: [live page replacement](/Users/marcus/Documents/GitHub/familylog/js/memories.js:50), [merge](/Users/marcus/Documents/GitHub/familylog/js/memories.js:42).
 
 The latest 50 records are replaced on each live snapshot. An entry pushed out of that limited window is not moved into the older pages already fetched. Reproduction: load memories 100–51 plus older 50–1; insert 101; the feed has only 100 entries, with 51 missing. Older pages are also one-shot reads and do not reflect subsequent edits/deletions until reloaded.
@@ -111,6 +113,8 @@ The latest 50 records are replaced on each live snapshot. An entry pushed out of
 Fix: maintain query-window boundaries explicitly; refill/requery the displaced boundary while distinguishing a window eviction from an actual deletion. Regression: insert new entries after paging, edit an older entry, delete an older entry, and verify no gaps or resurrected entries.
 
 ### 11. P2 — Memory rules validate ownership but not the record schema
+
+**Fixed 15 October 2026.** Rules now validate the complete memory schema, bounded text, real calendar date format including leap days, allowed types/people, timestamp and owner/document-specific image fields. Legacy invalid field types normalize on read; owners can repair or delete old records. Emulator regressions cover invalid creates/updates and valid owner/image behavior.
 
 Evidence: [Firestore create/update rules](/Users/marcus/Documents/GitHub/familylog/firestore.rules:35), [type-dependent renderer](/Users/marcus/Documents/GitHub/familylog/js/memories.js:75).
 
@@ -120,6 +124,8 @@ Fix: validate required keys, types, text limits, date/type/person values, timest
 
 ### 12. P2 — Partial push success prevents retries on failed devices
 
+**Fixed 15 October 2026.** New delivery receipts are per token hash and reminder ID. Only transiently failed devices retry; permanent failures retire the invalid device. Final receipt writes check the active lease. Confirmed device successes survive another receipt failure. Existing account-level sent receipts remain honored during migration. An uncertain send/receipt may still retry that device; the worker retains stable reminder-ID deduplication.
+
 Evidence: [delivery state](/Users/marcus/Documents/GitHub/familylog/reminder-functions.js:43).
 
 The account-level delivery is marked sent if any device succeeds. A transient failure on the second device is never retried because the next scheduler run skips the whole account. Retrying the whole multicast after an uncertain state write can also redeliver to successful devices. The worker’s seen-ID protection helps suppress displayed duplicates but does not recover the omitted device.
@@ -127,6 +133,8 @@ The account-level delivery is marked sent if any device succeeds. A transient fa
 Fix: store per-device delivery results or retry only transiently failed tokens, while retaining stable notification IDs. Check the lease before finalizing its state. Regression: one success + one transient failure, then recovery; successful devices should not be resent and the failed device should receive the reminder.
 
 ### 13. P2 — Habit/task reminders unnecessarily depend on Calendar availability
+
+**Fixed 15 October 2026.** Calendar preparation is a separate signed family action with its own deadline. The subsequent reminder snapshot reads only tasks/habits/logs and never Calendar. Preparation failure still delivers independent reminders, excluding stale auto-generated Calendar packing tasks. The nightly digest continues to request preparation before reading tasks.
 
 Evidence: [snapshot includes Calendar](/Users/marcus/Documents/GitHub/familylog/gas/rewards.js:187), [reminder planner](/Users/marcus/Documents/GitHub/familylog/reminder-plan.js:15), [snapshot timeout](/Users/marcus/Documents/GitHub/familylog/reminder-functions.js:34).
 

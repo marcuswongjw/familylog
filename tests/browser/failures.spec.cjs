@@ -81,3 +81,11 @@ test('partial school and preparation warnings keep healthy family screens usable
  await expect(page.locator('#data-warning')).toBeVisible();await expect(page.locator('#data-warning')).toContainText('One school notice needs repair');await expect(page.locator('#data-warning')).toContainText('preparation tasks could not refresh');
  await page.evaluate(()=>goTo('habits'));await expect(page.locator('#s-habits')).toHaveClass(/active/);await page.evaluate(()=>clearSessionState());await expect(page.locator('#data-warning')).toBeHidden();
 });
+
+test('memory archive keeps its boundary after insertion and updates older records live',async({page})=>{
+ await page.evaluate(()=>goTo('memories'));await page.getByRole('button',{name:'Load older memories'}).click();await expect.poll(()=>page.evaluate(()=>data.memories.length)).toBe(80);
+ await page.evaluate(()=>{fixtureMemories.unshift({id:'81',data:()=>({memory:'Newest memory',type:42,timestamp:{toDate:()=>new Date(2026,0,81)}})});emitFixtureMemories();});
+ await expect.poll(()=>page.evaluate(()=>data.memories.length)).toBe(81);expect(await page.evaluate(()=>data.memories.some(m=>m.id==='31'))).toBe(true);
+ await page.evaluate(()=>{fixtureMemories=fixtureMemories.filter(d=>d.id!=='3').map(d=>d.id==='2'?{id:'2',data:()=>({memory:'Older memory edited',type:'Moment',timestamp:{toDate:()=>new Date(2026,0,2)}})}:d);emitFixtureMemories();});
+ await expect(page.locator('#mem-list')).toContainText('Older memory edited');expect(await page.evaluate(()=>data.memories.some(m=>m.id==='3'))).toBe(false);
+});

@@ -1,5 +1,5 @@
 // Parent app has its own cache and no family push/device registration.
-const CACHE_NAME='parents-corner-v42';
+const CACHE_NAME='parents-corner-v43';
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(['./','./index.html','./manifest.json','./css/styles.css','./css/nest.css'])).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('parents-corner-')&&k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

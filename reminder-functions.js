@@ -31,20 +31,41 @@ module.exports=({functions,admin,db,storage,STORAGE_BUCKET,APP_URL})=>{
   for(const email of Object.keys(FAMILY)){const raw=(await db.collection('users').doc(email).get()).data()?.reminderSettings||{};const prefs=settings(raw,PARENTS.includes(email));if(prefs.enabled&&prefs.hour===clock.hour&&!quiet(clock.hour,prefs.quietStart,prefs.quietEnd))profiles[email]=prefs;}
   if(!Object.keys(profiles).length)return null;
   const timestamp=Date.now(),signature=crypto.createHmac('sha256',process.env.REMINDER_BRIDGE_SECRET).update('reminder_snapshot|'+timestamp).digest('hex');
+  let preparationReady=false;
+  try {
+   const preparation=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'prepare_family_tasks',timestamp,signature}),signal:AbortSignal.timeout(15000)});
+   preparationReady=preparation.ok!==false&&(await preparation.json()).status==='ok';
+  } catch (_) { /* Existing habits and tasks remain independently available. */ }
+  if(!preparationReady)console.warn('Calendar preparation unavailable; sending independent habit/task reminders.');
   const response=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'reminder_snapshot',timestamp,signature}),signal:AbortSignal.timeout(35000)});
-  const snapshot=await response.json();if(snapshot.status!=='ok')throw new Error('Reminder snapshot unavailable.');
+  const snapshot=await response.json();if(response.ok===false||snapshot.status!=='ok')throw new Error('Reminder snapshot unavailable.');
+  if(!preparationReady)snapshot.todos=(snapshot.todos||[]).filter(t=>!String(t.sourceId||'').startsWith('cal_natb_'));
   const devices=await db.collection('notificationDevices').get();
   for(const email of Object.keys(profiles)){
    const reminder=plan(snapshot,email,profiles[email],now);if(!reminder)continue;
    const tokens=[...new Set(devices.docs.filter(d=>d.data().email===email).map(d=>d.data().token).filter(Boolean))].slice(0,100);if(!tokens.length)continue;
-   const ref=db.collection('ReminderDeliveries').doc(hash(reminder.id)),lease=crypto.randomUUID();
-   const claimed=await db.runTransaction(async tx=>{const old=(await tx.get(ref)).data();if(old?.state==='sent'||old?.at>Date.now()-300000)return false;tx.set(ref,{state:'sending',at:Date.now(),lease,expiresAt:admin.firestore.Timestamp.fromMillis(Date.now()+7*86400000)});return true;});if(!claimed)continue;
+   // Respect earlier account receipts, then track new attempts per device token hash.
+   if((await db.collection('ReminderDeliveries').doc(hash(reminder.id)).get()).data()?.state==='sent')continue;
+   const attempts=[];
+   for(const token of tokens){
+    const ref=db.collection('ReminderDeliveries').doc(hash(reminder.id+'|'+hash(token))),lease=crypto.randomUUID();
+    const claimed=await db.runTransaction(async tx=>{const old=(await tx.get(ref)).data();if(['sent','discarded'].includes(old?.state)||old?.at>Date.now()-300000)return false;tx.set(ref,{state:'sending',at:Date.now(),lease,expiresAt:admin.firestore.Timestamp.fromMillis(Date.now()+7*86400000)});return true;});
+    if(claimed)attempts.push({token,ref,lease});
+   }
+   if(!attempts.length)continue;
+   const finalize=(attempt,state)=>db.runTransaction(async tx=>{const old=(await tx.get(attempt.ref)).data();if(old?.lease!==attempt.lease||old?.state!=='sending')return;tx.set(attempt.ref,{...old,state,at:state==='retry'?0:Date.now()});});
+   let result;
    try{
-    const result=await admin.messaging().sendEachForMulticast({tokens,data:{recipient:email,reminderId:hash(reminder.id),title:reminder.title,body:reminder.body,screen:'home',url:APP_URL+'?open=home#home'},webpush:{headers:{TTL:'3600',Urgency:'normal'}}});
-    const dead=tokens.filter((_,i)=>['messaging/registration-token-not-registered','messaging/invalid-registration-token'].includes(result.responses[i]?.error?.code));
-    if(dead.length){const batch=db.batch();devices.docs.filter(d=>dead.includes(d.data().token)).forEach(d=>batch.delete(d.ref));await batch.commit();}
-    await ref.set({state:result.successCount?'sent':'retry',at:result.successCount?Date.now():0},{merge:true});
-   }catch(err){await ref.set({state:'retry',at:0},{merge:true});throw err;}
+    result=await admin.messaging().sendEachForMulticast({tokens:attempts.map(a=>a.token),data:{recipient:email,reminderId:hash(reminder.id),title:reminder.title,body:reminder.body,screen:'home',url:APP_URL+'?open=home#home'},webpush:{headers:{TTL:'3600',Urgency:'normal'}}});
+   }catch(err){await Promise.allSettled(attempts.map(a=>finalize(a,'retry')));throw err;}
+   const dead=[];
+   const receipts=await Promise.allSettled(attempts.map((attempt,i)=>{
+    const response=result.responses[i],permanent=['messaging/registration-token-not-registered','messaging/invalid-registration-token'].includes(response?.error?.code);
+    if(permanent)dead.push(attempt.token);
+    return finalize(attempt,response?.success?'sent':permanent?'discarded':'retry');
+   }));
+   if(dead.length){for(const device of devices.docs.filter(d=>dead.includes(d.data().token))){await db.runTransaction(async tx=>{const current=(await tx.get(device.ref)).data();if(current?.email===email&&dead.includes(current.token))tx.delete(device.ref);});}}
+   if(receipts.some(r=>r.status==='rejected'))throw new Error('Reminder receipts were not fully confirmed.');
   }
   return null;
  });
