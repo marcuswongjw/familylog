@@ -14,7 +14,16 @@ function harness() {
     deleteRow(index) { this.rows.splice(index - 1, 1); }
     getDataRange() { return { getValues: () => this.rows.map(r => [...r]) }; }
     getRange(row, col, height = 1, width = 1) {
-      return { getValues: () => Array.from({length:height},(_,i)=>Array.from({length:width},(_,j)=>this.rows[row+i-1]?.[col+j-1] ?? '')), setValue: value => this.getRange(row, col).setValues([[value]]), setValues: values => {
+      return { getRow:()=>row, createTextFinder:text=>{
+        let exact=false,sensitive=false,regex=false,formulas=false;
+        const finder={matchCase(value){sensitive=value;return this;},matchEntireCell(value){exact=value;return this;},useRegularExpression(value){regex=value;return this;},matchFormulaText(value){formulas=value;return this;},findNext:()=>{
+          for(let i=row;i<row+height;i++)for(let j=col;j<col+width;j++){
+            const value=String(this.rows[i-1]?.[j-1]??'');
+            const found=regex?new RegExp(exact?'^(?:'+text+')$':text,sensitive?'':'i').test(value):exact?(sensitive?value===text:value.toLowerCase()===text.toLowerCase()):(sensitive?value.includes(text):value.toLowerCase().includes(text.toLowerCase()));
+            if(found)return this.getRange(i,j);
+          }return null;
+        }};return finder;
+      }, getValues: () => Array.from({length:height},(_,i)=>Array.from({length:width},(_,j)=>this.rows[row+i-1]?.[col+j-1] ?? '')), setValue: value => this.getRange(row, col).setValues([[value]]), setValues: values => {
         for (let i = 0; i < height; i++) for (let j = 0; j < width; j++) { this.rows[row + i - 1] ||= []; this.rows[row + i - 1][col + j - 1] = values[i][j]; }
       } };
     }

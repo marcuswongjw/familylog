@@ -1476,14 +1476,19 @@ function handleWriteInner_(data) {
       if (dateStr > today) return { status: 'error', message: 'Log your habit after you have done it.' };
       var notes = toStr(data.notes);
       if (notes.length > 1000) return { status: 'error', message: 'Keep notes under 1,000 characters.' };
-      var existing = perfReadRows_(sheets.logs).find(function(r, i) {
+      var logRows = perfReadRows_(sheets.logs);
+      var existing = logRows.find(function(r, i) {
         var day = r[4] instanceof Date ? Utilities.formatDate(r[4], 'Asia/Singapore', 'yyyy-MM-dd') : toStr(r[4]);
         return i > 0 && r[1] === habitId && r[2] === member && day === dateStr;
       });
       var logId = existing ? toStr(existing[0]) : Utilities.getUuid();
-      if (!existing) sheets.logs.appendRow([logId, habitId, member, schoolCell_(habit), dateStr, schoolCell_(notes), user, new Date()]);
+      if (!existing) {
+        var logRow = [logId, habitId, member, schoolCell_(habit), dateStr, schoolCell_(notes), user, new Date()];
+        sheets.logs.appendRow(logRow);
+        logRows.push(logRow);
+      }
       SpreadsheetApp.flush();
-      var eligible = habitScheduled_(definition, dateStr, member, perfReadRows_(sheets.logs));
+      var eligible = habitScheduled_(definition, dateStr, member, logRows);
       var award = dateStr === today && eligible ? rewardAward_(ss, 'habit', habitId, member, member + ':' + dateStr) : { stars: 0, member: member };
       if (!existing) {
         var logger = (user === member ? user : user + ' for ' + member);

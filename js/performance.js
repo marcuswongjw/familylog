@@ -1,7 +1,7 @@
 /* Bounded, session-local timing samples. No payloads, identities, paths or URLs. */
 const NEST_PERF_ENDPOINTS=['get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar','get_parent_dashboard','get_events','get_todos','get_birthdays','get_rewards','write','reminder_snapshot','prepare_family_tasks','verify_reminder_snapshot','startup','core_ready','calendar_ready','memories_ready','memories_page','other'];
 const NEST_PERF_STAGES=['token','network','server','parse','render','load','dom_ready','sdk_load','auth','family_forward','core','parent_dashboard','calendar_read','calendar_preparation','lock_wait','todos','habits','habit_logs','rewards','school_plans','school_health','activity','expenses','budgets','recurring','private_records'];
-const NEST_PERF_COUNTS=['sheet_reads','rows_scanned','calendar_pages','calendar_events','errors','resources','transfer_bytes'];
+const NEST_PERF_COUNTS=['sheet_reads','rows_scanned','calendar_pages','calendar_events','sheet_searches','search_cells','cells_read','errors','resources','transfer_bytes'];
 let nestPerformanceSamples=[];
 function nestPerfNow(){return typeof performance!=='undefined'?performance.now():Date.now();}
 function cleanNestSample(input,source){
@@ -35,7 +35,7 @@ function captureNestStartup(){
 }
 function exportNestPerformance(){captureNestStartup();return {schema:1,samples:nestPerformanceSamples.map(r=>cleanNestSample(r,r.source)),summary:nestPerformanceSummary()};}
 function showLoadingCheck(){
- if(!isAdultUser)return;const summary=exportNestPerformance().summary,labels={get_family_core:'Family overview',get_family_calendar:'Calendar',get_parent_dashboard:'Parents’ overview',write:'Saving',core_ready:'Overview ready on screen',calendar_ready:'Calendar ready on screen',memories_ready:'Photos ready',memories_page:'Older photos',startup:'App shell startup'};
+ if(!isAdultUser)return;const summary=exportNestPerformance().summary,labels={get_family_archive:'History archive',get_school_plan:'Notice source',get_habit_week:'Selected habit week',get_completed_tasks:'Completed task history',get_family_core:'Family overview',get_family_calendar:'Calendar',get_parent_dashboard:'Parents’ overview',write:'Saving',core_ready:'Overview ready on screen',calendar_ready:'Calendar ready on screen',memories_ready:'Photos ready',memories_page:'Older photos',startup:'App shell startup'};
  const body=document.getElementById('loading-check-body');body.replaceChildren();
  const info=document.createElement('p');info.textContent='This tab only. Median and slower (95th percentile) times use successful requests; failures are counted separately. Small samples are only an initial guide.';body.appendChild(info);
  const table=document.createElement('table');table.style.cssText='width:100%;font-size:13px';const header=table.createTHead().insertRow();const tbody=table.createTBody();for(const text of ['Stage','Samples','Median','Slower','Failed']){const cell=document.createElement('th');cell.textContent=text;header.appendChild(cell);}
@@ -46,7 +46,7 @@ function showLoadingCheck(){
   const detail=document.createElement('details'),title=document.createElement('summary');title.textContent=(r.key.startsWith('server:')?'Server breakdown: ':'Browser breakdown: ')+(labels[r.key.split(':')[2]]||'Other request');detail.appendChild(title);
   const stages=document.createElement('table');stages.style.cssText='width:100%;font-size:12px';
   for(const s of r.stages){const row=stages.insertRow();for(const value of [stageLabels[s.name]||'Other step',s.p50Ms+' ms median',s.p95Ms+' ms slower',s.p50RowsScanned==null?'':s.p50RowsScanned+' rows scanned'])row.insertCell().textContent=value;}
-  detail.appendChild(stages);const note=document.createElement('p');note.textContent='Nested stages overlap; do not add them together. Rows scanned include repeat reads and headers.';detail.appendChild(note);body.appendChild(detail);
+  detail.appendChild(stages);const note=document.createElement('p');note.textContent='Nested stages overlap; do not add them together. Rows scanned include narrow column reads, repeat reads and headers.';detail.appendChild(note);if(r.counts.cells_read){const cells=document.createElement('p');cells.textContent=r.counts.cells_read.p50+' cells fetched (median)'+(r.counts.sheet_searches?' · '+r.counts.sheet_searches.p50+' ID lookups (median)':'');detail.appendChild(cells);}body.appendChild(detail);
  }
  if(!summary.length){const p=document.createElement('p');p.textContent='Refresh the app to collect a loading sample.';body.appendChild(p);}
  if(!document.getElementById('m-loading-check').classList.contains('open'))modalOpened('m-loading-check');

@@ -2,7 +2,7 @@
 var perfContext_ = null;
 var PERF_ENDPOINTS_ = ['get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar','get_parent_dashboard','get_events','get_todos','get_birthdays','get_rewards','write','reminder_snapshot','prepare_family_tasks','verify_reminder_snapshot'];
 var PERF_STAGES_ = ['auth','family_forward','core','parent_dashboard','calendar_read','calendar_preparation','lock_wait','todos','habits','habit_logs','rewards','school_plans','school_health','activity','expenses','budgets','recurring','private_records'];
-var PERF_COUNTS_ = ['sheet_reads','rows_scanned','calendar_pages','calendar_events','errors'];
+var PERF_COUNTS_ = ['sheet_reads','rows_scanned','calendar_pages','calendar_events','sheet_searches','search_cells','cells_read','errors'];
 function perfStage_(name, work) {
   if (!perfContext_ || PERF_STAGES_.indexOf(name)<0) return work();
   var context=perfContext_,start=Date.now(),reads=context.counts.sheet_reads||0,rows=context.counts.rows_scanned||0;
@@ -14,10 +14,10 @@ function perfCount_(name,value) {
   if(perfContext_ && PERF_COUNTS_.indexOf(name)>=0 && Number.isFinite(value) && value>=0)perfContext_.counts[name]=(perfContext_.counts[name]||0)+value;
 }
 function perfReadRows_(sheet) {
-  var rows=sheet.getDataRange().getValues();perfCount_('sheet_reads',1);perfCount_('rows_scanned',rows.length);return rows;
+  var rows=sheet.getDataRange().getValues();perfCount_('sheet_reads',1);perfCount_('rows_scanned',rows.length);perfCount_('cells_read',rows.reduce(function(n,row){return n+row.length;},0));return rows;
 }
 function perfReadRange_(sheet,row,col,height,width) {
-  var rows=sheet.getRange(row,col,height,width).getValues();perfCount_('sheet_reads',1);perfCount_('rows_scanned',rows.length);return rows;
+  var rows=sheet.getRange(row,col,height,width).getValues();perfCount_('sheet_reads',1);perfCount_('rows_scanned',rows.length);perfCount_('cells_read',rows.reduce(function(n,row){return n+row.length;},0));return rows;
 }
 function perfSnapshot_() {
   var c=perfContext_;return {schema:1,service:FAMILY_BACKEND_MODE_?'family':'parents',endpoint:c.endpoint,totalMs:Math.max(0,Date.now()-c.start),stages:c.stages,counts:c.counts};
