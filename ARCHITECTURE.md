@@ -184,6 +184,8 @@ Forms clear and report success only after a confirmed backend save. Refresh retu
 
 Habits columns G–K store Schedule, Weekdays, WeeklyTarget, State and UpdatedAt. Blank legacy values mean daily/active. Habit IDs and logs survive edits, pausing and archiving; the legacy delete endpoint now archives. Shared completions use the verified child identity or a parent-validated `log_member`. Server schedule checks control reward eligibility; weeks run Monday–Sunday in Singapore, counting distinct completion dates. The client helpers are in `js/habits.js`.
 
+In v51, the parent Everyone view renders a named progress row for every assigned habit member, with separate week marks, weekly targets, completion status and direct logging/notes controls. Its completed count explicitly refers to the selected day. The person filter limits those rows to the selected person; children see only their own progress. Each rendered row reuses one member log snapshot for its status and week. Pending/failing saves remain per person and never mark another member complete. Stable row/control IDs preserve keyboard focus across redraws and allow a notes dialog to return focus after a confirmed save replaces its opening button. Backend ownership and reward rules are unchanged.
+
 Dashboard `completedTasks` retains ordinary completed tasks for the child’s day view and uses the same verified-member filter as open tasks. The family milestone selection is owned by the `FamilyGoal` Sheet; its fixed server catalog does not alter the earning ledger or balances.
 
 ## Reminders and recovery

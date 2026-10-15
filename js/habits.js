@@ -11,15 +11,15 @@ function habitMemberLogs(h, member) {
   for(const entry of habitWeekCache.values())if(entry.status==='ready')for(const log of entry.logs)logs.set(log.id,log);
   return [...logs.values()].filter(l => l.habitId === h.id && l.member === member);
 }
-function habitDone(h, member, date) { return habitMemberLogs(h,member).some(l => l.date === date); }
-function habitWeekCount(h, member, date) {
+function habitDone(h, member, date, logs = habitMemberLogs(h,member)) { return logs.some(l => l.date === date); }
+function habitWeekCount(h, member, date, logs = habitMemberLogs(h,member)) {
   const {start,end} = habitWeek(date);
-  return new Set(habitMemberLogs(h,member).filter(l => l.date >= start && l.date < end).map(l => l.date)).size;
+  return new Set(logs.filter(l => l.date >= start && l.date < end).map(l => l.date)).size;
 }
-function habitDue(h, member, date) {
+function habitDue(h, member, date, logs = habitMemberLogs(h,member)) {
   if ((h.state || 'active') !== 'active') return false;
   if (h.schedule === 'weekdays') return (h.weekdays || []).includes(new Date(date+'T00:00:00Z').getUTCDay());
-  if (h.schedule === 'weekly') return habitDone(h,member,date) || habitWeekCount(h,member,date) < (h.weeklyTarget || 3);
+  if (h.schedule === 'weekly') return habitDone(h,member,date,logs) || habitWeekCount(h,member,date,logs) < (h.weeklyTarget || 3);
   return true;
 }
 function habitScheduleLabel(h) {
@@ -31,8 +31,8 @@ function habitForMember(member, date) {
   return (data.habits || []).filter(h => habitMembers(h).includes(member) && habitDue(h,member,date));
 }
 function habitPendingKey(id, member, date) { return `${id}:${member}:${date}`; }
-function habitProgressLabel(h, member, date) {
-  return h.schedule === 'weekly' ? `${Math.min(h.weeklyTarget || 3,habitWeekCount(h,member,date))} of ${h.weeklyTarget || 3} this week` : habitScheduleLabel(h);
+function habitProgressLabel(h, member, date, logs = habitMemberLogs(h,member)) {
+  return h.schedule === 'weekly' ? `${Math.min(h.weeklyTarget || 3,habitWeekCount(h,member,date,logs))} of ${h.weeklyTarget || 3} this week` : habitScheduleLabel(h);
 }
 function childNextStep(tasks, habits, member, date) {
   const task = tasks.filter(t => t.status !== 'Done' && !['consent','payment'].includes(t.kind))
@@ -47,6 +47,27 @@ function habitMembers(h) {
   return (Array.isArray(h.members) ? h.members : String(h.member || '').split(',')).map(m=>m.trim()).filter(m=>['Marcus','Eleanor','Mikaela','Meaghan'].includes(m));
 }
 function habitShared(h) { return habitMembers(h).length > 1; }
+
+function habitProgressMembers(h, viewer, adult, person = 'All') {
+  return habitMembers(h).filter(member => adult ? person === 'All' || member === person : member === viewer);
+}
+
+function renderHabitMemberProgress(h, member, date) {
+  // Reuse one member snapshot for the status, target and all seven days.
+  const logs=habitMemberLogs(h,member),done=habitDone(h,member,date,logs),due=habitDue(h,member,date,logs),active=(h.state||'active')==='active';
+  const week=habitWeek(date),future=date>schoolToday(),pending=pendingHabitLogs.has(habitPendingKey(h.id,member,date));
+  const rowId=`habit-progress-${h.id}-${member}`,name=escapeHtml(member);
+  const dots=Array.from({length:7},(_,i)=>{
+    const day=schoolDayOffset(week.start,i),logged=habitDone(h,member,day,logs),scheduled=habitDue(h,member,day,logs);
+    return `<span class="habit-day ${logged?'done':scheduled?'due':'rest'}" title="${day}: ${logged?'Completed':scheduled?'Scheduled':'Rest day'}"><small>${HABIT_DAYS[new Date(day+'T00:00:00Z').getUTCDay()]}</small><span>${logged?'✓':scheduled?'·':'–'}</span></span>`;
+  }).join('');
+  return `<section class="habit-member-progress" id="${rowId}" tabindex="-1" aria-label="${name}’s progress">
+    <div class="habit-member-heading"><strong>${name}</strong>${h.schedule==='weekly'?`<span class="habit-weekly">${escapeHtml(habitProgressLabel(h,member,date,logs))}</span>`:''}</div>
+    <div class="habit-week" aria-label="${name}’s week">${dots}</div>
+    <div class="habit-actions">${active ? done ? '<span class="habit-complete" role="status">✓ Done for this day</span>' : due ? `<button id="${rowId}-log" class="btn btn-p" onclick="logHabitQuick('${h.id}','${date}','','${member}')" ${future||pending?'disabled':''}>${pending?'Saving…':future?'Do this on the day':isAdultUser?'✓ Log for '+name:'✓ I did it'}</button>` : `<span class="habit-rest">${h.schedule==='weekly'?'Weekly goal reached. Enjoy the breathing room.':'Rest day'}</span>` : ''}
+    ${active&&!future?`<button id="${rowId}-notes" class="btn btn-s" onclick="openHabitLogModal('${h.id}','${date}','${member}')" aria-label="Add notes for ${name}" ${pending?'disabled':''}>Add notes</button>`:''}</div>
+  </section>`;
+}
 
 // Current progress stays in the dashboard; at most two older selected weeks are held in memory.
 const habitWeekCache=new Map();

@@ -17,6 +17,69 @@ test('habits list filters a person and shared progress without exposing siblings
  await expect(page.locator('.habit-list .habit-card')).toHaveCount(2);await expect(page.locator('#habits-container')).not.toContainText('Meaghan phonics');
  await page.evaluate(()=>{user='Meaghan';setAdultAccess(false);renderHabits();});
  await expect(page.locator('#habit-person')).toHaveCount(0);await expect(page.locator('#habits-container')).not.toContainText('Mikaela reading');
+ await expect(page.locator('.habit-card').filter({hasText:'Shared tidy'}).locator('.habit-member-progress')).toHaveCount(1);
+ await expect(page.getByRole('region',{name:'Meaghan’s progress',exact:true})).toHaveCount(2);
+});
+
+test('Everyone shows separate shared completions and quick logging awards only the chosen person',async({page})=>{
+ const created=await page.evaluate(async()=>{
+  const name='Shared progress '+Date.now(),r=await gPost({note:'add_habit',habit:name,members:['Mikaela','Meaghan']});
+  await gPost({note:'set_habit_rewards',rules:[{source_id:r.id,stars:3}]});
+  await gPost({note:'log_habit',habit_id:r.id,log_member:'Mikaela',date:schoolToday()});
+  await loadData();goTo('habits');
+  return {id:r.id,name,balances:Object.fromEntries(data.rewards.members.map(m=>[m.member,m.balance]))};
+ });
+ const card=page.locator('.habit-card').filter({hasText:created.name});
+ await expect(card.locator('.habit-summary')).toHaveText('1 of 2 completed for this day');
+ await expect(card.getByRole('region',{name:'Mikaela’s progress'})).toContainText('Done for this day');
+ await expect(card.getByRole('region',{name:'Meaghan’s progress'})).not.toContainText('Done for this day');
+ await card.getByRole('button',{name:'✓ Log for Meaghan',exact:true}).click();
+ await expect(card.locator('.habit-summary')).toHaveText('2 of 2 completed for this day');
+ await expect(card.getByRole('button',{name:'✓ Log for Meaghan',exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>Object.fromEntries(data.rewards.members.map(m=>[m.member,m.balance])))).toEqual({...created.balances,Meaghan:created.balances.Meaghan+3});
+ await page.evaluate(async()=>{await loadData();renderHabits();});
+ await expect(card.locator('.habit-summary')).toHaveText('2 of 2 completed for this day');
+ expect(await page.evaluate(id=>data.habitLogs.filter(l=>l.habitId===id).map(l=>l.member).sort(),created.id)).toEqual(['Meaghan','Mikaela']);
+});
+
+test('shared weekly goals, rest days and lifecycle states stay individual in cards and list on both screen sizes',async({page})=>{
+ await page.evaluate(()=>{
+  data.habitLogWindow=undefined;habitViewDate='2026-10-08';
+  const common={members:['Mikaela','Meaghan'],state:'active'};
+  data.habits=[{...common,id:'weekly-progress',habit:'Weekly progress',schedule:'weekly',weeklyTarget:1},{...common,id:'rest-progress',habit:'Rest progress',schedule:'weekdays',weekdays:[1]},{...common,id:'paused-progress',habit:'Paused progress',state:'paused'},{...common,id:'archived-progress',habit:'Archived progress',state:'archived'}];
+  data.habitLogs=[{id:'weekly-entry',habitId:'weekly-progress',member:'Mikaela',date:'2026-10-05'}];goTo('habits');
+ });
+ for(const width of [1440,390])for(const layout of ['cards','list']){
+  await page.setViewportSize({width,height:900});await page.locator('#habit-layout').selectOption(layout);
+  const weekly=page.locator('.habit-card').filter({hasText:'Weekly progress'}),mikaela=weekly.getByRole('region',{name:'Mikaela’s progress'}),meaghan=weekly.getByRole('region',{name:'Meaghan’s progress'});
+  await expect(mikaela).toContainText('1 of 1 this week');await expect(mikaela).toContainText('Weekly goal reached');await expect(mikaela.locator('.habit-day.done')).toHaveCount(1);await expect(mikaela.getByRole('button',{name:'✓ Log for Mikaela'})).toHaveCount(0);
+  await expect(meaghan).toContainText('0 of 1 this week');await expect(meaghan.getByRole('button',{name:'✓ Log for Meaghan'})).toBeEnabled();
+  await expect(page.locator('.habit-card').filter({hasText:'Rest progress'}).locator('.habit-rest')).toHaveText(['Rest day','Rest day']);
+  await expect(page.locator('.habit-card').filter({hasText:'Paused progress'}).locator('.habit-member-progress button')).toHaveCount(0);
+  await expect(page.locator('.habit-card').filter({hasText:'Archived progress'})).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
+ }
+ await page.getByRole('button',{name:'Archived habits',exact:true}).click();
+ await expect(page.locator('.habit-card')).toHaveCount(1);await expect(page.locator('.habit-member-progress button')).toHaveCount(0);
+ await page.getByRole('button',{name:'Active habits',exact:true}).click();
+ await page.evaluate(()=>{habitViewDate=schoolDayOffset(schoolToday(),1);renderHabits();});
+ await expect(page.locator('.habit-card').filter({hasText:'Weekly progress'}).getByRole('button',{name:'Do this on the day'})).toHaveCount(2);
+ for(const button of await page.getByRole('button',{name:'Do this on the day'}).all())await expect(button).toBeDisabled();
+});
+
+test('shared completion failures preserve individual progress and filtered notes keep their recipient and keyboard focus',async({page})=>{
+ const name=await page.evaluate(async()=>{
+  const name='Shared retry '+Date.now();await gPost({note:'add_habit',habit:name,members:['Mikaela','Meaghan']});await loadData();goTo('habits');
+  const request=gasRequest;let fail=true;gasRequest=payload=>payload.note==='log_habit'&&fail?new Promise(resolve=>{fail=false;window.releaseHabitFailure=()=>resolve({status:'error',message:'Could not save this completion'});}):request(payload);return name;
+ });
+ const card=page.locator('.habit-card').filter({has:page.getByRole('heading',{name,exact:true})}),row=card.getByRole('region',{name:'Meaghan’s progress'});
+ await row.getByRole('button',{name:'✓ Log for Meaghan'}).click();await expect(row.getByRole('button',{name:'Saving…'})).toBeDisabled();
+ await expect(card.getByRole('button',{name:'✓ Log for Mikaela'})).toBeEnabled();
+ await page.evaluate(()=>releaseHabitFailure());await expect(row.getByRole('button',{name:'✓ Log for Meaghan'})).toBeEnabled();await expect(row).toBeFocused();await expect(card.locator('.habit-summary')).toHaveText('0 of 2 completed for this day');
+ await page.locator('#habit-person').selectOption('Meaghan');await expect(card.locator('.habit-member-progress')).toHaveCount(1);
+ const notes=row.getByRole('button',{name:'Add notes for Meaghan'});await notes.click();await expect(page.locator('#hl-member')).toHaveValue('Meaghan');await page.locator('#hl-notes').fill('Read with Dad');await page.locator('#hl-submit').click();
+ await expect(page.locator('#m-habit-log')).not.toHaveClass(/open/);await expect(notes).toBeFocused();await expect(row).toContainText('Done for this day');
+ expect(await page.evaluate(name=>data.habitLogs.filter(l=>l.habitId===data.habits.find(h=>h.habit===name).id).map(l=>({member:l.member,notes:l.notes})),name)).toEqual([{member:'Meaghan',notes:'Read with Dad'}]);
 });
 
 test('Home fits desktop and mobile with today before the family overview on mobile',async({page})=>{

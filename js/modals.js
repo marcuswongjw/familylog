@@ -6,7 +6,7 @@ function modalOpened(id){
  const title=modal.querySelector('.modal-title');if(title){title.id=title.id||id+'-title';modal.setAttribute('aria-labelledby',title.id);}
  overlay.classList.add('open');(modal.querySelector('input:not([type=hidden]):not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])')||modal).focus();
 }
-function closeM(id){const overlay=document.getElementById(id);if(!overlay)return;overlay.classList.remove('open');if(id==='menu-drawer')document.getElementById('drawer-overlay')?.classList.remove('open');const origin=modalOrigins.get(id);modalOrigins.delete(id);if(origin?.isConnected&&!origin.closest('#login-screen:not(.active)'))origin.focus();}
+function closeM(id){const overlay=document.getElementById(id);if(!overlay)return;overlay.classList.remove('open');if(id==='menu-drawer')document.getElementById('drawer-overlay')?.classList.remove('open');const saved=modalOrigins.get(id);modalOrigins.delete(id);const origin=saved?.isConnected?saved:saved?.id?document.getElementById(saved.id):null;if(origin&&!origin.disabled&&!origin.closest('#login-screen:not(.active)')&&!origin.closest('.screen:not(.active)'))origin.focus();}
 function initModalAccess(){
  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',event=>{if(event.target===o)closeM(o.id);}));
  document.querySelectorAll('.drawer-item').forEach(item=>{item.setAttribute('role','button');item.tabIndex=0;item.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();item.click();}});});

@@ -346,9 +346,18 @@ body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day
 #today-wrap .card-body{max-height:460px;overflow:auto}
 .habit-toolbar select{min-height:44px;max-width:180px}
 .habit-list{grid-template-columns:minmax(0,1fr)}
-.habit-list .habit-card{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:8px 24px;padding:18px 22px}
-.habit-list .habit-week{grid-column:2;grid-row:1/4;margin:0;align-self:center}
-.habit-list .habit-actions,.habit-list .habit-history{grid-column:1/-1}
+.habit-member-progress{padding:14px 0;border-top:1px solid var(--border-color);min-width:0}
+.habit-member-progress:focus{outline:2px solid var(--primary);outline-offset:4px;border-radius:8px}
+.habit-member-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;font-size:14px}
+.habit-member-heading .habit-weekly{font-size:12px}
+.habit-summary{font-size:13px;font-weight:700;color:var(--text-muted);margin:12px 0}
+.habit-member-progress .habit-week{margin:12px 0}
+.habit-manage{border-top:1px solid var(--border-color);padding-top:14px}
+.habit-list .habit-card{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:18px 22px}
+.habit-list .habit-member-progress{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:8px 24px;align-items:center}
+.habit-list .habit-member-heading{justify-content:flex-start}
+.habit-list .habit-week{grid-column:2;grid-row:1/3;margin:0}
+.habit-list .habit-member-progress .habit-actions{grid-column:1}
 .habit-list .habit-schedule,.habit-list .habit-weekly{margin:0}
 @media(max-width:1200px){#today-wrap{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:800px){
@@ -357,7 +366,7 @@ body.dark-mode .week-day-cell.today,body.dark-mode .week-board thead th.week-day
  #dash-members>.nest-kicker{grid-column:1/-1}.dash-member{gap:8px}.dash-member .count{display:none}
  #s-home .sec-body{padding:16px;gap:16px}.greet h2{font-size:28px}
  .dash-stat{padding:14px 10px;gap:4px;text-align:center;grid-template-columns:1fr}.dash-stat .num{grid-row:auto;font-size:24px}.dash-stat small{display:none}.dash-stat .lbl{font-size:11px}
- .habit-list .habit-card{grid-template-columns:minmax(0,1fr);padding:16px}.habit-list .habit-week{grid-column:1;grid-row:auto;margin:8px 0}
+ .habit-list .habit-card{padding:16px}.habit-list .habit-member-progress{grid-template-columns:minmax(0,1fr);gap:8px}.habit-list .habit-week{grid-column:1;grid-row:auto;margin:4px 0}
 }
 
 .cross-app-link{display:inline-flex;align-items:center;text-decoration:none;font-size:13px;gap:8px;line-height:1.5}

@@ -51,3 +51,12 @@ test('parents can change assignment without losing habit ID, history or reward r
 test('front-end member filtering handles selected subsets and legacy Everyone',()=>{
  const subset={id:'subset',member:'Mikaela,Meaghan'},c=frontend({habits:[subset,{id:'all',member:'Everyone'}]});assert.equal(c.habitForMember('Mikaela','2026-10-08').length,2);assert.equal(c.habitForMember('Marcus','2026-10-08').length,1);assert.equal(c.habitShared(subset),true);
 });
+test('habit progress targets every assigned person for parents and only the child for child sessions',()=>{
+ const c=frontend(),subset={members:['Mikaela','Meaghan']},all={member:'Everyone'};
+ assert.deepEqual(Array.from(c.habitProgressMembers(subset,'Marcus',true)),['Mikaela','Meaghan']);
+ assert.deepEqual(Array.from(c.habitProgressMembers(all,'Marcus',true)),['Marcus','Eleanor','Mikaela','Meaghan']);
+ assert.deepEqual(Array.from(c.habitProgressMembers(subset,'Marcus',true,'Meaghan')),['Meaghan']);
+ assert.deepEqual(Array.from(c.habitProgressMembers(subset,'Mikaela',false,'Meaghan')),['Mikaela']);
+ assert.deepEqual(Array.from(c.habitProgressMembers(subset,'Marcus',false)),[]);
+ assert.deepEqual(Array.from(c.habitProgressMembers(subset,'Marcus',true,'Marcus')),[]);
+});
