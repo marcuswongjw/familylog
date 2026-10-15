@@ -2,6 +2,7 @@
       if(typeof resetNestPerformance==='function')resetNestPerformance();
       if(typeof resetConnectionStatus==='function')resetConnectionStatus();
       sessionGeneration++; dashboardGeneration++;
+      if(typeof resetTaskHistory==='function')resetTaskHistory(true);
       if (_pendingUndo) { clearTimeout(_pendingUndo.timer); _pendingUndo = null; }
       resetRewards(); schoolReset(); schoolDay = '';
       resetMemorySession();

@@ -50,3 +50,20 @@ function ensureTodoIds_(ss) {
   }
   return sheet;
 }
+
+// Stable keyset pagination: ownership filtering happens in getTodos before this helper.
+// Re-read authoritative rows on each page; no cached household records or positional offsets.
+function completedTaskPage_(todos, cursor) {
+  var before = null;
+  if (cursor != null && cursor !== '') {
+    if (typeof cursor !== 'string' || cursor.length > 512) throw new Error('Invalid history cursor');
+    before = JSON.parse(cursor);
+    if (!before || typeof before.at !== 'string' || typeof before.id !== 'string' || before.at.length > 40 || !before.id || before.id.length > 200) throw new Error('Invalid history cursor');
+  }
+  var key = function(t){return t.completedAt || t.completedRaw || '';};
+  var rows = todos.filter(function(t){return t.status.toLowerCase() === 'done';});
+  rows.sort(function(a,b){var x=key(a),y=key(b);return x===y ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : x<y ? 1 : -1;});
+  if (before) rows=rows.filter(function(t){return key(t)<before.at || (key(t)===before.at && t.id<before.id);});
+  var items=rows.slice(0,50),last=items[items.length-1];
+  return {items:items,nextCursor:rows.length>50 ? JSON.stringify({at:key(last),id:last.id}) : null};
+}

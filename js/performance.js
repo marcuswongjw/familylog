@@ -1,5 +1,5 @@
 /* Bounded, session-local timing samples. No payloads, identities, paths or URLs. */
-const NEST_PERF_ENDPOINTS=['get_all','get_family_dashboard','get_family_core','get_family_calendar','get_parent_dashboard','get_events','get_todos','get_birthdays','get_rewards','write','reminder_snapshot','prepare_family_tasks','verify_reminder_snapshot','startup','core_ready','calendar_ready','memories_ready','memories_page','other'];
+const NEST_PERF_ENDPOINTS=['get_all','get_family_dashboard','get_completed_tasks','get_family_core','get_family_calendar','get_parent_dashboard','get_events','get_todos','get_birthdays','get_rewards','write','reminder_snapshot','prepare_family_tasks','verify_reminder_snapshot','startup','core_ready','calendar_ready','memories_ready','memories_page','other'];
 const NEST_PERF_STAGES=['token','network','server','parse','render','load','dom_ready','sdk_load','auth','family_forward','core','parent_dashboard','calendar_read','calendar_preparation','lock_wait','todos','habits','habit_logs','rewards','school_plans','school_health','activity','expenses','budgets','recurring','private_records'];
 const NEST_PERF_COUNTS=['sheet_reads','rows_scanned','calendar_pages','calendar_events','errors','resources','transfer_bytes'];
 let nestPerformanceSamples=[];

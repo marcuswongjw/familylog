@@ -14,7 +14,7 @@ function harness() {
     deleteRow(index) { this.rows.splice(index - 1, 1); }
     getDataRange() { return { getValues: () => this.rows.map(r => [...r]) }; }
     getRange(row, col, height = 1, width = 1) {
-      return { setValue: value => this.getRange(row, col).setValues([[value]]), setValues: values => {
+      return { getValues: () => Array.from({length:height},(_,i)=>Array.from({length:width},(_,j)=>this.rows[row+i-1]?.[col+j-1] ?? '')), setValue: value => this.getRange(row, col).setValues([[value]]), setValues: values => {
         for (let i = 0; i < height; i++) for (let j = 0; j < width; j++) { this.rows[row + i - 1] ||= []; this.rows[row + i - 1][col + j - 1] = values[i][j]; }
       } };
     }

@@ -123,3 +123,33 @@ test('Home leaves photo services idle and Memories starts and stops its connecti
  await page.evaluate(()=>goTo('home'));
  expect(await page.evaluate(()=>fixtureMemoryListeners.size)).toBe(0);
 });
+
+test('completed tasks page on demand, preserve the page after failure, and clear on account switch',async({page})=>{
+ await page.evaluate(async()=>{
+  for(let i=0;i<54;i++){
+   const t=await gasRequest({action:'write',note:'add_todo',todo_task:'Archive regression '+i,todo_assignee:'Marcus'});
+   await gasRequest({action:'write',note:'complete_todo',todo_id:t.id});
+  }
+  await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));goTo('tasks');
+ });
+ await page.getByRole('button',{name:'Completed tasks',exact:true}).click();
+ await expect(page.locator('#task-list')).toContainText('Showing 50 completed tasks');
+ await page.getByRole('button',{name:'Older',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Newer',exact:true})).toBeEnabled();
+ expect(await page.evaluate(()=>taskHistoryPage.items.length)).toBeLessThan(50);
+ const ids=await page.evaluate(()=>taskHistoryPage.items.map(t=>t.id));
+ await page.evaluate(()=>{window.archiveTransport=gasRequest;gasRequest=async body=>body.action==='get_completed_tasks'?{status:'error'}:archiveTransport(body)});
+ await page.getByRole('button',{name:'Newer',exact:true}).click();
+ await expect(page.locator('#task-list')).toContainText('Could not load this page');
+ expect(await page.evaluate(()=>taskHistoryPage.items.map(t=>t.id))).toEqual(ids);
+ await page.evaluate(()=>{gasRequest=archiveTransport;});
+ await page.getByRole('button',{name:'Newer',exact:true}).click();
+ await expect(page.locator('#task-list')).toContainText('Showing 50 completed tasks');
+ expect(await page.evaluate(()=>taskHistoryCursors.length)).toBe(1);
+ await page.evaluate(async()=>{
+  gasRequest=()=>new Promise(resolve=>window.archiveResolve=resolve);window.oldHistoryRequest=loadTaskHistory(true);
+  clearSessionState();user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';
+  archiveResolve({status:'ok',items:[{id:'old-parent',task:'Parent archive'}],nextCursor:null});await oldHistoryRequest;
+ });
+ expect(await page.evaluate(()=>({page:taskHistoryPage,open:taskHistoryOpen,busy:taskHistoryBusy}))).toEqual({page:null,open:false,busy:false});
+});

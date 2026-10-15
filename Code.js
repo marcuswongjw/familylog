@@ -801,12 +801,16 @@ function doPostInner_(e) {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var preparation = calendarPreparation_(ss, false), events = preparation.events;
       var tasks = getTodos(ss, verified, true);
-      return perfJson_({status:'ok',preparationState:preparation.preparationState,dataWarnings:schoolRecordWarnings_(ss,isAdultEmail_(verified)),events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})});
+      var completed = completedTaskPage_(tasks);
+      return perfJson_({status:'ok',completedTaskHistory:{nextCursor:completed.nextCursor},preparationState:preparation.preparationState,dataWarnings:schoolRecordWarnings_(ss,isAdultEmail_(verified)),events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:completed.items,schoolTasks:tasks.filter(function(t){return !!t.sourceId;})});
     }
 
     if (action === 'get_events' || action === 'get_todos' || action === 'get_birthdays') {
       var rows = action === 'get_events' ? memberEvents_(getEvents(),verified) : action === 'get_todos' ? getTodos(null,verified) : getBirthdays();
       return perfJson_(rows);
+    }
+    if (action === 'get_completed_tasks') {
+      return perfJson_(Object.assign({status:'ok'},completedTaskPage_(getTodos(null,verified,true),data.cursor)));
     }
     if (action === 'get_rewards') {
       return perfJson_({status:'ok',rewards:getRewards_(SpreadsheetApp.getActiveSpreadsheet())});
@@ -1587,30 +1591,35 @@ function getActivityLogMeasured_(ss, allTodos, habitLogs, scope) {
 
   var sheet = ss.getSheetByName(activitySheetName_());
   if (!sheet && FAMILY_BACKEND_MODE_) sheet = ss.getSheetByName('ActivityLog');
-  if (sheet) {
-    var vals = perfReadRows_(sheet);
-    if (FAMILY_BACKEND_MODE_) { var legacy = ss.getSheetByName('ActivityLog'); if (legacy && legacy !== sheet) vals = [vals[0]].concat(perfReadRows_(legacy).slice(1), vals.slice(1)); }
-    for (var i = vals.length - 1; i >= 1 && list.length < 50; i--) {
-      var r = vals[i];
-      if (!r[0]) continue;
-      if (scope === 'family' && ['Tasks','Calendar','Habits'].indexOf(toStr(r[3])) === -1) continue;
-      var ts;
-      try { ts = r[0] instanceof Date ? r[0].toISOString() : (new Date(r[0]).toISOString()); } catch (_) { ts = toStr(r[0]); }
-      var desc = toStr(r[4]);
-      var act = toStr(r[2]) || 'general';
-      var key = act + '|' + desc + '|' + ts.slice(0, 16);
-      if (seen[key]) continue;
-      seen[key] = true;
-      list.push({
-        timestamp: ts,
-        user: toStr(r[1]) || 'Family',
-        action: act,
-        category: toStr(r[3]) || 'General',
-        description: desc,
-        details: toStr(r[5]) || ''
-      });
+  var sources = sheet ? [sheet] : [];
+  if (FAMILY_BACKEND_MODE_) { var legacy=ss.getSheetByName('ActivityLog'); if(legacy && legacy!==sheet)sources.push(legacy); }
+  sources.forEach(function(source){
+    // Append-only logs: walk backwards in small ranges, stopping once 50 relevant unique rows exist.
+    for(var end=source.getLastRow();end>=2 && list.length<50;){
+      var start=Math.max(2,end-99),vals=perfReadRange_(source,start,1,end-start+1,6);
+      for(var i=vals.length-1;i>=0 && list.length<50;i--){
+        var r=vals[i];
+        if (!r[0]) continue;
+        if (scope === 'family' && ['Tasks','Calendar','Habits'].indexOf(toStr(r[3])) === -1) continue;
+        var ts;
+        try { ts = r[0] instanceof Date ? r[0].toISOString() : (new Date(r[0]).toISOString()); } catch (_) { ts = toStr(r[0]); }
+        var desc = toStr(r[4]);
+        var act = toStr(r[2]) || 'general';
+        var key = act + '|' + desc + '|' + ts.slice(0, 16);
+        if (seen[key]) continue;
+        seen[key] = true;
+        list.push({
+          timestamp: ts,
+          user: toStr(r[1]) || 'Family',
+          action: act,
+          category: toStr(r[3]) || 'General',
+          description: desc,
+          details: toStr(r[5]) || ''
+        });
+      }
+      end=start-1;
     }
-  }
+  });
 
   // Synthesize recent task completions from allTodos
   if (Array.isArray(allTodos)) {
@@ -1692,14 +1701,18 @@ function getAllDashboardDataMeasured_(verifiedEmail, scope) {
   var allTodos = getTodos(ss, verifiedEmail, true);
   var habits = getHabits(ss, verifiedEmail);
   var habitLogs = getHabitLogs(ss, verifiedEmail);
-  // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
+  var completed = completedTaskPage_(allTodos);
+  // One immutable notice snapshot serves plans and health; never cached across requests/writes.
+  var schoolRows = adult ? schoolStoredRows_(ss) : [];
+  // Sheets own the dashboard; Firestore owns memories (see ARCHITECTURE.md).
   return {
     events:    coreOnly ? undefined : memberEvents_(events, verifiedEmail),
     preparationState: preparation ? preparation.preparationState : undefined,
-    dataWarnings: schoolRecordWarnings_(ss, adult),
+    dataWarnings: schoolRecordWarnings_(ss, adult, schoolRows),
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
-    completedTasks: allTodos.filter(function(t) { return t.status.toLowerCase() === 'done'; }),
-    schoolPlans: schoolReadPlans_(ss, adult),
+    completedTasks: completed.items,
+    completedTaskHistory: {nextCursor:completed.nextCursor},
+    schoolPlans: schoolReadPlans_(ss, adult, schoolRows),
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
     expenses:  includePrivate ? getExpensesData(ss) : emptyExpensesPayload_(),
     budgets:   includePrivate ? getBudgets(ss) : [],
@@ -3066,16 +3079,16 @@ function schoolStoredRows_(ss) {
   var sheet = ss.getSheetByName('SchoolAnnouncements');
   return sheet ? perfReadRows_(sheet).slice(1).filter(function(r){return r[0];}) : [];
 }
-function schoolRecordWarnings_Measured_(ss, adult) {
+function schoolRecordWarnings_Measured_(ss, adult, storedRows) {
   if (!adult) return [];
   var count = 0;
-  schoolStoredRows_(ss).forEach(function(r){try { schoolStoredPlan_(r); } catch (err) { count++; }});
+  (storedRows || schoolStoredRows_(ss)).forEach(function(r){try { schoolStoredPlan_(r); } catch (err) { count++; }});
   return count ? [count + ' school record(s) could not load. Other family data is available. Ask a parent to repair the SchoolAnnouncements records.'] : [];
 }
-function schoolReadPlans_Measured_(ss, adult) {
+function schoolReadPlans_Measured_(ss, adult, storedRows) {
   if (!adult) return [];
   var plans = [];
-  schoolStoredRows_(ss).forEach(function(r){try { plans.push(schoolStoredPlan_(r)); } catch (err) { console.log('Skipped damaged school record row'); }});
+  (storedRows || schoolStoredRows_(ss)).forEach(function(r){try { plans.push(schoolStoredPlan_(r)); } catch (err) { console.log('Skipped damaged school record row'); }});
   return plans.reverse();
 }
 function schoolEventLinks_() {

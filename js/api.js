@@ -84,6 +84,7 @@
       // Firebase-owned fields: never accept from GAS (even if old deploy sends them)
       const prevMems = Array.isArray(data.memories) ? data.memories : [];
       data = r || {};
+      if(r.completedTaskHistory && typeof resetTaskHistory==='function')resetTaskHistory();
       data.memories = prevMems;
       // Accepted dashboard responses replace private lists; never retain old-account entries.
       data.intimacyLog = Array.isArray(r.intimacyLog) ? r.intimacyLog : [];

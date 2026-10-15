@@ -415,7 +415,7 @@
       let todos = data.todos || [];
       if(searchTaskQuery) todos = todos.filter(t => t.task.toLowerCase().includes(searchTaskQuery) || (t.assignee||'').toLowerCase().includes(searchTaskQuery));
       const el = document.getElementById('task-list');
-      if(!todos.length){ el.innerHTML = '<div class="empty"><div class="ei">✅</div>All done — no open tasks!</div>'; return; }
+      if(!todos.length){ el.innerHTML = '<div class="empty"><div class="ei">✅</div>All done — no open tasks!</div>'+taskHistoryHtml(); return; }
       const g = {};
       FAM.forEach(m => g[m] = []);
       todos.forEach(t => {
@@ -461,7 +461,7 @@
             </div>
           `).join('')}
         </div>
-      `;
+      `+taskHistoryHtml();
     }
     async function doneTask(id, el) {
       await schoolTaskAction(id, 'complete_todo', el);
@@ -474,3 +474,29 @@
       data.schoolTasks = (data.schoolTasks || []).filter(t => t.id !== id);
       renderTasks(); renderHome();
     }
+
+// Retain one completed-task page; cursors store positions, never old household records.
+let taskHistoryOpen=false,taskHistoryPage=null,taskHistoryBusy=false,taskHistoryError='',taskHistoryRevision=0,taskHistoryCursors=[null];
+function resetTaskHistory(close=false){if(close)taskHistoryOpen=false;taskHistoryRevision++;taskHistoryPage=null;taskHistoryBusy=false;taskHistoryError='';taskHistoryCursors=[null];}
+function toggleTaskHistory(){taskHistoryOpen=!taskHistoryOpen;renderTasks();document.querySelector('#task-list button[aria-expanded]')?.focus();}
+function taskHistoryHtml(){
+ const page=taskHistoryPage||{items:data.completedTasks||[],nextCursor:data.completedTaskHistory?.nextCursor};
+ const rows=(page.items||[]).filter(t=>!searchTaskQuery || (t.task+' '+t.assignee).toLowerCase().includes(searchTaskQuery));
+ return `<div style="padding:16px;border-top:1px solid var(--border)"><button class="btn btn-s" type="button" aria-expanded="${taskHistoryOpen}" onclick="toggleTaskHistory()">Completed tasks</button>${taskHistoryOpen?`<div aria-live="polite" aria-busy="${taskHistoryBusy}"><p>Showing ${page.items.length} completed tasks on this page. Search applies to this page.</p>${rows.map(t=>`<div style="padding:8px 0"><strong>${escapeHtml(t.task)}</strong><div>${escapeHtml(t.assignee)} · ${escapeHtml(t.completedRaw||'Date unavailable')}</div></div>`).join('')||'<p>No completed tasks on this page.</p>'}<p role="alert">${escapeHtml(taskHistoryError)}</p><button class="btn btn-s" type="button" onclick="loadTaskHistory(false)" ${taskHistoryBusy||taskHistoryCursors.length<2?'disabled':''}>Newer</button> <button class="btn btn-s" type="button" onclick="loadTaskHistory(true)" ${taskHistoryBusy||!page.nextCursor?'disabled':''}>Older</button></div>`:''}</div>`;
+}
+async function loadTaskHistory(older){
+ if(taskHistoryBusy)return;
+ const page=taskHistoryPage||{items:data.completedTasks||[],nextCursor:data.completedTaskHistory?.nextCursor};
+ if(older&&!page.nextCursor || !older&&taskHistoryCursors.length<2)return;
+ const cursors=older?[...taskHistoryCursors,page.nextCursor]:taskHistoryCursors.slice(0,-1);
+ const account=currentUserEmail,generation=sessionGeneration,dashboard=dashboardGeneration,revision=taskHistoryRevision;
+ const active=()=>account===currentUserEmail&&generation===sessionGeneration&&dashboard===dashboardGeneration&&revision===taskHistoryRevision;
+ taskHistoryBusy=true;taskHistoryError='';renderTasks();
+ try{
+  const result=await gasRequest({action:'get_completed_tasks',cursor:cursors.at(-1)});
+  if(!active())return;
+  if(!result||result.status!=='ok'||!Array.isArray(result.items))throw new Error('Could not load this page. Please retry.');
+  taskHistoryPage={items:result.items,nextCursor:result.nextCursor};taskHistoryCursors=cursors;
+ }catch(_){if(active())taskHistoryError='Could not load this page. Please retry.';}
+ finally{if(account===currentUserEmail&&generation===sessionGeneration&&revision===taskHistoryRevision){taskHistoryBusy=false;if(section==='tasks'){renderTasks();document.querySelector('#task-list button[aria-expanded]')?.focus();}}}
+}
