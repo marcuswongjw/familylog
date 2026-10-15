@@ -144,6 +144,39 @@ test('failed refresh terminates calendar loading invalidated by that refresh',as
  await h.c.loadData();assert.equal(h.c.data.calendarState,'loading');assert.equal(await h.c.loadData(),false);assert.equal(h.c.data.calendarState,'error');
 });
 
+test('calendar-only retry preserves core and stale events until a valid response stamps freshness',async()=>{
+ const h=fixture(),pending=defer(),calls=[];
+ h.c.data={events:[{id:'saved'}],todos:[{id:'core-task'}],habits:[{id:'habit'}],calendarState:'error',calendarRefreshedAt:123};
+ h.c.gasRequest=body=>{calls.push(body.action);return pending.promise;};
+ const retry=h.c.retryFamilyCalendar();assert.equal(h.c.data.calendarState,'loading');assert.equal(await h.c.retryFamilyCalendar(),false);assert.equal(calls.length,1);
+ assert.equal(h.c.data.events[0].id,'saved');assert.equal(h.c.data.calendarRefreshedAt,123);
+ pending.resolve({events:[{id:'fresh'}],todos:[{id:'reconciled'}],preparationState:'ready'});assert.equal(await retry,true);
+ assert.deepEqual(calls,['get_family_calendar']);assert.equal(h.c.data.calendarState,'ready');assert.ok(h.c.data.calendarRefreshedAt>123);assert.equal(h.c.data.habits[0].id,'habit');assert.equal(h.c.data.todos[0].id,'reconciled');
+});
+test('calendar retry errors, malformed replies and timeout retain the last successful freshness',async()=>{
+ for(const result of [null,{status:'error'},{status:'ok'},'timeout']){
+  const h=fixture();h.c.data={calendarState:'error',calendarRefreshedAt:123,events:[{id:'saved'}]};
+  h.c.gasRequest=()=>result==='timeout'?new Promise(()=>{}):Promise.resolve(result);
+  const retry=h.c.retryFamilyCalendar();if(result==='timeout')[...h.timers.values()].forEach(f=>f());
+  assert.equal(await retry,false);assert.equal(h.c.data.calendarState,'error');assert.equal(h.c.data.calendarRefreshedAt,123);assert.equal(h.c.data.events[0].id,'saved');assert.equal(h.timers.size,0);
+ }
+});
+test('a newer core hydration wins over calendar-only retry started while core was pending',async()=>{
+ const h=fixture(),core=defer(),manual=defer(),newest=defer();let reads=0;
+ h.c.data={events:[{id:'saved'}],calendarState:'error',calendarRefreshedAt:123};
+ h.c.gasRequest=body=>body.action==='get_family_core'?core.promise:++reads===1?manual.promise:newest.promise;
+ const loading=h.c.loadData(),retry=h.c.retryFamilyCalendar();core.resolve({todos:[{id:'new-core'}],habits:[{id:'habit'}]});await loading;
+ newest.resolve({events:[{id:'latest'}],todos:[{id:'latest-task'}]});await new Promise(r=>setImmediate(r));const stamp=h.c.data.calendarRefreshedAt;
+ manual.resolve({events:[{id:'stale'}],todos:[]});assert.equal(await retry,false);
+ assert.equal(h.c.data.events[0].id,'latest');assert.equal(h.c.data.todos[0].id,'latest-task');assert.equal(h.c.data.calendarRefreshedAt,stamp);
+});
+test('calendar retry cannot mark another account fresh and offline retries send nothing',async()=>{
+ const h=fixture(),pending=defer();let reads=0;h.c.data.calendarState='error';h.c.gasRequest=()=>{reads++;return pending.promise;};
+ h.c.navigator.onLine=false;assert.equal(await h.c.retryFamilyCalendar(),false);assert.equal(reads,0);
+ h.c.navigator.onLine=true;const retry=h.c.retryFamilyCalendar();h.c.clearSessionState();h.c.user='Mikaela';h.c.currentUserEmail='mikaelawonght@gmail.com';
+ pending.resolve({events:[{id:'private'}]});assert.equal(await retry,false);assert.equal(h.c.data.calendarRefreshedAt,undefined);assert.equal(h.c.data.events,undefined);
+});
+
 test('background deletion never uses a beacon and retains an account-scoped unconfirmed retry',async()=>{
  for(const beacon of [()=>false,()=>{throw Error('No beacon')}]){
  const h=fixture();let calls=0;h.c.navigator.sendBeacon=()=>{calls++;return beacon()};h.c.data.events=[{id:'e'}];h.c.delEvent('e');h.c._flushPendingUndo(true);assert.equal(calls,0);assert.equal(h.c.pendingDeletionRecords().length,1);

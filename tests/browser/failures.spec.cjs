@@ -84,8 +84,9 @@ test('shared completion failures preserve individual progress and filtered notes
 
 test('Home fits desktop and mobile with today before the family overview on mobile',async({page})=>{
  for(const width of [1440,390]){await page.setViewportSize({width,height:900});await page.evaluate(()=>goTo('home'));
- const bounds=await page.evaluate(()=>{const today=document.querySelector('#today-wrap').getBoundingClientRect(),crew=document.querySelector('#dash-members').getBoundingClientRect();return {overflow:document.documentElement.scrollWidth>innerWidth,todayWidth:today.width,crewWidth:crew.width,todayY:today.y,crewY:crew.y};});
+ const bounds=await page.evaluate(()=>{const today=document.querySelector('#today-wrap').getBoundingClientRect(),crew=document.querySelector('#dash-members').getBoundingClientRect(),greeting=document.querySelector('#greet').getBoundingClientRect(),calendar=document.querySelector('#home-calendar-status').getBoundingClientRect();return {overflow:document.documentElement.scrollWidth>innerWidth,todayWidth:today.width,crewWidth:crew.width,todayY:today.y,crewY:crew.y,greetingBottom:greeting.bottom,calendarY:calendar.y,calendarBottom:calendar.bottom};});
  expect(bounds.overflow).toBe(false);expect(bounds.todayWidth).toBeGreaterThan(300);if(width===390)expect(bounds.todayY).toBeLessThan(bounds.crewY);else expect(bounds.crewWidth).toBeGreaterThanOrEqual(290);
+ expect(bounds.calendarY).toBeGreaterThanOrEqual(bounds.greetingBottom);expect(bounds.calendarBottom).toBeLessThanOrEqual(bounds.todayY);
  }
 });
 
@@ -139,6 +140,61 @@ test('habit save during calendar loading recovers without a manual refresh',asyn
  });
  expect(result).toEqual({initial:'loading',pending:'loading',status:'ok',reads:2,final:'ready',stale:false});
  await expect(page.locator('#dash-summary')).not.toContainText('Loading the family calendar');
+});
+
+test('calendar freshness and retries stay separate from core in every view and retain old events on failure',async({page})=>{
+ const stamp=await page.evaluate(async()=>{
+  await gPost({note:'add_event',event_title:'Retained calendar event',event_date:schoolToday(),event_time:'10:00',event_member:'Mikaela'});
+  await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));
+  data.calendarRefreshedAt=Date.now()-3600000;const stamp=data.calendarRefreshedAt;
+  const request=gasRequest;window.calendarReads=[];window.coreReads=0;
+  gasRequest=body=>{if(body.action==='get_family_calendar')return new Promise(resolve=>calendarReads.push(resolve));if(body.action==='get_family_core')coreReads++;return request(body);};
+  await loadData();return stamp;
+ });
+ await expect(page.locator('#connection-status')).toContainText('Family details · Last refreshed');await expect(page.locator('#connection-status')).toContainText('Calendar refreshing');
+ await expect(page.locator('#home-calendar-status')).toContainText('Showing the last calendar');await expect(page.locator('#home-calendar-status button')).toBeDisabled();
+ expect(await page.evaluate(()=>data.calendarRefreshedAt)).toBe(stamp);
+ await page.evaluate(()=>calendarReads[0]({status:'error'}));await expect(page.locator('#home-calendar-status')).toContainText('Calendar could not refresh');
+ await page.evaluate(()=>goTo('calendar'));
+ for(const view of ['week','list','month','year']){
+  await page.locator('#cal-view-'+view).click();await expect(page.locator('#plan-calendar-status')).toContainText('Showing the last calendar');await expect(page.locator('#plan-calendar-status').getByRole('button',{name:'Retry calendar',exact:true})).toBeEnabled();
+  expect(await page.evaluate(()=>data.events.some(e=>e.title==='Retained calendar event'))).toBe(true);
+  if(view==='list')await expect(page.locator('#cal-list')).toContainText('Retained calendar event');
+ }
+ const retry=page.locator('#plan-calendar-status').getByRole('button',{name:'Retry calendar',exact:true});await retry.focus();await page.keyboard.press('Enter');
+ await expect(page.locator('#plan-calendar-status button')).toBeDisabled();expect(await page.evaluate(()=>({core:coreReads,calendar:calendarReads.length}))).toEqual({core:1,calendar:2});
+ await page.evaluate(()=>calendarReads[1]({status:'ok',events:[],preparationState:'ready'}));await expect(page.locator('#plan-calendar-status')).toContainText('Calendar last refreshed');await expect(page.locator('#plan-calendar-status button')).toBeFocused();
+ expect(await page.evaluate(()=>data.calendarRefreshedAt)).toBeGreaterThan(stamp);await expect(page.locator('#connection-status')).not.toContainText('Calendar could not refresh');
+ await page.locator('#cal-view-list').click();await expect(page.locator('#cal-list')).toContainText('No upcoming events');
+ for(const width of [1440,390]){await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);}
+});
+
+test('a child with a failed first calendar gets retry and no false clear-day or empty-schedule claim',async({page,context})=>{
+ await page.evaluate(async()=>{
+  clearSessionState();user='Meaghan';currentUserEmail='meaghanwongzx@gmail.com';setAdultAccess(false);
+  const request=gasRequest;gasRequest=async body=>{
+   if(body.action==='get_family_calendar')return {status:'error',message:'Calendar unavailable'};
+   const r=await request(body);if(body.action==='get_family_core'){r.todos=[];r.schoolTasks=[];r.completedTasks=[];r.habits=[];r.habitLogs=[];}return r;
+  };await loadData();goTo('home');
+ });
+ await expect(page.locator('#home-calendar-status')).toContainText('Calendar events are not available yet');await expect(page.locator('#school-home')).not.toContainText('Clear day ahead');await expect(page.locator('#school-home')).toContainText('Your checklist is clear so far');
+ await page.evaluate(()=>goTo('calendar'));
+ for(const view of ['list','month','week','year']){await page.locator('#cal-view-'+view).click();await expect(page.locator('#plan-calendar-status').getByRole('button',{name:'Retry calendar',exact:true})).toBeEnabled();await expect(page.locator('#cal-list')).not.toContainText('No events scheduled');await expect(page.locator('#cal-list')).not.toContainText('No upcoming events');}
+ await context.setOffline(true);await expect(page.locator('#plan-calendar-status')).toContainText('Offline');await expect(page.locator('#plan-calendar-status button')).toBeDisabled();
+ await context.setOffline(false);await expect(page.locator('#plan-calendar-status button')).toBeEnabled();
+ await page.evaluate(()=>clearSessionState());expect(await page.evaluate(()=>data.calendarRefreshedAt)).toBeUndefined();await expect(page.locator('#plan-calendar-status')).not.toContainText('Showing the last calendar');await expect(page.locator('#connection-status')).toContainText('Not refreshed yet');
+});
+
+test('partial preparation failure keeps calendar freshness and offers a calendar-only recovery',async({page})=>{
+ await page.evaluate(async()=>{
+  const request=gasRequest;window.calendarAttempts=0;window.preparationCoreReads=0;
+  gasRequest=async body=>{if(body.action==='get_family_core')preparationCoreReads++;const r=await request(body);if(body.action==='get_family_calendar')r.preparationState=++calendarAttempts===1?'error':'ready';return r;};
+  await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));goTo('home');
+ });
+ await expect(page.locator('#home-calendar-status')).toContainText('Calendar last refreshed');await expect(page.locator('#home-calendar-status')).toContainText('Preparation tasks could not refresh');await expect(page.locator('#data-warning')).toBeVisible();
+ await page.locator('#home-calendar-status').getByRole('button',{name:'Retry calendar',exact:true}).click();
+ await expect(page.locator('#home-calendar-status')).not.toContainText('Preparation tasks could not refresh');await expect(page.locator('#home-calendar-status').getByRole('button',{name:'Refresh calendar',exact:true})).toBeEnabled();await expect(page.locator('#data-warning')).toBeHidden();
+ expect(await page.evaluate(()=>({core:preparationCoreReads,calendar:calendarAttempts}))).toEqual({core:1,calendar:2});
 });
 
 test('partial school and preparation warnings keep healthy family screens usable and clear on logout',async({page})=>{

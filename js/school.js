@@ -407,6 +407,7 @@ function renderSchoolHome() {
   const hub = document.getElementById('school-home'); if (!hub) return;
   const day = schoolDay || schoolToday();
   ensureHabitWeek(day);const habitReady=habitProgressReady(day);
+  const preparationReady=data.calendarState==='ready'&&data.preparationState!=='error';
   const isToday = day === schoolToday(0);
   const isTomorrow = day === schoolToday(1);
   const dateObj = new Date(day + 'T00:00:00Z');
@@ -541,11 +542,11 @@ function renderSchoolHome() {
               <p>${child === 'Meaghan' ? 'Together with Mom & Dad' : 'Independent prep'}</p>
             </div>
           </div>
-          ${!isAdultUser && habitReady ? `<div class="child-next-step" aria-live="polite"><span class="nest-kicker">${day>schoolToday()?'A LOOK AHEAD':child==='Meaghan'?'LET’S DO THIS TOGETHER':'ONE SMALL STEP'}</span><h3>${escapeHtml(next?.title || 'Your checklist is clear')}</h3><p>${next ? child==='Meaghan'?'Ask Mom or Dad for a hand whenever you like.':'Choose one thing. You can always ask for help.' : 'Enjoy some breathing room. Your companion is cheering you on.'}</p>${next&&day<=schoolToday()?next.type==='task'?`<button class="btn btn-p child-complete" data-school-done="${next.id}">✓ ${next.kind==='packing'?'I packed it':'I did it'}</button>`:`<button class="btn btn-p child-complete" onclick="logHabitQuick('${next.id}','${day}','','${child}')" ${pendingHabitLogs.has(habitPendingKey(next.id,child,day))?'disabled':''}>✓ I did it</button>`:''}</div>` : ''}
+          ${!isAdultUser && habitReady ? `<div class="child-next-step" aria-live="polite"><span class="nest-kicker">${day>schoolToday()?'A LOOK AHEAD':child==='Meaghan'?'LET’S DO THIS TOGETHER':'ONE SMALL STEP'}</span><h3>${escapeHtml(next?.title || (preparationReady?'Your checklist is clear':'Your checklist is clear so far'))}</h3><p>${next ? child==='Meaghan'?'Ask Mom or Dad for a hand whenever you like.':'Choose one thing. You can always ask for help.' : preparationReady?'Enjoy some breathing room. Your companion is cheering you on.':'Check the calendar status above for schedule and packing updates.'}</p>${next&&day<=schoolToday()?next.type==='task'?`<button class="btn btn-p child-complete" data-school-done="${next.id}">✓ ${next.kind==='packing'?'I packed it':'I did it'}</button>`:`<button class="btn btn-p child-complete" onclick="logHabitQuick('${next.id}','${day}','','${child}')" ${pendingHabitLogs.has(habitPendingKey(next.id,child,day))?'disabled':''}>✓ I did it</button>`:''}</div>` : ''}
           ${total > 0 && habitReady ? `
             <div class="school-progress-card">
               <div class="school-progress-meta">
-                <span>${done === total ? '🌟 All ready for ' + dayLabel.toLowerCase() + '!' : `${done} of ${total} ready`}</span>
+                <span>${preparationReady?(done === total ? '🌟 All ready for ' + dayLabel.toLowerCase() + '!' : `${done} of ${total} ready`):`${done} of ${total} checklist items done · calendar updates pending`}</span>
                 <span style="font-weight:700;">${pct}%</span>
               </div>
               <div class="school-progress-bar"><div class="school-progress-fill" style="width:${pct}%;"></div></div>
@@ -596,7 +597,7 @@ function renderSchoolHome() {
             ${otherTasks.map(t => schoolTaskCard(t, day)).join('')}
           ` : ''}
 
-          ${habitReady && !events.length && !childTasks.length && !habits.length ? `
+          ${habitReady && preparationReady && !events.length && !childTasks.length && !habits.length ? `
             <p class="school-empty">Clear day ahead! Enjoy the breathing room 🎉</p>
           ` : ''}
         </section>`;

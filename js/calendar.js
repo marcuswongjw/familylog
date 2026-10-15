@@ -89,10 +89,15 @@
     function selectCalDay(dayStr){ selectedCalDayStr=dayStr; savePreference('selectedCalDay', dayStr); renderCal(); }
 
     function renderCal() {
+      if(typeof updateCalendarStatus==='function')updateCalendarStatus();
       if(calView === 'year') renderCalYear();
       else if(calView === 'month') renderCalMonth();
       else if(calView === 'week') renderCalWeek();
       else renderCalList();
+    }
+
+    function calendarEmptyMessage(message) {
+      return data.calendarState==='ready'?message:data.calendarState==='loading'?'Waiting for the calendar to refresh…':'Calendar events are unavailable. Use Retry calendar above.';
     }
 
     function renderCalList() {
@@ -101,7 +106,7 @@
       if(searchCalQuery) evs = evs.filter(e => e.title.toLowerCase().includes(searchCalQuery) || (e.notes||'').toLowerCase().includes(searchCalQuery));
       const container = document.getElementById('cal-list');
       if(!container) return;
-      if(!evs.length){ container.innerHTML = '<div class="empty" role="status"><div class="ei">📅</div>' + (data.calendarState === 'loading' ? 'Loading the family calendar…' : data.calendarState === 'error' ? 'Calendar could not refresh. Please try refreshing again.' : 'No upcoming events') + '</div>'; return; }
+      if(!evs.length){ container.innerHTML = '<div class="empty" role="status"><div class="ei">📅</div>' + calendarEmptyMessage('No upcoming events') + '</div>'; return; }
       container.innerHTML = evs.map(e => `
         <div class="row">
           <div style="font-size:22px;flex-shrink:0;">📅</div>
@@ -286,7 +291,7 @@
           </div>
         `).join('');
       } else {
-        selectedDayHtml = '<div class="empty">No events scheduled for this day</div>';
+        selectedDayHtml = '<div class="empty">'+calendarEmptyMessage('No events scheduled for this day')+'</div>';
       }
       html += `
         <div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">

@@ -721,6 +721,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       updateNestShell();
       renderRewardHome();
       renderSchoolHome();
+      if(typeof updateCalendarStatus==='function')updateCalendarStatus();
       const h = new Date().getHours();
       const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
       document.getElementById('greet').innerHTML = `<div class="nest-greeting-top"><div><span class="nest-kicker">${isAdultUser ? 'OUR FAMILY, TOGETHER' : 'YOUR LITTLE CORNER'}</span><h2>${g}, ${escapeHtml(user)}.</h2><p>${isAdultUser ? 'Let’s make a little room for a good day.' : 'Small steps today. Good things ahead.'}</p></div><span class="nest-date">${nestIcon('calendar')}${new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'long'})}</span></div>`;
@@ -784,7 +785,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         <div class="card">
           <div class="card-hdr"><span class="card-title">Today at a glance</span></div>
           <div class="card-body">
-            ${data.calendarState === 'loading' ? '<div class="empty" role="status">Loading the family calendar…</div>' : data.calendarState === 'error' ? '<div class="empty" role="status">Calendar could not refresh. Please try refreshing again.</div>' : !evsToday.length && !tksToday.length ? '<div class="empty">Nothing scheduled for today.</div>' : ''}
+            ${!evsToday.length && !tksToday.length ? `<div class="empty">${calendarEmptyMessage('Nothing scheduled for today.')}</div>` : ''}
             ${evsToday.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
             ${tksToday.map(t => `<div class="row" onclick="goTo('tasks')" style="cursor:pointer;"><div style="font-size:16px">${t.dueRaw < tod ? '⚠️' : '⏰'}</div><div class="row-main"><div class="row-title">${escapeHtml(t.task)}</div><div class="row-sub">${t.dueRaw < tod ? 'Overdue' : 'Due today'} · ${escapeHtml(t.assignee)}</div></div></div>`).join('')}
           </div>
@@ -792,7 +793,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         <div class="card">
           <div class="card-hdr"><span class="card-title">Tomorrow</span><button class="btn btn-sm btn-s" onclick="goTo('calendar')">Week</button></div>
           <div class="card-body">
-            ${!evsTomorrow.length ? '<div class="empty">Nothing scheduled for tomorrow.</div>' : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
+            ${!evsTomorrow.length ? `<div class="empty">${calendarEmptyMessage('Nothing scheduled for tomorrow.')}</div>` : evsTomorrow.map(e => `<div class="row" onclick="goTo('calendar')" style="cursor:pointer;"><div style="font-size:16px">📅</div><div class="row-main"><div class="row-title">${escapeHtml(e.title)}${(e.title && /\bEYE\b/.test(e.title) && !e.title.includes('End Year Exams')) ? ' <span class="badge b-amber" style="font-size:11px;font-weight:600;">End Year Exams</span>' : ''}</div><div class="row-sub">${escapeHtml(e.time)}${(e.tags||[]).length ? ' · ' + e.tags.map(escapeHtml).join(', ') : ''}</div></div></div>`).join('')}
           </div>
         </div>
       `;
@@ -1139,6 +1140,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     function selectGridDay(dayStr){ selectedGridDayStr=dayStr; renderSchedules(); }
 
     function renderSchedules() {
+      if(typeof updateCalendarStatus==='function')updateCalendarStatus();
       if(schedView==='grid'){ renderSchedulesGrid(); return; }
       const evs = data.events || [];
       const container = document.getElementById('sched-container');
@@ -1173,7 +1175,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
           const dayName = days[new Date(c.dateRaw).getDay()];
           return `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(c.title)}</div><div class="row-sub">${escapeHtml(dayName)}, ${escapeHtml(c.date)} · ${escapeHtml(c.time)}${c.endTime ? ' - ' + escapeHtml(c.endTime) : ''}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>${c.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}</div><button onclick="delSchedule('${c.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
         }).join('');
-      } else timetableHtml = '<div class="empty">No upcoming classes/sessions scheduled</div>';
+      } else timetableHtml = '<div class="empty">'+calendarEmptyMessage('No upcoming classes/sessions scheduled')+'</div>';
       let breakdownItems = '';
       for(const act in activityBreakdown) breakdownItems += `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;"><strong>${escapeHtml(act)}:</strong> ${activityBreakdown[act].toFixed(1)} hrs</div>`;
       const summaryHtml = `<div class="stat-summary"><div class="stat-num">${totalHours.toFixed(1)}</div><div class="stat-main"><div class="stat-lbl">Hours Completed This Month</div>${breakdownItems || '<div style="font-size:11px;color:var(--text-muted);">No sessions completed yet this month</div>'}</div></div>`;
@@ -1236,7 +1238,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       let selectedDayHtml = '';
       if(selectedDayEvents.length > 0) {
         selectedDayHtml = selectedDayEvents.map(c => `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(c.title)}</div><div class="row-sub">${escapeHtml(c.time)}${c.endTime ? ' - ' + escapeHtml(c.endTime) : ''}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>${c.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}</div><button onclick="delSchedule('${c.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`).join('');
-      } else { selectedDayHtml = '<div class="empty">No activities scheduled for this day</div>'; }
+      } else { selectedDayHtml = '<div class="empty">'+calendarEmptyMessage('No activities scheduled for this day')+'</div>'; }
       html += `<div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text-secondary);padding:0 16px 4px;border-bottom:2px solid var(--border-color);">📅 Activities: ${fmtDate(selectedGridDayStr)}</div><div class="card-body" style="padding:0;">${selectedDayHtml}</div>`;
       container.innerHTML = html;
     }

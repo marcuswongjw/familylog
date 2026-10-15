@@ -112,6 +112,7 @@
       buildDynamicSelectors();
       render(section);
       renderHome();
+      if(typeof updateConnectionStatus==='function')updateConnectionStatus();
     }
 
     /** Sheets-backed dashboard only (not memories). */
@@ -127,13 +128,18 @@
         const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core',archive_version:1}),timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
-          if(data.calendarState === 'loading') { data.calendarState = 'error'; render(section); renderHome(); }
+          if(data.calendarState === 'loading') setCalendarLoadError();
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');
           return false;
         }
         if(typeof setRewardLoadState==='function')setRewardLoadState(false,r.rewards?.members?.some(p=>p.member===user)?'':'The server did not return your companion data. Please try again.');
         const needsCalendar = !Object.prototype.hasOwnProperty.call(r, 'events') && !(typeof isParentApp === 'function' && isParentApp());
-        if (needsCalendar) { r.events = data.events || []; r.calendarState = 'loading'; }
+        if (needsCalendar) {
+          r.events = data.events || []; r.calendarState = 'loading';
+          r.calendarRefreshedAt=data.calendarRefreshedAt||null;r.preparationState=data.preparationState;
+        } else if (!(typeof isParentApp==='function'&&isParentApp())&&Array.isArray(r.events)) {
+          r.calendarState='ready';r.calendarRefreshedAt=Date.now();
+        }
         if(readyTiming)advanceNestTiming(readyTiming,'render');
         applyDashboardPayload(r);
         if(readyTiming)finishNestTiming(readyTiming);
@@ -142,7 +148,7 @@
         return true;
       } catch(err) {
         if(active()) {
-          if(data.calendarState === 'loading') { data.calendarState = 'error'; render(section); renderHome(); }
+          if(data.calendarState === 'loading') setCalendarLoadError();
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,'Could not load your companions. Please try again.');
           showError('Could not refresh the family plan. Please try again.');
         }
@@ -150,24 +156,42 @@
       } finally { clearTimeout(timer); }
     }
 
+    let calendarRequestGeneration=0;
+    function renderCalendarLoadState(){
+      render(section);renderHome();
+      if(typeof updateConnectionStatus==='function')updateConnectionStatus();
+    }
+    function setCalendarLoadError(){data.calendarState='error';renderCalendarLoadState();}
+    async function retryFamilyCalendar(button) {
+      if(!currentUserEmail||(typeof isParentApp==='function'&&isParentApp())||data.calendarState==='loading'||navigator.onLine===false)return false;
+      const account=currentUserEmail,session=sessionGeneration,request=dashboardGeneration;
+      const active=()=>account===currentUserEmail&&session===sessionGeneration&&request===dashboardGeneration;
+      const restoreFocus=button&&document.activeElement===button;
+      data.calendarState='loading';renderCalendarLoadState();
+      const result=await hydrateFamilyCalendar(active);
+      if(active()&&restoreFocus&&button.isConnected&&!button.disabled&&button.getClientRects().length&&(!document.activeElement||document.activeElement===document.body||document.activeElement===button))button.focus();
+      return result;
+    }
     async function hydrateFamilyCalendar(active) {
+      const request=++calendarRequestGeneration,current=()=>request===calendarRequestGeneration&&active();
       const readyTiming=typeof startNestTiming==='function'?startNestTiming('calendar_ready','load'):null;
       let timer;
       try {
         const timeout = new Promise(resolve => { timer = setTimeout(() => resolve({status:'error'}),45000); });
         const result = await Promise.race([gasRequest({action:'get_family_calendar'}),timeout]);
         // Only the current request may finish loading or replace calendar/task data.
-        if (!active()) return;
-        if (!result || result.status === 'error') {
-          data.calendarState = 'error';
-          render(section); renderHome();
-          return;
+        if (!current()) return false;
+        if (!result || result.status === 'error' || !Array.isArray(result.events)) {
+          setCalendarLoadError();
+          return false;
         }
         if(readyTiming)advanceNestTiming(readyTiming,'render');
-        applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready'}));
+        applyDashboardPayload(Object.assign({}, data, result, {calendarState:'ready',calendarRefreshedAt:Date.now(),preparationState:result.preparationState}));
         if(readyTiming)finishNestTiming(readyTiming);
+        return true;
       } catch (err) {
-        if (active()) { data.calendarState = 'error'; render(section); renderHome(); }
+        if (current()) setCalendarLoadError();
+        return false;
       } finally { clearTimeout(timer); }
     }
 

@@ -4,6 +4,7 @@ test.afterEach(async({page})=>{expect(await page.evaluate(()=>fixtureErrors)).to
 test('parent app has its own navigation, only parent login choices and no family data',async({page})=>{
  await expect(page.locator('.member-btn')).toHaveCount(2);await expect(page.locator('#s-home')).toContainText('Household money');
  await expect(page.locator('#s-habits')).toHaveCount(0);await expect(page.locator('#s-calendar')).toHaveCount(0);
+ await expect(page.locator('[data-calendar-status]')).toHaveCount(0);await expect(page.locator('#connection-status')).toContainText('Parent details · Last refreshed');
  expect(await page.evaluate(()=>({hasEvents:'events' in data,hasRewards:'rewards' in data}))).toEqual({hasEvents:false,hasRewards:false});
  await page.locator('#nav-expenses').click();await expect(page.locator('#s-expenses')).toHaveClass(/active/);
  await page.setViewportSize({width:1440,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
