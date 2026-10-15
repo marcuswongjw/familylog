@@ -40,7 +40,12 @@ function calendarApi_(method, path, body, etag) {
   try { response=UrlFetchApp.fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CALENDAR_ID)+'/events'+path, options); } catch(e) { throw new Error('Could not read or update the family calendar. Please refresh again.'); }
   var code = response.getResponseCode();
   if ((code === 404 || code === 410) && path.charAt(0) === '/' && method === 'get') return null;
-  if (code < 200 || code >= 300) throw new Error(code === 412 ? 'This event changed. Refresh Calendar before trying again.' : 'Could not update or read the family calendar. Please refresh again.');
+  if (code < 200 || code >= 300) {
+    var reason='';
+    try { var error=JSON.parse(response.getContentText()).error; reason=error.errors&&error.errors[0]?error.errors[0].reason:''; } catch(ignore) {}
+    var failure=new Error(code === 412 ? 'This event changed. Refresh Calendar before trying again.' : 'Could not update or read the family calendar (HTTP '+code+'). Please refresh again.');
+    failure.calendarStatus=code;failure.calendarReason=reason;throw failure;
+  }
   return code === 204 ? {} : JSON.parse(response.getContentText());
 }
 function getEvents() {

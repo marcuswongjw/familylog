@@ -686,7 +686,10 @@ function doGet(e) {
     // Default-deny: EVERY action requires a verified family token except
     // the expense-approval endpoints, which are opened from signed email links.
     if (FAMILY_BACKEND_MODE_) {
-      if (action === 'health') { SpreadsheetApp.getActiveSpreadsheet().getId(); CalendarApp.getCalendarById(CALENDAR_ID).getName(); calendarApi_('get','?singleEvents=true&maxResults=1&timeMin='+encodeURIComponent(new Date().toISOString())); return respondJSONP({status:'ready',backend:'family'},''); }
+      if (action === 'health') {
+        try { SpreadsheetApp.getActiveSpreadsheet().getId(); CalendarApp.getCalendarById(CALENDAR_ID).getName(); calendarApi_('get','?singleEvents=true&maxResults=1&timeMin='+encodeURIComponent(new Date().toISOString())); return respondJSONP({status:'ready',backend:'family'},''); }
+        catch(accessError) { return respondJSONP({status:'error',backend:'family',calendarStatus:accessError.calendarStatus||0,calendarReason:accessError.calendarReason||'',message:'Family backend access check failed.'},''); }
+      }
       return respondJSONP({status:'error',message:'Use authenticated POST requests.'}, '');
     }
     var openActions = ['confirm_expense_page', 'submit_confirmed_expense'];

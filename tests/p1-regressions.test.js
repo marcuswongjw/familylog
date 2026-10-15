@@ -69,3 +69,7 @@ test('REST overnight/multi-day occurrences retain duration and reject concurrent
 test('expense deletion preserves parent-only access and invalid approval links cannot retire pending transactions',()=>{
  const h=pending(),id=expense(h,'Parent expense');assert.equal(h.write({note:'delete_expense',expense_id:id},'mikaelawonght@gmail.com').status,'error');assert.equal(readExpenses(h).rows.length,1);h.c.verifyApprovalToken_=()=>false;assert.equal(h.c.handleSubmitConfirmedExpenseInner_(approve).status,'error');assert.equal(h.sheets.PendingExpenses.rows.length,2);
 });
+test('Calendar API is explicitly enabled in both deployment manifests without adding scopes',()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');const manifest=JSON.parse(fs.readFileSync('appsscript.json','utf8'));assert.ok(manifest.dependencies.enabledAdvancedServices.some(s=>s.serviceId==='calendar'&&s.version==='v3'));
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'p1-manifest-'));try{require('../scripts/build-family-backend.cjs').buildFamilyBackend(dir);const family=JSON.parse(fs.readFileSync(path.join(dir,'appsscript.json'),'utf8'));assert.ok(family.dependencies.enabledAdvancedServices.some(s=>s.serviceId==='calendar'));assert.equal(family.oauthScopes.length,3);}finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
