@@ -86,6 +86,9 @@ svg { flex-shrink:0; }
 .login-box .btn-login { background:var(--primary); color:var(--primary-text); min-height:48px; }
 .login-box .btn-login:hover { background:var(--primary-hover); }
 .login-error { color:#B83F4F; }
+.login-remember { display:flex; align-items:flex-start; gap:10px; text-align:left; font-size:14px; line-height:1.5; margin:16px 0 8px; }
+.login-remember input { width:20px; height:20px; flex:0 0 20px; margin:0; accent-color:var(--primary); }
+.login-help { color:var(--text-secondary); text-align:left; font-size:13px; line-height:1.5; margin:0 0 16px; }
 /* Header and navigation. */
 .hdr { height:80px; padding:0 32px; backdrop-filter:none; border-bottom:1px solid var(--border-color); }
 .hdr-left { gap:10px; }

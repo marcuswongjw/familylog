@@ -159,13 +159,17 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         }
       });
 
-      firebase.auth().onAuthStateChanged(user => {
+      initializeAccountSession(user => {
         if (user) {
-          if (currentUserEmail !== user.email) clearSessionState();
-          currentUserEmail = user.email;
-          const member = MEMBERS.find(m => m.email === user.email);
-          if (member) loginAs(member.name);
-          else loginAs(user.email.split('@')[0]);
+          const email = String(user.email || '').toLowerCase();
+          const member = familyAccount(email);
+          if (!member || (isParentApp() && !ADULT_EMAILS.includes(email))) {
+            rejectAccount(member ? 'This app is available only to parents.' : 'Please sign in with one of the family accounts.');
+            return;
+          }
+          if (currentUserEmail !== email) clearSessionState();
+          currentUserEmail = email;
+          loginAs(member.name);
           // After login, honor pending notification / hash / query target
           applyPendingNotificationScreen();
 
@@ -188,6 +192,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
           document.getElementById('login-screen').classList.add('active');
           document.getElementById('app-screen').classList.remove('active');
         }
+      }).catch(() => {
+        document.getElementById('login-error').textContent = 'Could not prepare a private sign-in session. Please try signing in again.';
       });
     });
 
@@ -290,39 +296,54 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const grid = document.getElementById('mgrid');
       if(!grid) return;
       grid.innerHTML = MEMBERS.filter(m=>!isParentApp() || ADULT_EMAILS.includes(m.email)).map(m =>
-        `<button class="member-btn" onclick="selectMember('${m.name}')"><span class="av">${rewardCompanionSVG({species:({Marcus:'bear',Eleanor:'cat',Mikaela:'fox',Meaghan:'rabbit'})[m.name],name:m.name},'small')}</span>${m.name}</button>`
+        `<button class="member-btn" aria-label="${m.name}" onclick="selectMember('${m.name}')"><span class="av">${rewardCompanionSVG({species:({Marcus:'bear',Eleanor:'cat',Mikaela:'fox',Meaghan:'rabbit'})[m.name],name:m.name},'small')}</span>${m.name}</button>`
       ).join('');
     }
     function selectMember(name) {
+      if (document.getElementById('login-btn').disabled) return;
       selectedMember = MEMBERS.find(m => m.name === name);
       if(!selectedMember) return;
+      const parent = ADULT_EMAILS.includes(selectedMember.email);
+      const password = document.getElementById('login-password');
+      password.value = '';
+      password.inputMode = parent ? 'text' : 'numeric';
+      password.placeholder = parent ? 'Password' : '6-digit PIN';
+      password.setAttribute('aria-label', name + (parent ? "’s password" : "’s 6-digit PIN"));
+      document.getElementById('login-remember').checked = false;
       document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('sel'));
       document.querySelectorAll('.member-btn').forEach(b => { if(b.textContent.trim() === name) b.classList.add('sel'); });
       document.getElementById('pinbox').style.display = 'block';
-      document.getElementById('pinlbl').textContent = name + "'s password";
+      document.getElementById('pinlbl').textContent = name + (parent ? "’s password" : "’s 6-digit PIN");
       document.getElementById('login-error').textContent = '';
       setTimeout(() => document.getElementById('login-password').focus(), 100);
     }
-    function loginWithSelectedMember() {
+    async function loginWithSelectedMember() {
+      const btn = document.getElementById('login-btn');
+      if(btn.disabled) return;
       if(!selectedMember){ document.getElementById('login-error').textContent = 'Please select a member.'; return; }
       const password = document.getElementById('login-password').value;
       if(!password){ document.getElementById('login-error').textContent = 'Please enter your password.'; return; }
-      const email = selectedMember.email, errorEl = document.getElementById('login-error'), btn = document.getElementById('login-btn');
+      const email = selectedMember.email, errorEl = document.getElementById('login-error');
       btn.disabled = true; errorEl.textContent = '';
-      // Family policy: 6-digit numeric PIN (same for kids and parents)
-      if (!/^\d{6}$/.test(password)) {
+      // Keep existing child PINs. Parents may use their existing password of any shape.
+      if (!ADULT_EMAILS.includes(email) && !/^\d{6}$/.test(password)) {
         errorEl.textContent = 'PIN must be exactly 6 digits.';
         btn.disabled = false;return;
       }
-      firebase.auth().signInWithEmailAndPassword(email, password)
-        .then(() => {
-          btn.disabled = false;
-
-        })
-        .catch(err => { errorEl.textContent = err.message; btn.disabled = false; });
+      try {
+        await prepareAccountSession();
+        const remember = document.getElementById('login-remember').checked;
+        await firebase.auth().setPersistence(remember ? 'local' : 'session');
+        await firebase.auth().signInWithEmailAndPassword(email, password);
+        savePreference('rememberDevice', remember ? 'true' : 'false');
+        document.getElementById('login-password').value = '';
+      } catch (err) {
+        errorEl.textContent = loginFailureMessage(err);
+      } finally { btn.disabled = false; }
     }
     function loginAs(name) {
       const candidate=MEMBERS.find(m=>m.name===name);
+      if(!candidate) { rejectAccount('Please sign in with one of the family accounts.'); return; }
       if(isParentApp() && !ADULT_EMAILS.includes((candidate?.email || currentUserEmail || '').toLowerCase())) {
         clearSessionState();document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');

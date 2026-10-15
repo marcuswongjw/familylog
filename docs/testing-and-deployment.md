@@ -43,3 +43,7 @@ Hosting configuration changes only: with the existing authorized Cloudflare logi
 
 
 Loading diagnostics use the same checks and deployment gates. `node scripts/performance-report.cjs` reports source bytes; passing a numbers-only Loading check export or timing-event JSONL reports endpoint/stage p50/p95. The UI is parent-only under More and its modal exists in both builds. Backend diagnostics require `gas/performance.js`, automatically included in both Apps Script packages. See [measurement guide](performance-measurements.md).
+
+## Shared-device regression coverage (v55)
+
+The sign-in browser suite covers longer parent passwords and existing numeric passwords, child PIN validation, explicit personal-device persistence, logout/account switching, normalised restored identities, rejected non-family/child identities, failed persistence and visible cache-cleanup retry. Unit checks gate restored-account observation behind persistence setup and cover lazy-load/reset races. An isolated browser check uses the actual bundled Firebase App/Auth/Firestore 9.23.0 libraries with Firestore network access blocked: it seeds an old persistent cache, clears it through the production loader, and verifies fresh memory-only instances after session reset. This local check writes no production data and sends no real credentials. Other browser authentication/transport checks use fixtures; these checks do not prove successful live credential authentication or change account passwords.

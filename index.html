@@ -8,22 +8,22 @@
   <meta name="apple-mobile-web-app-title" content="Wong’s Nest">
   <meta name="theme-color" content="#F8F6F2">
   <title>Wong’s Nest — Our family, together</title>
-  <link rel="manifest" href="manifest.json?v=54">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=54">
-  <link rel="shortcut icon" href="favicon.png?v=54" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=54">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=54">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=54">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=54">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=54">
+  <link rel="manifest" href="manifest.json?v=55">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=55">
+  <link rel="shortcut icon" href="favicon.png?v=55" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=55">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=55">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon-precomposed.png?v=55">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=55">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon.png?v=55">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
   <!-- App/Auth restore the session; feature services load on demand. -->
   <script src="assets/firebase-app-compat-9.23.0.js"></script>
   <script src="assets/firebase-auth-compat-9.23.0.js"></script>
-  <link rel="stylesheet" href="css/styles.css?v=54">
-  <link rel="stylesheet" href="css/nest.css?v=54">
+  <link rel="stylesheet" href="css/styles.css?v=55">
+  <link rel="stylesheet" href="css/nest.css?v=55">
 </head>
 <body>
   <!-- TOP PROGRESS BAR -->
@@ -43,9 +43,11 @@
       <div class="member-grid" id="mgrid"></div>
       <div id="pinbox" style="display:none;">
         <p class="pin-lbl" id="pinlbl">Enter your password</p>
-        <input type="password" id="login-password" placeholder="Password" aria-label="Password" autocomplete="current-password">
+        <input type="password" id="login-password" placeholder="Password" aria-label="Password" autocomplete="current-password" aria-describedby="login-help login-error" onkeydown="if(event.key==='Enter'){event.preventDefault();loginWithSelectedMember()}">
+        <label class="login-remember"><input type="checkbox" id="login-remember"> Keep me signed in on this personal device</label>
+        <p id="login-help" class="login-help">Leave this off on a shared device. Otherwise, closing this tab ends your sign-in.</p>
         <button id="login-btn" onclick="loginWithSelectedMember()" class="btn-login">Sign in</button>
-        <div id="login-error" class="login-error"></div>
+        <div id="login-error" class="login-error" role="alert"></div>
       </div>
     </div>
   </div>
@@ -689,25 +691,25 @@
     <p id="school-feedback" role="status" aria-live="polite"></p>
     <div id="school-review"></div>
   </dialog>
-  <script src="js/project-config.js?v=54"></script>
-  <script src="js/rewards-art.js?v=54"></script>
-  <script src="js/rewards.js?v=54"></script>
-  <script src="js/archives.js?v=54"></script>
-  <script src="js/habits.js?v=54"></script>
-  <script src="js/school.js?v=54"></script>
-  <script src="js/nest.js?v=54"></script>
-  <script src="js/operations.js?v=54"></script>
-  <script src="js/firebase-features.js?v=54"></script>
-  <script src="js/memories.js?v=54"></script>
-  <script src="js/notifications.js?v=54"></script>
-  <script src="js/status.js?v=54"></script>
-  <script src="js/session.js?v=54"></script>
-  <script src="js/performance.js?v=54"></script>
-  <script src="js/api.js?v=54"></script>
-  <script src="js/calendar.js?v=54"></script>
-  <script src="js/money.js?v=54"></script>
-  <script src="js/modals.js?v=54"></script>
-  <script src="js/parents.js?v=54"></script>
-  <script src="js/app.js?v=54"></script>
+  <script src="js/project-config.js?v=55"></script>
+  <script src="js/rewards-art.js?v=55"></script>
+  <script src="js/rewards.js?v=55"></script>
+  <script src="js/archives.js?v=55"></script>
+  <script src="js/habits.js?v=55"></script>
+  <script src="js/school.js?v=55"></script>
+  <script src="js/nest.js?v=55"></script>
+  <script src="js/operations.js?v=55"></script>
+  <script src="js/firebase-features.js?v=55"></script>
+  <script src="js/memories.js?v=55"></script>
+  <script src="js/notifications.js?v=55"></script>
+  <script src="js/status.js?v=55"></script>
+  <script src="js/session.js?v=55"></script>
+  <script src="js/performance.js?v=55"></script>
+  <script src="js/api.js?v=55"></script>
+  <script src="js/calendar.js?v=55"></script>
+  <script src="js/money.js?v=55"></script>
+  <script src="js/modals.js?v=55"></script>
+  <script src="js/parents.js?v=55"></script>
+  <script src="js/app.js?v=55"></script>
 </body>
 </html>

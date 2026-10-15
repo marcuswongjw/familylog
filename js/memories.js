@@ -1,7 +1,7 @@
 /* Keep an upload until metadata is confirmed, and page older memories on demand. */
 let memoryDraft=null;
 let memoryLatest=new Map(),memoryOlder=new Map(),memoryCursor=null,memoryHasMore=false,memoryLoadingOlder=false;
-let memoryBoundary=null,memoryListenerRevision=0;
+let memoryBoundary=null,memoryListenerRevision=0,memoryLoadError='';
 const MEMORY_PAGE_SIZE=50;
 async function saveMemoryDraft(input,active) {
   if(!db)await ensureMemoryDatabase();
@@ -39,7 +39,7 @@ function discardMemoryUpload() {
     if(!doc.exists)return storage.ref(draft.imagePath).delete();
   }).catch(()=>{}); // Server cleanup handles abandoned uploads after 48 hours.
 }
-function resetMemorySession(){const body=typeof document!=='undefined'?document.querySelector('#m-memory .modal-body'):null;if(body)body.inert=false;memoryListenerRevision++;memoryBoundary=null;memoryDraft=null;memoryLatest.clear();memoryOlder.clear();memoryCursor=null;memoryHasMore=false;memoryLoadingOlder=false;}
+function resetMemorySession(){const body=typeof document!=='undefined'?document.querySelector('#m-memory .modal-body'):null;if(body)body.inert=false;memoryListenerRevision++;memoryBoundary=null;memoryDraft=null;memoryLatest.clear();memoryOlder.clear();memoryCursor=null;memoryHasMore=false;memoryLoadingOlder=false;memoryLoadError='';}
 function memoryFromDoc(doc){
   const d=doc.data()||{},text=(value,fallback='',max=5000)=>typeof value==='string'?value.slice(0,max):fallback;
   const date=text(d.date,'',10),validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(Date.parse(date));
@@ -51,13 +51,20 @@ function mergeMemoryPages(){
   data.memories=[...map.values()].sort((a,b)=>b.timestamp-a.timestamp||b.id.localeCompare(a.id));
   if(section==='memories')renderMemories();
 }
+function memoryLoadFailed(message){
+  memoryLoadError=message;
+  if(section==='memories')renderMemories();
+  showError(message);
+}
 function startMemoriesListener(){
+  if(!familyAccount(currentUserEmail))return;
   if(memoriesUnsubscribe)return;
+  memoryLoadError='';
   if(!db){
     const generation=sessionGeneration,revision=++memoryListenerRevision;
     ensureMemoryDatabase().then(()=>{
       if(generation===sessionGeneration&&revision===memoryListenerRevision&&section==='memories')startMemoriesListener();
-    }).catch(()=>{if(generation===sessionGeneration&&revision===memoryListenerRevision&&section==='memories')showError('Could not load memories. Open Memories again to retry.');});
+    }).catch(error=>{if(generation===sessionGeneration&&revision===memoryListenerRevision&&section==='memories')memoryLoadFailed(error.message||'Could not load memories. Please try again.');});
     return;
   }
   const account=currentUserEmail,generation=sessionGeneration,revision=++memoryListenerRevision;
@@ -92,6 +99,10 @@ async function loadOlderMemories(){
     function renderMemories() {
       const mems = data.memories || [];
       const el   = document.getElementById('mem-list');
+      if(memoryLoadError&&!mems.length){
+        el.innerHTML=`<div class="card" role="alert"><p>${escapeHtml(memoryLoadError)}</p><button class="btn btn-s" onclick="startMemoriesListener()">Try again</button></div>`;
+        return;
+      }
       if (!mems.length) { el.innerHTML = '<div class="empty"><div class="ei">💛</div>What would you like to remember about today?</div>'; return; }
 
       const getIcon = value => { const t=typeof value==='string'?value:''; return t.includes('Milestone') ? '🏆' : t.includes('Quote') ? '💬' : '💛'; };
