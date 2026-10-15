@@ -204,7 +204,7 @@ test('Nat B Training generates packing checklist strictly 1 week in advance for 
     { id: 'ev_natb_far', title: '[Mikaela] Nat B Training', dateRaw: fourteenDaysStr, time: '14:00' }
   ];
 
-  h.c.syncCalendarEventTasks_(h.ss, mockEvents);
+  h.c.reconcileCalendarTasks_(h.ss, mockEvents);
 
   const tasks = h.c.getTodos(h.ss, parent);
   const soonTasks = tasks.filter(t => t.sourceId.startsWith('cal_natb_ev_natb_soon'));
@@ -222,7 +222,7 @@ test('Nat B Training generates packing checklist strictly 1 week in advance for 
   assert.equal(bagTask.assignee, 'Mikaela');
 
   // Idempotency: re-running sync does not duplicate
-  h.c.syncCalendarEventTasks_(h.ss, mockEvents);
+  h.c.reconcileCalendarTasks_(h.ss, mockEvents);
   const tasksAfter = h.c.getTodos(h.ss, parent);
   assert.equal(tasksAfter.filter(t => t.sourceId.startsWith('cal_natb_ev_natb_soon')).length, 2);
 });

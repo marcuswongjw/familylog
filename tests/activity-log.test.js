@@ -69,6 +69,7 @@ test('client clears activityLog when child session is active', () => {
     section: 'home',
     ADULT_EMAILS: ['marcuswongjw@gmail.com', 'eleanor.jiamin@gmail.com'],
     FAMILY_MEMBERS: ['Marcus', 'Eleanor', 'Mikaela', 'Meaghan', 'Everyone'],
+    document: {getElementById:()=>null},
     data: {},
     GROUPS: {},
     bucketList: [],

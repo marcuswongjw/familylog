@@ -229,3 +229,12 @@ One habit ID may belong to a selected subset of family members. The Habits Membe
 Expense rows use immutable IDs (G), operation fingerprints (H), and deletion status (I). Deleted rows are retained for retry recovery and excluded from all spending totals/reports. Bank approvals derive their destination ID from the signed pending ID. Legacy row-number delete requests must refresh instead of targeting a guessed record.
 
 Calendar REST reads expand recurring instances. Recurring event IDs are `instance:<REST ID>`; one-off IDs remain legacy iCalUIDs for existing links. Series iCalUIDs are metadata, never a recurring occurrence mutation target. Moves preserve elapsed timed duration or the all-day date span. Generated preparation keys use the occurrence ID and retain historical task identity when migrating a matching legacy due date. See `docs/p1-fixes-2026-10-15.md`.
+
+
+## Preparation and partial-data recovery
+
+The family service owns the Calendar read/reconciliation critical section (`calendarPreparation_`), using the same script lock as family writes with a 30-second wait. Browser calendar reads can return events with `preparationState: error`; the UI warns that preparation needs another refresh. Reminder snapshots require successful reconciliation and never silently send a snapshot after preparation failure.
+
+The existing 15-minute Firebase reminder job requests a signed snapshot when reminder profiles are due. The original service verifies its server-only HMAC and forwards the signed timestamp to the family service. Family validates freshness and asks the fixed original `verify_reminder_snapshot` endpoint to verify the signature, then reconciles before reading snapshot tasks. The nightly Apps Script digest also requests this bridge before reading tasks. No secret is copied into browser assets or the family project; bridge verification never returns household data. Existing reminder opt-in/bridge configuration is required; no new scheduled trigger is needed.
+
+School rows are validated independently on reads. Damaged rows remain in SchoolAnnouncements for repair but are excluded from displayed plans. Calendar ownership links are retained even when notice details are damaged. Parent payloads include `dataWarnings`; children receive no damaged-record diagnostics. The warning banner clears on account/session reset.

@@ -74,6 +74,8 @@ Fix: use per-domain revisions or explicitly restart/cancel hydration after inval
 
 ### 7. P2 — Preparation generation depends on opening the family dashboard
 
+**Fixed 15 October 2026.** Signed scheduled reminder snapshots and the nightly digest now invoke preparation through the family service before reading tasks. The original runtime verifies the existing server-only HMAC; the family service verifies signatures through a fixed original-service verification endpoint and remains the only writer. No browser or additional credentials are required. Failed preparation fails the snapshot, allowing a later scheduled retry.
+
 Evidence: [old nightly reconciliation disabled](/Users/marcus/Documents/GitHub/familylog/Code.js:321), [browser calendar reconciliation](/Users/marcus/Documents/GitHub/familylog/Code.js:794), [read-only reminder snapshot](/Users/marcus/Documents/GitHub/familylog/gas/rewards.js:177), [standalone deployment](/Users/marcus/Documents/GitHub/familylog/scripts/deploy-family-gas.sh:1).
 
 The old scheduled nightly digest skips reconciliation after the split. The new family service reconciles when its calendar dashboard endpoint is requested, but the repository does not install or invoke a replacement scheduled family reconciliation. If nobody opens the dashboard while an event enters the seven-day preparation window, packing tasks can be absent from digests/reminders. Manually installed triggers were not audited, so their presence cannot be ruled out.
@@ -82,6 +84,8 @@ Fix: run scheduled reconciliation through the family service as the single write
 
 ### 8. P2 — Calendar reconciliation uses a snapshot fetched before its lock
 
+**Fixed 15 October 2026.** The authoritative Calendar read and reconciliation now run together under the family writer lock, waiting up to 30 seconds. Calendar dashboard reads retain readable events and return preparationState:error when preparation fails; reminder snapshots require complete reconciliation. The stale snapshot entry point was removed.
+
 Evidence: [snapshot then reconciliation](/Users/marcus/Documents/GitHub/familylog/Code.js:796), [one-second lock wait and retirement](/Users/marcus/Documents/GitHub/familylog/gas/calendar.js:4).
 
 Calendar is read before obtaining the family write lock. A concurrent move/create followed by reconciliation of the earlier snapshot can restore an old preparation due date or retire a newly generated task. Separately, reconciliation waits only one second for a lock; a longer habit/reward write can make an otherwise valid calendar read fail completely. These are code-path concurrency findings, not production timing measurements.
@@ -89,6 +93,8 @@ Calendar is read before obtaining the family write lock. A concurrent move/creat
 Fix: use revision-checked snapshots or serialize the authoritative read/reconcile operation, preferably in the scheduled job. Separate event-read success from preparation-update failure and expose a recoverable status. Regression: pause a calendar read, commit a move, resume the old reconciliation; the newer task/date must win. Also test lock contention longer than one second.
 
 ### 9. P2 — One malformed school record can break the core dashboard
+
+**Fixed 15 October 2026.** School reads validate rows individually and exclude damaged records from active plans while retaining originals for repair. Healthy domains and valid notices remain available with a parent-visible warning. Damaged linked records retain calendar ownership protection. Child responses contain no school-record diagnostics.
 
 Evidence: [school plan parsing](/Users/marcus/Documents/GitHub/familylog/Code.js:3040), [school event links](/Users/marcus/Documents/GitHub/familylog/Code.js:3050).
 

@@ -1,9 +1,19 @@
-function syncCalendarEventTasks_(ss, events) {
-  if (!Array.isArray(events)) return;
-  ss=ss||SpreadsheetApp.getActiveSpreadsheet();
-  var lock=LockService.getScriptLock();lock.waitLock(1000);
-  try { reconcileCalendarTasks_(ss,events); } finally {lock.releaseLock();}
+// Authoritative Calendar read and task reconciliation share the family writer lock.
+function calendarPreparation_(ss, strict) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var lock = LockService.getScriptLock(), held = false, events;
+  try {
+    lock.waitLock(30000); held = true;
+    events = getEvents();
+    reconcileCalendarTasks_(ss, events);
+    return {events:events, preparationState:'ready'};
+  } catch (err) {
+    if (strict) throw err;
+    // Reading events can still succeed when preparation is temporarily unavailable.
+    return {events:events || getEvents(), preparationState:'error'};
+  } finally { if (held) lock.releaseLock(); }
 }
+
 function reconcileCalendarTasks_(ss,events){
   var today=Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyy-MM-dd');
   var horizon=new Date(today+'T00:00:00Z');horizon.setUTCDate(horizon.getUTCDate()+7);var end=horizon.toISOString().slice(0,10);

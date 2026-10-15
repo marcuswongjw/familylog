@@ -75,3 +75,9 @@ test('habit save during calendar loading recovers without a manual refresh',asyn
  expect(result).toEqual({initial:'loading',pending:'loading',status:'ok',reads:2,final:'ready',stale:false});
  await expect(page.locator('#dash-summary')).not.toContainText('Loading the family calendar');
 });
+
+test('partial school and preparation warnings keep healthy family screens usable and clear on logout',async({page})=>{
+ await page.evaluate(async()=>{const request=gasRequest;gasRequest=async payload=>{const result=await request(payload);if(payload.action==='get_family_core'||payload.action==='get_family_calendar'){result.dataWarnings=['One school notice needs repair. Other family data is available.'];if(payload.action==='get_family_calendar')result.preparationState='error';}return result;};await loadData();});
+ await expect(page.locator('#data-warning')).toBeVisible();await expect(page.locator('#data-warning')).toContainText('One school notice needs repair');await expect(page.locator('#data-warning')).toContainText('preparation tasks could not refresh');
+ await page.evaluate(()=>goTo('habits'));await expect(page.locator('#s-habits')).toHaveClass(/active/);await page.evaluate(()=>clearSessionState());await expect(page.locator('#data-warning')).toBeHidden();
+});

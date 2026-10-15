@@ -318,7 +318,9 @@ function sendNightBeforeDigest(now) {
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  try { if (!FAMILY_SERVICE_FORWARDING_ || FAMILY_BACKEND_MODE_) syncCalendarEventTasks_(ss, tomorrowEvents); } catch (se) { console.log('syncCalendarEventTasks_ in nightly error: ' + se); }
+  // Generate the full preparation window before reading digest tasks, without a browser.
+  if (FAMILY_SERVICE_FORWARDING_ && !FAMILY_BACKEND_MODE_) reminderSnapshot_(signedReminderRequest_());
+  else calendarPreparation_(ss, true);
   var tdSheet = ss.getSheetByName('ToDo');
   var openTasks = [];
   if (tdSheet) {
@@ -760,7 +762,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-    if (FAMILY_BACKEND_MODE_ && data.action === 'reminder_snapshot') throw new Error('Unavailable in family service');
+    if (data.action === 'verify_reminder_snapshot') return ContentService.createTextOutput(JSON.stringify({status:!FAMILY_BACKEND_MODE_ && reminderAuthorized_(data) ? 'ok' : 'error'})).setMimeType(ContentService.MimeType.JSON);
     if (data.action === 'reminder_snapshot') return ContentService.createTextOutput(JSON.stringify(reminderSnapshot_(data))).setMimeType(ContentService.MimeType.JSON);
     // The token is mandatory. The old check only ran `if (data.idToken)`,
     // so omitting the token skipped verification entirely — an
@@ -795,10 +797,9 @@ function doPost(e) {
     }
     if (action === 'get_family_calendar') {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var events = getEvents();
-      syncCalendarEventTasks_(ss, events);
+      var preparation = calendarPreparation_(ss, false), events = preparation.events;
       var tasks = getTodos(ss, verified, true);
-      return ContentService.createTextOutput(JSON.stringify({status:'ok',events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})})).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({status:'ok',preparationState:preparation.preparationState,dataWarnings:schoolRecordWarnings_(ss,isAdultEmail_(verified)),events:memberEvents_(events, verified),todos:tasks.filter(function(t){return t.status.toLowerCase() !== 'done';}),completedTasks:tasks.filter(function(t){return t.status.toLowerCase() === 'done';}),schoolTasks:tasks.filter(function(t){return !!t.sourceId;})})).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === 'get_events' || action === 'get_todos' || action === 'get_birthdays') {
@@ -1678,14 +1679,16 @@ function getAllDashboardData(verifiedEmail, scope) {
   var adult = isAdultEmail_(verifiedEmail);
   var coreOnly = scope === 'family-core';
   var includePrivate = adult && scope !== 'family' && !coreOnly;
-  var events = coreOnly ? null : getEvents();
-  if (!coreOnly) try { syncCalendarEventTasks_(ss, events); } catch (e) { console.log('syncCalendarEventTasks_ error: ' + e); }
+  var preparation = coreOnly ? null : calendarPreparation_(ss, false);
+  var events = preparation ? preparation.events : null;
   var allTodos = getTodos(ss, verifiedEmail, true);
   var habits = getHabits(ss, verifiedEmail);
   var habitLogs = getHabitLogs(ss, verifiedEmail);
   // Sheets-owned dashboard only. Chat + memories are Firebase (see ARCHITECTURE.md).
   return {
     events:    coreOnly ? undefined : memberEvents_(events, verifiedEmail),
+    preparationState: preparation ? preparation.preparationState : undefined,
+    dataWarnings: schoolRecordWarnings_(ss, adult),
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     completedTasks: allTodos.filter(function(t) { return t.status.toLowerCase() === 'done'; }),
     schoolPlans: schoolReadPlans_(ss, adult),
@@ -3042,27 +3045,45 @@ function schoolSheet_(ss) {
   if (!sheet) { sheet = ss.insertSheet('SchoolAnnouncements'); sheet.appendRow(['ID', 'Status', 'Revision', 'Plan JSON', 'Calendar ID', 'Updated At', 'Updated By']); }
   return sheet;
 }
-// Call under the script lock, including migration from the original seven columns.
+// Damaged rows remain in Sheets for repair; exclude them from active reads.
+function schoolStoredPlan_(row) {
+  var raw = JSON.parse(row[3]);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.id !== row[0]) throw new Error('Invalid stored plan');
+  var plan = schoolValidatePlan_(raw, '');
+  if (plan.id !== raw.id || ['draft','publishing','published'].indexOf(row[1]) < 0 || !Number.isInteger(Number(row[2])) || Number(row[2]) < 1) throw new Error('Invalid stored plan');
+  plan.status = row[1]; plan.revision = Number(row[2]); plan.calendarId = toStr(row[4]);
+  return plan;
+}
+function schoolStoredRows_(ss) {
+  var sheet = ss.getSheetByName('SchoolAnnouncements');
+  return sheet ? sheet.getDataRange().getValues().slice(1).filter(function(r){return r[0];}) : [];
+}
+function schoolRecordWarnings_(ss, adult) {
+  if (!adult) return [];
+  var count = 0;
+  schoolStoredRows_(ss).forEach(function(r){try { schoolStoredPlan_(r); } catch (err) { count++; }});
+  return count ? [count + ' school record(s) could not load. Other family data is available. Ask a parent to repair the SchoolAnnouncements records.'] : [];
+}
 function schoolReadPlans_(ss, adult) {
   if (!adult) return [];
-  var sheet = ss.getSheetByName('SchoolAnnouncements');
-  if (!sheet) return [];
-  return sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; }).map(function(r) {
-    var plan = JSON.parse(r[3]);
-    plan.status = r[1]; plan.revision = Number(r[2]); plan.calendarId = toStr(r[4]); return plan;
-  }).reverse();
+  var plans = [];
+  schoolStoredRows_(ss).forEach(function(r){try { plans.push(schoolStoredPlan_(r)); } catch (err) { console.log('Skipped damaged school record row'); }});
+  return plans.reverse();
 }
 function schoolEventLinks_() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SchoolAnnouncements');
   var links = {};
-  if (sheet) sheet.getDataRange().getValues().slice(1).forEach(function(r) {
-    if (r[4]) {
-      var p = JSON.parse(r[3]);
+  schoolStoredRows_(SpreadsheetApp.getActiveSpreadsheet()).forEach(function(r){
+    if (!r[4]) return;
+    try {
+      var p = schoolStoredPlan_(r), calId = toStr(r[4]);
+      links[calId] = {child:p.child,sourceId:p.id};
+      if (calId.indexOf('@') !== -1) links[calId.split('@')[0]] = {child:p.child,sourceId:p.id};
+    } catch (err) {
+      // Retain ownership protection even when the notice cannot supply display tags.
       var calId = toStr(r[4]);
-      links[calId] = { child: p.child, sourceId: p.id };
-      if (calId.indexOf('@') !== -1) {
-        links[calId.split('@')[0]] = { child: p.child, sourceId: p.id };
-      }
+      links[calId] = {child:'',sourceId:toStr(r[0])};
+      if (calId.indexOf('@') !== -1) links[calId.split('@')[0]] = links[calId];
+      console.log('Skipped damaged school calendar link details');
     }
   });
   return links;

@@ -93,6 +93,12 @@
       if (_pendingUndo?.payload?.note === 'delete_event' && _pendingUndo.account === currentUserEmail) {
         data.events = (data.events || []).filter(e => e.id !== _pendingUndo.payload.event_id);
       }
+      const warning = document.getElementById('data-warning');
+      if (warning) {
+        const messages = [...(Array.isArray(data.dataWarnings) ? data.dataWarnings : [])];
+        if (data.preparationState === 'error') messages.push('Calendar loaded, but preparation tasks could not refresh. Please try refreshing again.');
+        warning.textContent = messages.join(' '); warning.hidden = !messages.length;
+      }
       buildDynamicSelectors();
       render(section);
       renderHome();

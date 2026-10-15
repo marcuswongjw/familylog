@@ -7,6 +7,8 @@
       resetReminders();
       stopMemoriesListener();
       if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
+      const warning = document.getElementById('data-warning');
+      if (warning) { warning.textContent = ''; warning.hidden = true; }
       user = null; currentUserEmail = ''; lastIdToken = ''; isAdultUser = false;
       habitViewDate = ''; habitShowArchived = false; habitPerson = 'All'; habitLayout = 'cards'; pendingHabitLogs.clear();
       data = { memories: [] }; GROUPS = {}; bucketList = []; memImageBase64 = null;
