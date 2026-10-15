@@ -190,7 +190,8 @@ async function extractSchool(manual) {
     let extracted = { title: '', child: '', event: {}, tasks: [], warnings: [] };
     if (!manual) {
       schoolMessage('Reading text with Gemini AI…');
-      extracted = (await firebase.functions().httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
+      const functions=await ensureFunctionServices();if(generation!==schoolGeneration)return;
+      extracted = (await functions.httpsCallable('extractSchoolAnnouncement', { timeout: 45000 })({ text, imagePath: sourcePath })).data;
     }
     if (generation !== schoolGeneration) return;
     const eventDate = extracted.event?.date || '';
@@ -336,7 +337,8 @@ function renderSchoolReview() {
 async function schoolShowSource() {
   const generation = schoolGeneration;
   try {
-    const image = schoolImageUrl || (await firebase.functions().httpsCallable('getSchoolSourceImage')({ path: schoolDraft.sourcePath })).data.image;
+    let image=schoolImageUrl;
+    if(!image){const path=schoolDraft.sourcePath,functions=await ensureFunctionServices();if(generation!==schoolGeneration)return;image=(await functions.httpsCallable('getSchoolSourceImage',{timeout:20000})({path})).data.image;}
     if (generation !== schoolGeneration) return;
     schoolImageUrl = image;
     const img = document.getElementById('school-source-image'); img.src = image; img.hidden = false;

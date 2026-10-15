@@ -38,7 +38,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     let GROUPS = {};
 
     let _callbackId = 0;
-    let db, storage, messaging; // will be set after Firebase init
+    let db, storage, messaging; // initialized by their feature loaders
 
     // ─── PERSISTENT PREFERENCES ──────────────────────────────────
     function loadPreference(key, fallback) {
@@ -117,9 +117,6 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     // ─── INIT ──────────────────────────────────────────────────
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
-      if (!isParentApp()) {
-        try { messaging = firebase.messaging(); } catch (_) { messaging = null; }
-      }
 
       applyDarkMode();
       buildLogin();
@@ -141,7 +138,6 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         navigator.serviceWorker.register(isParentApp() ? 'parents-sw.js' : 'firebase-messaging-sw.js')
           .then((registration) => {
             console.log('✅ FCM Service Worker registered');
-            if(messaging)messaging.useServiceWorker(registration);
             // Pick up a new SW version (v3+) without waiting forever
             registration.update().catch(() => {});
           })

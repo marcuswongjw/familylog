@@ -1,7 +1,7 @@
-/* Load photo services only when a feature needs them. Auth stays in the startup shell. */
+/* Load feature services on demand. App/Auth stay in the startup shell. */
 const firebaseFeatureLoads = new Map();
 function loadFirebaseFeature(name) {
-  if (!['firestore', 'storage'].includes(name)) return Promise.reject(new Error('Unknown photo service.'));
+  if (!['firestore', 'storage', 'functions', 'messaging'].includes(name)) return Promise.reject(new Error('Unknown app service.'));
   if (typeof firebase[name] === 'function') return Promise.resolve();
   if (firebaseFeatureLoads.has(name)) return firebaseFeatureLoads.get(name);
   const pending = new Promise((resolve, reject) => {
@@ -14,9 +14,9 @@ function loadFirebaseFeature(name) {
       script.onload = script.onerror = null;
       if (error) { script.remove(); reject(error); } else resolve();
     };
-    script.onload = () => finish(typeof firebase[name] === 'function' ? null : new Error('Photo service unavailable.'));
-    script.onerror = () => finish(new Error('Could not load photo service. Check your connection and retry.'));
-    timer = setTimeout(() => finish(new Error('Photo service took too long to load. Please retry.')), 15000);
+    script.onload = () => finish(typeof firebase[name] === 'function' ? null : new Error('App service unavailable.'));
+    script.onerror = () => finish(new Error('Could not load app service. Check your connection and retry.'));
+    timer = setTimeout(() => finish(new Error('App service took too long to load. Please retry.')), 15000);
     document.head.append(script);
   });
   firebaseFeatureLoads.set(name, pending);
@@ -41,4 +41,18 @@ async function ensurePhotoStorage() {
   await loadFirebaseFeature('storage');
   if (!storage) storage = firebase.storage();
   return storage;
+}
+
+async function ensureFunctionServices() {
+  await loadFirebaseFeature('functions');
+  return firebase.functions();
+}
+async function ensurePushMessaging() {
+  if (messaging) return messaging;
+  await loadFirebaseFeature('messaging');
+  if (!messaging) {
+    try { messaging = firebase.messaging(); }
+    catch (_) { throw new Error('This browser does not support push reminders.'); }
+  }
+  return messaging;
 }

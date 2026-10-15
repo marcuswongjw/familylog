@@ -203,3 +203,33 @@ test('saved announcements page summaries and fetch one full source with retry',a
  });
  expect(await page.evaluate(()=>schoolDraft)).toBe(null);await expect(page.locator('#school-dialog')).not.toBeVisible();await expect(page.locator('#school-review')).toBeEmpty();
 });
+
+test('reminders initialize without Messaging, load it when enabled and restore focus after saving or Escape',async({page})=>{
+ expect(await page.evaluate(()=>!!messaging)).toBe(false);
+ await page.evaluate(()=>{
+  window.reminderPermissionCalls=0;window.reminderTokenCalls=0;
+  Object.defineProperty(window,'Notification',{configurable:true,value:{permission:'granted',requestPermission:async()=>{reminderPermissionCalls++;return 'granted';}}});
+  firebase.messaging=()=>({onMessage(){},getToken:async options=>{reminderTokenCalls++;window.reminderUsesWorker=!!options.serviceWorkerRegistration.active;return 'fixture-reminder-token';}});
+ });
+ await page.locator('#notifBell').click();
+ const dialog=page.locator('#reminder-dialog');await expect(dialog).toBeVisible();expect(await page.evaluate(()=>!!messaging)).toBe(false);expect(await page.evaluate(()=>reminderPermissionCalls)).toBe(0);
+ await dialog.locator('#reminder-enabled').check();await dialog.getByRole('button',{name:'Save reminders'}).click();
+ await expect(dialog).toHaveCount(0);await expect(page.locator('#notifBell')).toBeFocused();
+ expect(await page.evaluate(()=>({tokens:reminderTokenCalls,permission:reminderPermissionCalls,worker:reminderUsesWorker}))).toEqual({tokens:1,permission:1,worker:true});
+ await page.locator('#notifBell').click();await expect(dialog.locator('#reminder-enabled')).toBeChecked();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.locator('#notifBell')).toBeFocused();
+ await page.locator('#notifBell').click();await dialog.locator('#reminder-enabled').uncheck();await dialog.getByRole('button',{name:'Save reminders'}).click();await expect(dialog).toHaveCount(0);expect(await page.evaluate(()=>reminderTokenCalls)).toBe(1);
+});
+
+test('failed reminder-service loading leaves Home usable and the bell can retry',async({page})=>{
+ await page.evaluate(()=>{window.previousReminderLoader=ensureFunctionServices;ensureFunctionServices=async()=>{throw Error('Reminder service unavailable. Please retry.');}});
+ await page.locator('#notifBell').click();await expect(page.locator('#toast')).toContainText('Reminder service unavailable');await expect(page.locator('#notifBell')).toBeEnabled();await expect(page.locator('#reminder-dialog')).toHaveCount(0);await expect(page.locator('#s-home')).toHaveClass(/active/);
+ await page.evaluate(()=>{ensureFunctionServices=previousReminderLoader;});await page.locator('#notifBell').click();await expect(page.locator('#reminder-dialog')).toBeVisible();expect(await page.evaluate(()=>!!messaging)).toBe(false);await page.keyboard.press('Escape');
+});
+
+test('account switching while school services load prevents a stale AI request',async({page})=>{
+ expect(await page.evaluate(async()=>{
+  let release,calls=0;const previous=ensureFunctionServices;ensureFunctionServices=()=>new Promise(r=>release=r);
+  openSchoolCapture();document.querySelector('#school-text').value='Notice that should not be sent after closing';const pending=extractSchool(false);
+  while(!release)await new Promise(r=>setTimeout(r,0));clearSessionState();user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';release({httpsCallable:()=>async()=>{calls++;return {data:{}}}});await pending;ensureFunctionServices=previous;return {calls,draft:schoolDraft};
+ })).toEqual({calls:0,draft:null});
+});
