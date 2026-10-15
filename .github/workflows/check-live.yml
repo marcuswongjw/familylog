@@ -1,0 +1,20 @@
+name: Check deployed read-only contracts
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: live-contract-checks
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - run: npm run config:check
+      - run: npm run check:live

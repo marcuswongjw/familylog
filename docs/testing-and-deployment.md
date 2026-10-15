@@ -8,6 +8,16 @@ Run `npm ci`, then:
 
 Browser mocks establish client behavior, not production availability. Emulator tests establish rules for the checked-in source, not confirmation that those rules were deployed. Existing unit tests do not replace either suite.
 
+In v54, `tests/browser/transport.spec.cjs` retains the production `gasRequest` implementation and intercepts only the configured remote HTTP boundary. Fake account tokens and explicit fixture service selection pass reads/writes through the actual family/parent backend entry points. It checks endpoint selection, POST/body authentication, child ownership, reminder setup routing and HTTP/JSON failure recovery. Other failure tests retain the simpler mock transport for focused scenarios. All external Google/Firebase services remain mocked; no browser test writes production data.
+
+`tests/browser/timezone.spec.cjs` uses fixed New Year instants in Singapore, Los Angeles and Kiritimati. Family Home, habits, selected calendar day, Today navigation, week and year markers must agree on the Singapore date. GAS fixtures run with the script’s Singapore timezone; explicit formatter tests cover time-only values, quoted literals and US daylight-saving transitions. Native lookup semantics follow [Google’s Calendar documentation](https://developers.google.com/apps-script/reference/calendar/calendar#getEventById(String)), and the formatter subset follows [Utilities.formatDate](https://developers.google.com/apps-script/reference/utilities/utilities#formatDate(Date,String,String)). These helpers model only used APIs and reject unsupported formatting tokens rather than pretending to support the complete Google runtime.
+
+## Controlled live contracts
+
+Run `npm run check:live` explicitly, or dispatch **Check deployed read-only contracts** (`.github/workflows/check-live.yml`) on main. This workflow is separate from push/PR tests and deployment. It needs no credentials. Nine fixed probes check family Sheets/Calendar readiness, anonymous read rejection on both Apps Script endpoints, and anonymous read denial for deployed Firestore memories/users/retired Chat and Storage memories/school/retired Chat paths. Firebase probes use valid, fixed probe names and require permission errors; missing resources, Google login HTML, API errors and network failures fail the check. Requests have 45-second deadlines. Output is fixed check names and pass/fail only; no private records or response bodies are printed. No create/update/delete or calendar-reconciliation request is sent.
+
+These probes verify deployed reachability and anonymous denial, **not** authenticated family/parent ownership, successful production mutations or full equivalence with checked-in Firebase rules. Emulator rules tests retain the role/owner/schema checks. Real authenticated mutation tests require an isolated authorized production test fixture and are not part of this command.
+
 ## Continuous integration
 
 `.github/workflows/verify.yml` runs all three suites on every push and pull request. Its reusable workflow is also required by production deployment. Node 22 and Java 21 match the required runtimes. Browser failure traces are uploaded for seven days. Test tools are development dependencies and are not bundled into the PWA.

@@ -43,7 +43,7 @@
       return t;
     }
     function kidHoursThisMonth(name){
-      const now = new Date(), today = todayStr();
+      const now = familyTodayDate(), today = todayStr();
       let hours = 0;
       (data.events || []).forEach(e => {
         if (!(e.tags || []).includes(name) || !e.dateRaw || e.dateRaw >= today) return;
@@ -84,8 +84,8 @@
     function nextCalMonth(){ calMonth++; if(calMonth>11){calMonth=0;calYear++;} renderCal(); }
     function prevCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()-7); renderCal(); }
     function nextCalWeek(){ calWeekStart.setDate(calWeekStart.getDate()+7); renderCal(); }
-    function snapCalWeekToday(){ calWeekStart=getStartOfWeek(new Date()); renderCal(); }
-    function snapCalMonthToday(){ const d=new Date(); calMonth=d.getMonth(); calYear=d.getFullYear(); selectedCalDayStr=localDateStr(d); savePreference('selectedCalDay', selectedCalDayStr); renderCal(); }
+    function snapCalWeekToday(){ calWeekStart=getStartOfWeek(familyTodayDate()); renderCal(); }
+    function snapCalMonthToday(){ const d=familyTodayDate(); calMonth=d.getMonth(); calYear=d.getFullYear(); selectedCalDayStr=localDateStr(d); savePreference('selectedCalDay', selectedCalDayStr); renderCal(); }
     function selectCalDay(dayStr){ selectedCalDayStr=dayStr; savePreference('selectedCalDay', dayStr); renderCal(); }
 
     function renderCal() {
@@ -385,7 +385,7 @@
         const daysInMonth = new Date(calYear, m+1, 0).getDate();
         const firstDay = new Date(calYear, m, 1).getDay();
         const monthEvents = evs.filter(e => {
-          const d = new Date(e.dateRaw);
+          const d = new Date(e.dateRaw+'T00:00:00');
           return d.getMonth() === m && d.getFullYear() === calYear;
         });
         const eventDays = new Set(monthEvents.map(e => e.dateRaw));

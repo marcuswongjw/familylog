@@ -62,10 +62,10 @@ function isParentApp(){return typeof document!=='undefined' && document.document
 
     // Calendar state
     let calView = loadPreference('calView', 'week');
-    let calYear = new Date().getFullYear();
-    let calMonth = new Date().getMonth();
+    let calYear = familyTodayDate().getFullYear();
+    let calMonth = familyTodayDate().getMonth();
     let selectedCalDayStr = loadPreference('selectedCalDay', localDateStr());
-    let calWeekStart = getStartOfWeek(new Date());
+    let calWeekStart = getStartOfWeek(familyTodayDate());
     let weekPersonFilter = loadPreference('weekPerson', 'All');
 
     // Expense & Budget filters
@@ -75,8 +75,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     // Schedules state
     let schedView = loadPreference('schedView', 'list');
     let activeSchedChild = loadPreference('schedChild', 'Mikaela');
-    let schedYear = new Date().getFullYear();
-    let schedMonth = new Date().getMonth();
+    let schedYear = familyTodayDate().getFullYear();
+    let schedMonth = familyTodayDate().getMonth();
     let selectedGridDayStr = localDateStr();
 
     // Search queries
@@ -335,7 +335,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       document.getElementById('app-screen').classList.add('active');
       document.getElementById('hname').textContent = name;
       document.getElementById('hav').textContent = m ? m.emoji : '👤';
-      document.getElementById('hdate').textContent = new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});
+      document.getElementById('hdate').textContent = familyTodayDate().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});
       setDefaultDates();
       // Immediate adult gate from email (refined when get_all returns isAdult)
       const email = (m && m.email) || currentUserEmail || '';
@@ -628,7 +628,9 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     // ─── UTILITY ──────────────────────────────────────────────
     function v(id){ return document.getElementById(id)?.value?.trim()||''; }
     function clr(...ids){ ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; }); }
-    function localDateStr(d){ d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+    // Civil-date carrier for grid arithmetic; family dates always follow Singapore.
+    function familyTodayDate(){ return new Date(schoolToday()+'T12:00:00'); }
+    function localDateStr(d){ if(!d)return schoolToday();return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
     function todayStr(){ return localDateStr(); }
     function fmtDate(s){ if(!s) return ''; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
     function fmtTime(s){ if(!s) return ''; const [h,m]=s.split(':').map(Number); return `${h===0?12:h>12?h-12:h}:${String(m).padStart(2,'0')}${h>=12?'pm':'am'}`; }
@@ -715,7 +717,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       if(typeof updateCalendarStatus==='function')updateCalendarStatus();
       const h = new Date().getHours();
       const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-      document.getElementById('greet').innerHTML = `<div class="nest-greeting-top"><div><span class="nest-kicker">${isAdultUser ? 'OUR FAMILY, TOGETHER' : 'YOUR LITTLE CORNER'}</span><h2>${g}, ${escapeHtml(user)}.</h2><p>${isAdultUser ? 'Let’s make a little room for a good day.' : 'Small steps today. Good things ahead.'}</p></div><span class="nest-date">${nestIcon('calendar')}${new Date().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'long'})}</span></div>`;
+      document.getElementById('greet').innerHTML = `<div class="nest-greeting-top"><div><span class="nest-kicker">${isAdultUser ? 'OUR FAMILY, TOGETHER' : 'YOUR LITTLE CORNER'}</span><h2>${g}, ${escapeHtml(user)}.</h2><p>${isAdultUser ? 'Let’s make a little room for a good day.' : 'Small steps today. Good things ahead.'}</p></div><span class="nest-date">${nestIcon('calendar')}${familyTodayDate().toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'long'})}</span></div>`;
 
       const summaryEl = document.getElementById('dash-summary');
       const membersEl = document.getElementById('dash-members');
@@ -735,7 +737,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       }
 
       const tod = todayStr();
-      const tomDate = new Date();
+      const tomDate = familyTodayDate();
       tomDate.setDate(tomDate.getDate() + 1);
       const tom = localDateStr(tomDate);
       const events = data.events || [];
@@ -1137,7 +1139,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const container = document.getElementById('sched-container');
       if(!container) return;
       const today = todayStr();
-      const now = new Date();
+      const now = familyTodayDate();
       const thisMonth = now.getMonth(), thisYear = now.getFullYear();
       const filteredEvents = evs.filter(e => {
         if(activeSchedChild==='All') return e.tags.includes('Mikaela') || e.tags.includes('Meaghan');
@@ -1147,7 +1149,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const past = filteredEvents.filter(e => e.dateRaw < today).sort((a,b)=>b.dateRaw.localeCompare(a.dateRaw));
       let totalHours = 0, activityBreakdown = {};
       past.forEach(a => {
-        const d = new Date(a.dateRaw);
+        const d = new Date(a.dateRaw+'T00:00:00');
         if(!isNaN(d.getTime()) && d.getMonth()===thisMonth && d.getFullYear()===thisYear){
           const dur = a.duration || 0; totalHours += dur;
           let actType = 'Class';
@@ -1163,7 +1165,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       let timetableHtml = '';
       if(upcoming.length > 0){
         timetableHtml = upcoming.slice(0,10).map(c => {
-          const dayName = days[new Date(c.dateRaw).getDay()];
+          const dayName = days[new Date(c.dateRaw+'T00:00:00').getDay()];
           return `<div class="row" style="padding:10px 16px;"><div style="font-size:20px;flex-shrink:0;margin-right:6px;">⛵</div><div class="row-main"><div class="row-title" style="font-weight:600;">${escapeHtml(c.title)}</div><div class="row-sub">${escapeHtml(dayName)}, ${escapeHtml(c.date)} · ${escapeHtml(c.time)}${c.endTime ? ' - ' + escapeHtml(c.endTime) : ''}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>${c.notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${escapeHtml(c.notes)}"</div>` : ''}</div><button onclick="delSchedule('${c.id}')" style="color:var(--text-muted);font-size:16px;padding:4px;flex-shrink:0;">✕</button></div>`;
         }).join('');
       } else timetableHtml = '<div class="empty">'+calendarEmptyMessage('No upcoming classes/sessions scheduled')+'</div>';

@@ -33,18 +33,7 @@ function harness(options = {}) {
   const calendar = options.calendar || new Map();
   const calendarEvents = options.calendarEvents || [];
   let failCalendarAfter = false;
-  function nativeTarget(id){
-    const raw=[...calendar.values()].find(e=>e.iCalUID===id&&e.status!=='cancelled');
-    const e=calendarEvents.find(e=>(e.id===id||e.seriesId===id)&&e.status!=='cancelled');
-    if(!raw&&!e)return null;
-    const date=part=>new Date(part.dateTime||part.date+'T00:00:00+08:00');
-    return {getId:()=>id,getTitle:()=>raw?raw.summary:e.title,isRecurringEvent:()=>raw?!!raw.recurringEventId:!!e.recurring,
-      getStartTime:()=>raw?date(raw.start):e.start,getEndTime:()=>raw?date(raw.end):e.end,isAllDayEvent:()=>raw?!!raw.start.date:!!e.allDay,
-      deleteEvent(){if(raw)raw.status='cancelled';if(e)e.status='cancelled';},
-      setTime(start,end){if(end<=start)throw Error('Invalid Calendar interval');if(raw){raw.start={dateTime:start.toISOString()};raw.end={dateTime:end.toISOString()};}if(e){e.start=start;e.end=end;}},
-      setAllDayDates(start,end){if(end<=start)throw Error('Invalid all-day Calendar interval');if(raw){raw.start={date:c.Utilities.formatDate(start,'Asia/Singapore','yyyy-MM-dd')};raw.end={date:c.Utilities.formatDate(end,'Asia/Singapore','yyyy-MM-dd')};}if(e){e.start=start;e.end=end;}}
-    };
-  }
+  const nativeTarget=require('./gas-calendar.cjs').nativeLookup(calendar,calendarEvents);
 
   const c = vm.createContext({ console: { log() {} }, Date, JSON, PropertiesService: { getScriptProperties: () => ({ getProperties: () => properties, getProperty:key=>properties[key], setProperty:(key,value)=>properties[key]=value }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => {throw Error('Implicit spreadsheet access');}, openById: id => {if(id!==require('../../config/project.json').spreadsheetId)throw Error('Wrong spreadsheet');return ss;}, flush() {} },
@@ -69,13 +58,12 @@ function harness(options = {}) {
     Utilities: { getUuid: () => crypto.randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' },
       computeHmacSha256Signature:(value,key)=>[...crypto.createHmac('sha256',key).update(value).digest()],
       computeDigest: (_, value) => [...crypto.createHash('sha256').update(value).digest()],
-      formatDate: (date, zone, format) => {
-        const d=new Date(date),parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));
-        const month=new Intl.DateTimeFormat('en-GB',{timeZone:zone,month:'short'}).format(d),hour=Number(parts.hour);
-        return format.replace(/yyyy|MMMM|MMM|MM|dd|HH|hh|h|mm|ss|a|'T'/g,t=>({yyyy:parts.year,MMMM:new Intl.DateTimeFormat('en-GB',{timeZone:zone,month:'long'}).format(d),MMM:month,MM:parts.month,dd:parts.day,HH:parts.hour,hh:String(hour%12||12).padStart(2,'0'),h:String(hour%12||12),mm:parts.minute,ss:parts.second,a:hour<12?'AM':'PM',"'T'":'T'}[t]));
-      } },
+      formatDate: require('./gas-date.cjs').formatDate },
     UrlFetchApp: { fetch: (url, opts = {}) => {
-      const u=new URL(url), tail=decodeURIComponent(u.pathname.split('/events')[1]||''),method=opts.method||'get';
+      const u=new URL(url);
+      const expected='/calendar/v3/calendars/'+encodeURIComponent(require('../../config/project.json').calendarId)+'/events';
+      if(u.origin!=='https://www.googleapis.com'||!u.pathname.startsWith(expected)||!['','/'].includes(u.pathname.slice(expected.length,expected.length+1)))throw Error('Unexpected Calendar endpoint');
+      const tail=decodeURIComponent(u.pathname.split('/events')[1]||''),method=opts.method||'get';
       let code=200,saved;
       const nativeRaw=e=>({id:e.restId||e.id,iCalUID:e.seriesId||e.id,summary:e.title,description:e.description||'',location:e.location||'',status:e.status||'confirmed',
         start:e.allDay?{date:new Date(e.start.getTime()+8*3600000).toISOString().slice(0,10)}:{dateTime:e.start.toISOString()},

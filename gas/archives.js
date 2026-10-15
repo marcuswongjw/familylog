@@ -61,7 +61,7 @@ function schoolPlanById_(ss,id,email) {
 }
 function habitLogFromRow_(r) {
   var tz=Session.getScriptTimeZone();
-  return {id:toStr(r[0]),habitId:toStr(r[1]),member:toStr(r[2]),habit:toStr(r[3]),date:r[4] instanceof Date?Utilities.formatDate(r[4],tz,'yyyy-MM-dd'):toStr(r[4]),notes:toStr(r[5]),loggedBy:toStr(r[6]),timestamp:r[7] instanceof Date?Utilities.formatDate(r[7],tz,"yyyy-MM-dd'T'HH:mm:ss'Z'"):toStr(r[7])};
+  return {id:toStr(r[0]),habitId:toStr(r[1]),member:toStr(r[2]),habit:toStr(r[3]),date:r[4] instanceof Date?Utilities.formatDate(r[4],tz,'yyyy-MM-dd'):toStr(r[4]),notes:toStr(r[5]),loggedBy:toStr(r[6]),timestamp:r[7] instanceof Date?r[7].toISOString():toStr(r[7])};
 }
 function habitReadLogs_(ss,email,start,end) {
   var sheet=ss.getSheetByName('HabitLogs');if(!sheet)return [];

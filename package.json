@@ -10,6 +10,7 @@
     "test": "node scripts/project-config.cjs --check && node --test tests/*.test.js",
     "config:generate": "node scripts/project-config.cjs",
     "config:check": "node scripts/project-config.cjs --check",
+    "check:live": "node scripts/check-live-contracts.cjs",
     "test:browser": "playwright test",
     "test:rules": "firebase emulators:exec --project demo-familylog --only firestore,storage \"node --test tests/emulator/*.cjs\"",
     "build": "node scripts/build-apps.cjs"

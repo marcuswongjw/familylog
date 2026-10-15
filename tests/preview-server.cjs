@@ -31,7 +31,7 @@ window.firebase = {
  storage: () => ({}),
  messaging: () => ({useServiceWorker(){},onMessage(){}}),
  functions: () => ({httpsCallable:name=>async payload=>name==='updateReminderSettings'?({data:{settings:payload?.settings||{enabled:false,packing:true,habits:true,overdue:true,includeChildren:false,hour:19,quietStart:21,quietEnd:7},bridgeReady:true}}):({data:{title:'Science Learning Journey',child:'Mikaela',sourceText:'',warnings:['The year is missing. Confirm the date.','End time not provided.'],event:{title:'Science Learning Journey',date:'',time:'07:15',endTime:'',location:'School',evidence:'Report at 7:15am on 23 September.'},tasks:[{title:'Pack water bottle',kind:'packing',due:'',evidence:'Bring a water bottle.'}]}})}),
- auth: () => ({currentUser:{email:'marcuswongjw@gmail.com',getIdToken:async()=> 'fixture-token'},signOut:async()=>{},onAuthStateChanged(cb){cb(null)}})
+ auth: () => ({currentUser:{get email(){return currentUserEmail||'marcuswongjw@gmail.com';},getIdToken:async()=> 'fixture-token:'+currentUserEmail},signOut:async()=>{},onAuthStateChanged(cb){cb(null)}})
 };
 window.fixtureErrors=[]; window.addEventListener('error',e=>fixtureErrors.push(e.message));
 window.addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reason)));
@@ -40,7 +40,7 @@ const setup = `<script>
 window.addEventListener('DOMContentLoaded', async()=>{
  window.productionGasRequest=gasRequest;
  firebase.firestore.FieldValue={serverTimestamp:()=>new Date()};
- gasRequest=async body=>{const r=await fetch('/api',{method:'POST',body:JSON.stringify({...body,email:currentUserEmail})});return r.json()};
+ if(!location.search.includes('transport-preview'))gasRequest=async body=>{const r=await fetch('/api',{method:'POST',body:JSON.stringify({...body,email:currentUserEmail})});return r.json()};
  window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData()};
  if (!location.search.includes('login-preview')) await fixtureLogin('Marcus');
 });
@@ -50,9 +50,14 @@ http.createServer(async(req,res)=>{
   if(req.url==='/api'){
    let body='';for await(const chunk of req)body+=chunk;
    const d=JSON.parse(body);
+   if(d.idToken!==undefined){
+    const email=String(d.idToken).startsWith('fixture-token:')?String(d.idToken).slice('fixture-token:'.length):'';
+    if(!h.c.isAllowedEmail_(email)){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'error',message:'Unauthorized'}));return;}
+    d.email=email;
+   }
    let result;
-   if(['get_parent_dashboard','get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar'].includes(d.action)){
-    const runtime=d.action==='get_parent_dashboard'?h:family;
+   if(req.headers['x-fixture-service']||['get_parent_dashboard','get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar'].includes(d.action)){
+    const runtime=req.headers['x-fixture-service']==='family'?family:req.headers['x-fixture-service']==='parents'?h:d.action==='get_parent_dashboard'?h:family;
     runtime.c.ContentService={MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>JSON.parse(text)})};
     runtime.c.verifyFirebaseToken=()=>runtime.c.perfStage_('auth',()=>runtime.c.isAllowedEmail_(d.email)?d.email:null);
     result=runtime.c.doPost({postData:{contents:JSON.stringify(d)}});
