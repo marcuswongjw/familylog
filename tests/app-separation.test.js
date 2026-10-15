@@ -8,7 +8,7 @@ test('family dashboard never reads private-parent domains or exposes private act
  const r=h.c.getAllDashboardData('marcuswongjw@gmail.com','family');assert.equal(r.isAdult,true);assert.equal(r.expenses.total,0);assert.equal(r.budgets.length,0);assert.equal(r.intimacyLog.length,0);assert.ok(r.activityLog.every(e=>['Tasks','Calendar','Habits'].includes(e.category)));assert.ok(!JSON.stringify(r).includes('Private note'));
 });
 test('parent dashboard denies children and outsiders before reading any data',()=>{
- const h=harness();h.c.SpreadsheetApp.getActiveSpreadsheet=()=>{throw Error('Unexpected read')};
+ const h=harness();h.c.SpreadsheetApp.openById=()=>{throw Error('Unexpected read')};
  for(const email of ['mikaelawonght@gmail.com','meaghanwongzx@gmail.com','outside@example.com',''])assert.equal(h.c.getParentDashboardData(email).status,'error');
 });
 test('parent dashboard has no Calendar/reconciliation or family-record dependency',()=>{

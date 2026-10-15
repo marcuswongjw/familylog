@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "spreadsheetId": "17TywVuHWmldWATzmarvkMYdInnatgX-jb46ipuCt0_I",
+  "calendarId": "family09091668338066744284@group.calendar.google.com",
+  "services": {
+    "parents": {
+      "scriptId": "1qnpfaTsvNRlnLDotILDjX5XuEePdo85YY92ETIiIP1MIHdSLiWuereb2",
+      "deploymentId": "AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr"
+    },
+    "family": {
+      "scriptId": "16wgGnyCUjE6KGpYFovkM-RJKtqOD3ZZRgBsH-V6vF9tZmN6HfTXjzWNb",
+      "deploymentId": "AKfycbxm__4eECo8jb61787ZSIEZpK7y7xXpaWs9IjD8kyPvpE5mpvFSVGOcWNazZUTcPZORGQ"
+    }
+  },
+  "sites": {"family": "https://family.marcusw.xyz/", "parents": "https://parents.marcusw.xyz/"},
+  "firebase": {
+    "apiKey": "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",
+    "authDomain": "familylog-86db6.firebaseapp.com",
+    "projectId": "familylog-86db6",
+    "storageBucket": "familylog-86db6.firebasestorage.app",
+    "messagingSenderId": "171956350431",
+    "appId": "1:171956350431:web:6094e6bafb0bb849ed286a",
+    "measurementId": "G-HCHV787ZPJ"
+  },
+  "vapidKey": "BAs6TNKZd4jhJwSXah-Q5DQtVG0h0uaoQmopSBG9gu1AtvaHRKqAeG8ZvW3Og2PrJpLz_VxXoxzhvS5nrbt6HUU"
+}

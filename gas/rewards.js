@@ -199,19 +199,19 @@ function reminderSnapshot_(data) {
     if (!reminderAuthorized_(data)) return {status:'error',message:'Unauthorized'};
     if (FAMILY_SERVICE_FORWARDING_) return reminderBridgePost_(FAMILY_SERVICE_URL_,{action:data.action === 'prepare_family_tasks' ? 'prepare_family_tasks' : 'reminder_snapshot',timestamp:data.timestamp,signature:data.signature});
   }
-  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var ss=appSpreadsheet_();
   if (data.action === 'prepare_family_tasks') { calendarPreparation_(ss,true); return {status:'ok'}; }
   return {status:'ok',todos:getTodos(ss,null,false),habits:getHabits(ss),habitLogs:getHabitLogs(ss)};
 }
 
 function manualEventMembers_(){
-  var sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar'),members={};
+  var sheet=appSpreadsheet_().getSheetByName('Calendar'),members={};
   if(sheet)perfReadRows_(sheet).slice(1).forEach(function(r){if(r[5]&&FAMILY_MEMBERS.indexOf(r[7])!==-1)members[toStr(r[5])]=r[7];});
   return members;
 }
 
 // Fixed destinations only: signatures never travel to a caller-supplied URL.
-var REMINDER_VERIFIER_URL_ = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
+var REMINDER_VERIFIER_URL_ = deploymentSettings_().parentsUrl;
 function reminderBridgePost_(url,payload) {
   var response = UrlFetchApp.fetch(url,{method:'post',contentType:'text/plain;charset=utf-8',payload:JSON.stringify(payload),muteHttpExceptions:true});
   if (response.getResponseCode() !== 200) throw new Error('Reminder bridge unavailable.');

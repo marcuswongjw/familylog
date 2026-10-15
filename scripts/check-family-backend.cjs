@@ -1,5 +1,5 @@
 // No credentials or household records. Fail closed before enabling forwarding.
-const config=require('../docs/family-backend.json');
+const config=require('./project-config.cjs').serviceConfig('family');
 (async()=>{
  const response=await fetch(config.url+'?action=health',{signal:AbortSignal.timeout(45000)});
  let result;try{result=await response.json()}catch{throw Error('Google authorization is still required for the family web-app deployment. Live routing has not been activated.');}

@@ -1,7 +1,7 @@
 'use strict';
 const crypto=require('crypto');
 const {FAMILY,PARENTS,settings,plan,singaporeClock,quiet}=require('./reminder-plan');
-const GAS_URL='https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
+const GAS_URL=require('./scripts/project-config.cjs').serviceConfig('parents').url;
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 module.exports=({functions,admin,db,storage,STORAGE_BUCKET,APP_URL})=>{
  const guarded=functions.runWith({secrets:['REMINDER_BRIDGE_SECRET'],timeoutSeconds:120,memory:'256MB',maxInstances:1});

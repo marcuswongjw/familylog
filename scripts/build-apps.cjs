@@ -37,6 +37,7 @@ function appHTML(source,mode){
  return result;
 }
 function build(output='public-site'){
+ require('./project-config.cjs').checkGenerated();
  fs.rmSync(output,{recursive:true,force:true});fs.mkdirSync(output,{recursive:true});
  for(const mode of ['family','parents']){
   const dest=mode==='family'?output:path.join(output,'parents');fs.mkdirSync(dest,{recursive:true});

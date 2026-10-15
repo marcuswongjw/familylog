@@ -39,10 +39,11 @@ jobs:
           CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
           CLASP_SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID }}
         run: |
-          node -e "const fs=require('fs');if(!process.env.CLASP_CREDENTIALS||!process.env.CLASP_SCRIPT_ID)throw Error('Configure clasp deployment credentials');fs.writeFileSync(process.env.HOME+'/.clasprc.json',process.env.CLASP_CREDENTIALS,{mode:384});fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:process.env.CLASP_SCRIPT_ID}));"
+          node -e "const fs=require('fs'),config=require('./scripts/project-config.cjs').checkGenerated();if(!process.env.CLASP_CREDENTIALS)throw Error('Configure clasp deployment credentials');if(process.env.CLASP_SCRIPT_ID&&process.env.CLASP_SCRIPT_ID!==config.services.parents.scriptId)throw Error('Clasp identity disagrees with project configuration');fs.writeFileSync(process.env.HOME+'/.clasprc.json',process.env.CLASP_CREDENTIALS,{mode:384});"
           ./scripts/deploy-family-gas.sh
           ./scripts/deploy-gas.sh
-          npx firebase deploy --project familylog-86db6 --only functions,firestore:rules,storage --non-interactive
+          FIREBASE_PROJECT_ID="$(node -p "require('./config/project.json').firebase.projectId")"
+          npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only functions,firestore:rules,storage --non-interactive
       - uses: actions/configure-pages@v5
       - name: Prepare public client only
         run: |

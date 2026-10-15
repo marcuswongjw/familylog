@@ -13,19 +13,10 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     };
 
     // ─── FIREBASE CONFIG ────────────────────────────────────────
-    const firebaseConfig = {
-      apiKey: "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",
-      authDomain: "familylog-86db6.firebaseapp.com",
-      projectId: "familylog-86db6",
-      storageBucket: "familylog-86db6.firebasestorage.app",
-      messagingSenderId: "171956350431",
-      appId: "1:171956350431:web:6094e6bafb0bb849ed286a",
-      measurementId: "G-HCHV787ZPJ"
-    };
-    const VAPID_KEY = 'BAs6TNKZd4jhJwSXah-Q5DQtVG0h0uaoQmopSBG9gu1AtvaHRKqAeG8ZvW3Og2PrJpLz_VxXoxzhvS5nrbt6HUU';
-
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr/exec';
-    const FAMILY_GAS_URL = 'https://script.google.com/macros/s/AKfycbxm__4eECo8jb61787ZSIEZpK7y7xXpaWs9IjD8kyPvpE5mpvFSVGOcWNazZUTcPZORGQ/exec';
+    const firebaseConfig = NEST_PUBLIC_CONFIG.firebase;
+    const VAPID_KEY = NEST_PUBLIC_CONFIG.vapidKey;
+    const GAS_URL = NEST_PUBLIC_CONFIG.endpoints.parents;
+    const FAMILY_GAS_URL = NEST_PUBLIC_CONFIG.endpoints.family;
 
     const MEMBERS = [
       { name:'Marcus',  emoji:'👨', email:'marcuswongjw@gmail.com' },

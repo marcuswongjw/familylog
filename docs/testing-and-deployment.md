@@ -2,7 +2,7 @@
 
 Run `npm ci`, then:
 
-- `npm test` — backend and client regressions, including ownership, idempotent writes, calendar reconciliation and input boundaries.
+- `npm test` — checks generated deployment configuration, then runs backend and client regressions, including ownership, idempotent writes, calendar reconciliation, input boundaries and the actual selected family/parent packages. After editing `config/project.json`, run `npm run config:generate` and review its generated files.
 - `npx playwright install chromium` and `npm run test:browser` — the production client with isolated mock services. Exercises failed forms, Undo and failed deletion, late account responses, shared habits, photo metadata recovery, keyboard focus, offline writes and reduced motion. Failures retain traces under `test-results/`.
 - With Java 21 on PATH, `npm run test:rules` — actual Firestore and Storage rule evaluation on the `demo-familylog` emulators. It cannot contact production services. Covers ownership and immutable owners, own-account settings, server-only device writes, photo owner/size/type constraints, immutable parent school originals and retired Chat writes.
 
@@ -18,10 +18,10 @@ Browser mocks establish client behavior, not production availability. Emulator t
 
 The default dispatch deploys only the client. Enable its backend option only after configuring these production environment secrets:
 
-- `CLASP_SCRIPT_ID` and `CLASP_CREDENTIALS` (the existing clasp OAuth JSON, stored only as an encrypted secret).
+- `CLASP_CREDENTIALS` (the existing clasp OAuth JSON, stored only as an encrypted secret). Optional legacy `CLASP_SCRIPT_ID` must agree with the canonical parent script identity; it does not overwrite project configuration.
 - `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` for Google workload identity federation. Grant that account the scoped Firebase deployment roles and ensure the provider trusts this repository/environment. Google authorization stays outside browser files.
 
-Backend deployment uploads `Code.js` and **all `gas/*.js`** to the same Apps Script project and rolls the existing deployment ID. It then deploys Firebase functions and rules. No automatic push-triggered deployment occurs. Environment branch policy restricts production to main; required human reviewers can be added in repository settings if desired. If backend credentials are absent, the explicit backend option fails before uploading anything.
+Backend deployment builds explicit, fresh staging packages using `scripts/backend-package.cjs`. It rolls the configured family deployment first, checks its spreadsheet/Calendar readiness, and then rolls the original parent deployment. The family package omits private-parent/finance/bank/email modules and their Gmail/mail scopes. It then deploys Firebase functions and rules to the configured Firebase project. No automatic push-triggered deployment occurs. Environment branch policy restricts production to main; required human reviewers can be added in repository settings if desired. If backend credentials are absent or configured identities disagree, the explicit backend option fails before uploading anything.
 
 Local emergency release remains possible through the existing authorized CLI tools after the same checks. It is intentionally separate from automatic CI; record the deployed commit and service versions. Installed clients use network-first shell caching and the release cache version in `firebase-messaging-sw.js`.
 

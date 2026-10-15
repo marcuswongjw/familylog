@@ -1,29 +1,26 @@
-// Write-boundary validators: reject partial numeric strings and unknown finance values.
-function fullNumber_(value) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
-  if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) return NaN;
-  var number = Number(value); return Number.isFinite(number) ? number : NaN;
-}
+var EXPENSE_GROUPS = {
+  '👶 Children':      ['Children - Books','Children - Enrichment','Children - School','Children - Toys','Mikaela - Sailing'],
+  '👕 Clothing':      ['Clothing - Accessories','Clothing - Clothes','Clothing - Shoes'],
+  '🍽 Eating Out':    ['Eating Out - Beverages','Eating Out - Breakfast','Eating Out - Dinner','Eating Out - Lunch','Eating Out - Snacks'],
+  '📚 Education':     ['Education - Books','Education - Courses & Enrichment','Education - Subscription'],
+  '🎭 Entertainment': ['Entertainment - Experiences','Entertainment - Subscriptions','Entertainment - Objects (toys, etc)'],
+  '🎁 Gifts/Giving':  ['Gifts & Treats - CNY','Gifts & Treats - Family','Gifts & Treats - Friends','Gifts & Treats - Wedding','Giving - Church','Giving - Charity','Giving - Parents'],
+  '🏥 Health':        ['Health & Fitness - Dental + Medical','Health & Fitness - Events + Subscription','Health & Fitness - Equipment + Supplements'],
+  '🏠 Household':     ['Household - Appliances','Household - Groceries','Household - Helper','Household - Household Misc','Household - Renovation','Household - Utilities (electric, gas, water)','Household - Internet'],
+  '🐾 Pets':          ['Pets - Pet Food','Pets - Grooming','Pets - Pet Misc'],
+  '💆 Self Care':     ['Self Care - Massage','Self Care - Personal Care','Utilities - Mobile'],
+  '✈️ Travel':        ['Travel - Hotels','Travel - Transport','Travel - Expenses'],
+  '🚗 Transport':     ['Transportation - Bus/MRT','Transportation - Taxi/Grab','Transportation - Auto: Service','Transportation - Auto: Loan','Transportation - Auto: Gas'],
+  '📈 Finance':       ['Endowment','Insurance','Investing','Taxes - Income Tax','Taxes - Property Tax'],
+  '🌍 Others':        ['Electronics','Misc','Missions']
+};
+
 function financeAccount_(value) { return ['Family','Personal Account'].indexOf(value) !== -1; }
 function financeCategory_(value) {
   return value === 'Other' || Object.keys(EXPENSE_GROUPS).some(function(group){return EXPENSE_GROUPS[group].indexOf(value) !== -1;});
 }
-function birthdayDate_(value, year) {
-  if (!/^\d{2}-\d{2}$/.test(value) || (year && (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 2100))) return false;
-  var iso = (year || '2000') + '-' + value, date = new Date(iso+'T00:00:00Z');
-  return !isNaN(date.getTime()) && date.toISOString().slice(0,10) === iso;
-}
-
-function emptyExpensesPayload_() {
-  return {
-    rows: [], total: 0, byCategory: {}, byAccount: {}, history: [], lastMonthTotal: 0,
-    familyTotal: 0, personalTotal: 0, familyByCategory: {}, personalByCategory: {},
-    familyHistory: [], personalHistory: [], lastMonthFamilyTotal: 0, lastMonthPersonalTotal: 0
-  };
-}
-
 function getExpensesDataMeasured_(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  ss = ss || appSpreadsheet_();
   var expSheet = ss.getSheetByName('Expenses');
   if (!expSheet) return emptyExpensesPayload_();
   var eVals      = expenseRows_(ss);
@@ -125,7 +122,7 @@ function getExpensesDataMeasured_(ss) {
 }
 
 function getBudgetsMeasured_(ss) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  ss = ss || appSpreadsheet_();
   var bdgSheet = ss.getSheetByName('Budgets');
   if (!bdgSheet) return [];
   var bdgVals  = perfReadRows_(bdgSheet);

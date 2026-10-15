@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v52';
+const CACHE_NAME = 'wongs-nest-v53';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './js/parents.js',
   './assets/nest-mark.svg',
   './js/app.js',
+  './js/project-config.js',
   './js/status.js',
   './js/session.js',
   './js/api.js',
@@ -104,15 +105,8 @@ self.addEventListener('notificationclose', () => { /* no-op */ });
 importScripts('./assets/firebase-app-compat-9.23.0.js');
 importScripts('./assets/firebase-messaging-compat-9.23.0.js');
 
-firebase.initializeApp({
-  apiKey: "AIzaSyAapGliVr1bcKa5ESvIPpT1VvPIHb0uwD0",
-  authDomain: "familylog-86db6.firebaseapp.com",
-  projectId: "familylog-86db6",
-  storageBucket: "familylog-86db6.firebasestorage.app",
-  messagingSenderId: "171956350431",
-  appId: "1:171956350431:web:6094e6bafb0bb849ed286a",
-  measurementId: "G-HCHV787ZPJ"
-});
+importScripts('./js/project-config.js');
+firebase.initializeApp(NEST_PUBLIC_CONFIG.firebase);
 
 const messaging = firebase.messaging();
 

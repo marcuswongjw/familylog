@@ -1,6 +1,6 @@
 // Authoritative Calendar read and task reconciliation share the family writer lock.
 function calendarPreparation_Measured_(ss, strict) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  ss = ss || appSpreadsheet_();
   var lock = LockService.getScriptLock(), held = false, events;
   try {
     perfStage_('lock_wait',function(){lock.waitLock(30000);}); held = true;

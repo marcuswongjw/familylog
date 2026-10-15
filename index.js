@@ -2,15 +2,16 @@ const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
-const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'familylog-86db6.firebasestorage.app';
+const PROJECT_CONFIG = require('./scripts/project-config.cjs').readProjectConfig();
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || PROJECT_CONFIG.firebase.storageBucket;
 admin.initializeApp({
   storageBucket: STORAGE_BUCKET
 });
 const db = getFirestore();
 const storage = getStorage();
 
-// Public PWA URL (GitHub Pages). Used as the notification click target.
-const APP_URL = process.env.FAMILYLOG_APP_URL || 'https://marcuswongjw.github.io/familylog/';
+// Canonical family app; existing environment overrides remain supported.
+const APP_URL = process.env.FAMILYLOG_APP_URL || PROJECT_CONFIG.sites.family;
 
 // Parent-only extraction; no calendar/task side effects. Secrets never reach the PWA.
 const { buildRequest, parseResponse } = require('./school-extraction');

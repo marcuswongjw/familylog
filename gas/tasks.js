@@ -1,5 +1,5 @@
 function getTodosMeasured_(ss, verifiedEmail, includeDone) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  ss = ss || appSpreadsheet_();
   var tdSheet = ss.getSheetByName('ToDo');
   var tdVals = tdSheet ? perfReadRows_(tdSheet) : [];
   var needsMigration = !tdVals[0] || tdVals[0][7] !== 'ID' || tdVals[0][12] !== 'Reward Member' || tdVals.some(function(row, i) { return i > 0 && row[1] && !row[7]; });

@@ -13,9 +13,7 @@ function memberNameFromEmail_(email) {
   return null;
 }
 
-// ─── EXPENSE APPROVAL SIGNING ─────────────────────────────
-// Links in approval emails carry id + exp + HMAC so guessing pending
-// IDs is not enough to approve/reject expenses.
+// Firebase verification and family allowlist; shared by both deployments.
 function verifyFirebaseTokenMeasured_(idToken) {
   if (!idToken) {
     console.log('❌ No token provided');

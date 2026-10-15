@@ -5,6 +5,7 @@ const path = require('node:path');
 const {appHTML}=require('../scripts/build-apps.cjs');
 const { harness } = require('./helpers/gas-harness.cjs');
 const h = harness();
+const family = harness({service:'family',sheets:h.sheets,calendar:h.calendar,calendarEvents:h.calendarEvents});
 // Opt-in sample activities live only in this in-memory preview, never production.
 if (process.argv.includes('--rewards-demo')) {
  for (const member of ['Mikaela', 'Meaghan']) {
@@ -48,15 +49,15 @@ http.createServer(async(req,res)=>{
  try {
   if(req.url==='/api'){
    let body='';for await(const chunk of req)body+=chunk;
-   const d=JSON.parse(body), adult=h.c.isAdultEmail_(d.email);
+   const d=JSON.parse(body);
    let result;
    if(['get_parent_dashboard','get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar'].includes(d.action)){
-    const previous=h.c.FAMILY_BACKEND_MODE_;h.c.FAMILY_BACKEND_MODE_=d.action!=='get_parent_dashboard';
-    h.c.ContentService={MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>JSON.parse(text)})};
-    h.c.verifyFirebaseToken=()=>h.c.perfStage_('auth',()=>h.c.isAllowedEmail_(d.email)?d.email:null);
-    try{result=h.c.doPost({postData:{contents:JSON.stringify(d)}});}finally{h.c.FAMILY_BACKEND_MODE_=previous;}
-   }else if(d.action==='get_rewards')result={status:'ok',rewards:h.c.getRewards_(h.ss)};
-   else result=h.write(d,d.email);
+    const runtime=d.action==='get_parent_dashboard'?h:family;
+    runtime.c.ContentService={MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>JSON.parse(text)})};
+    runtime.c.verifyFirebaseToken=()=>runtime.c.perfStage_('auth',()=>runtime.c.isAllowedEmail_(d.email)?d.email:null);
+    result=runtime.c.doPost({postData:{contents:JSON.stringify(d)}});
+   }else if(d.action==='get_rewards')result={status:'ok',rewards:family.c.getRewards_(family.ss)};
+   else result=(family.c.familyWriteNote_(d.note)?family:h).write(d,d.email);
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
   }
   const parentPage=req.url.split('?')[0].startsWith('/parents/');

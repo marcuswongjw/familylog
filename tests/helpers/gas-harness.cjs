@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const {URL}=require('node:url');
 // Model the actual Sheets/Calendar boundaries, including a lost response AFTER an
 // external write, so retries are tested rather than just successful code paths.
-function harness() {
+function harness(options = {}) {
   class Sheet {
     constructor(rows = []) { this.rows = rows; this.failAppendAfter = false; }
     appendRow(row) { this.rows.push([...row]); if (this.failAppendAfter) { this.failAppendAfter = false; throw new Error('Lost Sheets response'); } }
@@ -28,10 +28,10 @@ function harness() {
       } };
     }
   }
-  const sheets = {}, properties = {};
-  const ss = { getSheetByName: name => sheets[name] || null, insertSheet: name => sheets[name] = new Sheet() };
-  const calendar = new Map();
-  const calendarEvents = [];
+  const sheets = options.sheets || {}, properties = {};
+  const ss = { getId:()=>require('../../config/project.json').spreadsheetId, getSheetByName: name => sheets[name] || null, insertSheet: name => sheets[name] = new Sheet() };
+  const calendar = options.calendar || new Map();
+  const calendarEvents = options.calendarEvents || [];
   let failCalendarAfter = false;
   function nativeTarget(id){
     const raw=[...calendar.values()].find(e=>e.iCalUID===id&&e.status!=='cancelled');
@@ -47,7 +47,7 @@ function harness() {
   }
 
   const c = vm.createContext({ console: { log() {} }, Date, JSON, PropertiesService: { getScriptProperties: () => ({ getProperties: () => properties, getProperty:key=>properties[key], setProperty:(key,value)=>properties[key]=value }) },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush() {} },
+    SpreadsheetApp: { getActiveSpreadsheet: () => {throw Error('Implicit spreadsheet access');}, openById: id => {if(id!==require('../../config/project.json').spreadsheetId)throw Error('Wrong spreadsheet');return ss;}, flush() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Session: { getScriptTimeZone: () => 'Asia/Singapore' }, ScriptApp: { getOAuthToken: () => 'test-token' },
     CalendarApp: {
@@ -100,8 +100,9 @@ function harness() {
       return {getResponseCode:()=>code,getContentText:()=>JSON.stringify(saved)};
     } }
   });
-  vm.runInContext(['Code.js','gas/performance.js','gas/auth.js','gas/rewards.js','gas/money.js','gas/calendar.js','gas/tasks.js','gas/archives.js','gas/backend.js'].map(file=>fs.readFileSync(require.resolve('../../'+file),'utf8')).join('\n'),c);
-  c.FAMILY_SERVICE_FORWARDING_ = false;
+  const sources=require('../../scripts/backend-package.cjs').backendSources(options.service||'parents');
+  vm.runInContext(sources.map(file=>file.source).join('\n'),c);
+  if(!options.service)c.FAMILY_SERVICE_FORWARDING_ = false;
   return { c, ss, sheets, calendar, calendarEvents, Sheet, failCalendar: () => { failCalendarAfter = true; }, write: (payload, email = 'marcuswongjw@gmail.com') => c.handleWrite({ ...payload, _verifiedEmail: email }) };
 }
 

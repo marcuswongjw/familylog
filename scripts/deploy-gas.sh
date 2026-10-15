@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DEPLOYMENT_ID='AKfycbwQzpqQRRnK_PJRIbKWvPRhFVrQbfLEORciIRijBSwiz7WkX-7Ik2vTrZzE9VZ7Nehr'
+DEPLOYMENT_ID="$(node -e "console.log(require('./scripts/project-config.cjs').serviceConfig('parents').deploymentId)")"
 CLASP=(npx --yes @google/clasp@2.5.0)
 
 if [[ ! -f .clasp.json ]]; then
@@ -17,7 +17,11 @@ if [[ ! -f "$HOME/.clasprc.json" ]]; then
   exit 1
 fi
 
-if rg -q 'FAMILY_SERVICE_FORWARDING_ = true' gas/backend.js; then node scripts/check-family-backend.cjs; fi
+node scripts/check-family-backend.cjs
+STAGING_DIR="$(mktemp -d /tmp/wongs-nest-parents-gas.XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+node scripts/backend-package.cjs parents "$STAGING_DIR"
+cd "$STAGING_DIR"
 "${CLASP[@]}" push --force
 "${CLASP[@]}" deploy -i "$DEPLOYMENT_ID" -d "Code.js $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "Apps Script web app updated. GAS_URL is unchanged."
