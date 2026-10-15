@@ -7,7 +7,9 @@ function habitWeek(date) {
   return {start,end:d.toISOString().slice(0,10)};
 }
 function habitMemberLogs(h, member) {
-  return (data.habitLogs || []).filter(l => l.habitId === h.id && l.member === member);
+  const logs=new Map((data.habitLogs||[]).map(l=>[l.id,l]));
+  for(const entry of habitWeekCache.values())if(entry.status==='ready')for(const log of entry.logs)logs.set(log.id,log);
+  return [...logs.values()].filter(l => l.habitId === h.id && l.member === member);
 }
 function habitDone(h, member, date) { return habitMemberLogs(h,member).some(l => l.date === date); }
 function habitWeekCount(h, member, date) {
@@ -45,3 +47,40 @@ function habitMembers(h) {
   return (Array.isArray(h.members) ? h.members : String(h.member || '').split(',')).map(m=>m.trim()).filter(m=>['Marcus','Eleanor','Mikaela','Meaghan'].includes(m));
 }
 function habitShared(h) { return habitMembers(h).length > 1; }
+
+// Current progress stays in the dashboard; at most two older selected weeks are held in memory.
+const habitWeekCache=new Map();
+let habitWeekRevision=0;
+function resetHabitWeekCache(){habitWeekRevision++;habitWeekCache.clear();}
+function habitProgressReady(date){
+ if(!data.habitLogWindow || habitWeek(date).start>=data.habitLogWindow.start)return true;
+ return habitWeekCache.get(habitWeek(date).start)?.status==='ready';
+}
+function habitWeekNotice(date){
+ if(habitProgressReady(date))return '';
+ const entry=habitWeekCache.get(habitWeek(date).start),failed=entry?.status==='error';
+ return `<p role="status">${failed?'Could not load this week’s habit history.':'Loading this week’s habit history…'}${failed?` <button type="button" class="btn btn-s" onclick="retryHabitWeek('${date}')">Retry week</button>`:''}</p>`;
+}
+function retryHabitWeek(date){habitWeekCache.delete(habitWeek(date).start);ensureHabitWeek(date);renderHabits();renderSchoolHome();}
+function ensureHabitWeek(date){
+ if(habitProgressReady(date))return;
+ const week=habitWeek(date);if(habitWeekCache.has(week.start))return;
+ const entry={status:'loading',logs:[]};habitWeekCache.set(week.start,entry);
+ while(habitWeekCache.size>2)habitWeekCache.delete(habitWeekCache.keys().next().value);
+ const revision=habitWeekRevision,account=currentUserEmail,generation=sessionGeneration,dashboard=dashboardGeneration;
+ const current=()=>revision===habitWeekRevision&&account===currentUserEmail&&generation===sessionGeneration&&habitWeekCache.get(week.start)===entry;
+ (async()=>{
+  try{
+   const result=await gasRequest({action:'get_habit_week',date});
+   if(!current())return;
+   if(dashboard!==dashboardGeneration||!result||result.status!=='ok'||result.start!==week.start||!Array.isArray(result.items))throw Error('History unavailable');
+   entry.logs=result.items;entry.status='ready';
+  }catch(_){if(current())entry.status='error';}
+  finally{if(current()){renderHabits();renderSchoolHome();}}
+ })();
+}
+function cacheHabitLog(log){
+ if(!data.habitLogWindow || log.date>=data.habitLogWindow.start){data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==log.id);data.habitLogs.unshift(log);}
+ for(const [start,entry] of habitWeekCache){if(habitWeek(log.date).start===start)entry.logs=[...entry.logs.filter(l=>l.id!==log.id),log];}
+}
+function removeCachedHabitLog(id){data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==id);for(const entry of habitWeekCache.values())entry.logs=entry.logs.filter(l=>l.id!==id);}

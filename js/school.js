@@ -80,7 +80,7 @@ function schoolReset() {
   document.getElementById('school-text').value = '';
   document.getElementById('school-file').value = '';
 }
-function openSchoolCapture(id) {
+async function openSchoolCapture(id,summary) {
   if (!isAdultUser) return;
   schoolReturnFocus = document.activeElement;
   schoolReset();
@@ -88,8 +88,19 @@ function openSchoolCapture(id) {
   document.getElementById('school-dialog').showModal();
   schoolMessage('');
   if (id) {
-    const saved = (data.schoolPlans || []).find(p => p.id === id);
+    let saved = (data.schoolPlans || []).find(p => p.id === id) || summary;
     if (!saved) { schoolMessage('Refresh Home to load this draft.', true); return; }
+    if(saved.summaryOnly){
+      const account=currentUserEmail,session=sessionGeneration,generation=schoolGeneration;
+      schoolMessage('Loading announcement…');
+      let result;try{result=await gasRequest({action:'get_school_plan',source_id:id});}catch(_){}
+      if(account!==currentUserEmail||session!==sessionGeneration||generation!==schoolGeneration)return;
+      if(!result||result.status!=='ok'||!result.plan){
+        schoolMessage('Could not load this announcement. Please retry.',true);
+        const retry=document.createElement('button');retry.className='btn btn-s';retry.textContent='Retry';retry.onclick=()=>openSchoolCapture(id,saved);document.getElementById('school-review').append(retry);return;
+      }
+      saved=result.plan;schoolMessage('');
+    }
     schoolDraft = JSON.parse(JSON.stringify(saved));
     renderSchoolReview();
   } else document.getElementById('school-text').focus();
@@ -393,6 +404,7 @@ window.setSchoolDay = function(offset) {
 function renderSchoolHome() {
   const hub = document.getElementById('school-home'); if (!hub) return;
   const day = schoolDay || schoolToday();
+  ensureHabitWeek(day);const habitReady=habitProgressReady(day);
   const isToday = day === schoolToday(0);
   const isTomorrow = day === schoolToday(1);
   const dateObj = new Date(day + 'T00:00:00Z');
@@ -495,6 +507,7 @@ function renderSchoolHome() {
       </div>
     </div>
 
+    ${habitWeekNotice(day)}
     <div class="school-day-grid">${children.map(child => {
       const events = (data.events || []).filter(e => e.dateRaw === day && (e.tags || []).includes(child));
       const childTasks = tasks.filter(t => {
@@ -511,7 +524,7 @@ function renderSchoolHome() {
       });
       const packingTasks = childTasks.filter(t => t.kind === 'packing');
       const otherTasks = childTasks.filter(t => t.kind !== 'packing');
-      const habits = habitForMember(child,day);
+      const habits = habitReady?habitForMember(child,day):[];
       const done = childTasks.filter(t => t.status === 'Done').length + habits.filter(h => habitDone(h,child,day)).length;
       const total = childTasks.length + habits.length;
       const next = childNextStep(childTasks,habits,child,day);
@@ -526,8 +539,8 @@ function renderSchoolHome() {
               <p>${child === 'Meaghan' ? 'Together with Mom & Dad' : 'Independent prep'}</p>
             </div>
           </div>
-          ${!isAdultUser ? `<div class="child-next-step" aria-live="polite"><span class="nest-kicker">${day>schoolToday()?'A LOOK AHEAD':child==='Meaghan'?'LET’S DO THIS TOGETHER':'ONE SMALL STEP'}</span><h3>${escapeHtml(next?.title || 'Your checklist is clear')}</h3><p>${next ? child==='Meaghan'?'Ask Mom or Dad for a hand whenever you like.':'Choose one thing. You can always ask for help.' : 'Enjoy some breathing room. Your companion is cheering you on.'}</p>${next&&day<=schoolToday()?next.type==='task'?`<button class="btn btn-p child-complete" data-school-done="${next.id}">✓ ${next.kind==='packing'?'I packed it':'I did it'}</button>`:`<button class="btn btn-p child-complete" onclick="logHabitQuick('${next.id}','${day}','','${child}')" ${pendingHabitLogs.has(habitPendingKey(next.id,child,day))?'disabled':''}>✓ I did it</button>`:''}</div>` : ''}
-          ${total > 0 ? `
+          ${!isAdultUser && habitReady ? `<div class="child-next-step" aria-live="polite"><span class="nest-kicker">${day>schoolToday()?'A LOOK AHEAD':child==='Meaghan'?'LET’S DO THIS TOGETHER':'ONE SMALL STEP'}</span><h3>${escapeHtml(next?.title || 'Your checklist is clear')}</h3><p>${next ? child==='Meaghan'?'Ask Mom or Dad for a hand whenever you like.':'Choose one thing. You can always ask for help.' : 'Enjoy some breathing room. Your companion is cheering you on.'}</p>${next&&day<=schoolToday()?next.type==='task'?`<button class="btn btn-p child-complete" data-school-done="${next.id}">✓ ${next.kind==='packing'?'I packed it':'I did it'}</button>`:`<button class="btn btn-p child-complete" onclick="logHabitQuick('${next.id}','${day}','','${child}')" ${pendingHabitLogs.has(habitPendingKey(next.id,child,day))?'disabled':''}>✓ I did it</button>`:''}</div>` : ''}
+          ${total > 0 && habitReady ? `
             <div class="school-progress-card">
               <div class="school-progress-meta">
                 <span>${done === total ? '🌟 All ready for ' + dayLabel.toLowerCase() + '!' : `${done} of ${total} ready`}</span>
@@ -581,7 +594,7 @@ function renderSchoolHome() {
             ${otherTasks.map(t => schoolTaskCard(t, day)).join('')}
           ` : ''}
 
-          ${!events.length && !childTasks.length && !habits.length ? `
+          ${habitReady && !events.length && !childTasks.length && !habits.length ? `
             <p class="school-empty">Clear day ahead! Enjoy the breathing room 🎉</p>
           ` : ''}
         </section>`;
@@ -616,9 +629,11 @@ function renderSchoolHome() {
           </div>
         `;
       })()}
-      ${plans.some(p => p.status === 'published') ? `
+      ${plans.some(p => p.status === 'published') || data.schoolArchiveAvailable ? `
         <details class="school-inbox">
           <summary>Saved announcements</summary>
+          <p>Recent notices. Open the archive to find older announcements.</p>
+          <button class="btn btn-s" type="button" onclick="openFamilyArchive('school')">Browse announcements</button>
           ${plans.filter(p => p.status === 'published').slice(0, 20).map(p => `
             <button class="school-inbox-item" data-plan="${escapeHtml(p.id)}">
               ${escapeHtml(p.title)} · ${escapeHtml(p.child || 'Household')} <span>View source →</span>

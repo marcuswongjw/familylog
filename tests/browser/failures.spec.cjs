@@ -153,3 +153,51 @@ test('completed tasks page on demand, preserve the page after failure, and clear
  });
  expect(await page.evaluate(()=>({page:taskHistoryPage,open:taskHistoryOpen,busy:taskHistoryBusy}))).toEqual({page:null,open:false,busy:false});
 });
+
+test('older habit weeks load complete progress and notes browse on demand with filters and recovery',async({page})=>{
+ const id=await page.evaluate(async()=>{
+  const h=await gasRequest({action:'write',note:'add_habit',habit:'Archive reading',members:['Mikaela'],schedule:'weekly',weekly_target:1});
+  for(const date of ['2025-01-06','2024-12-30','2024-12-23'])await gasRequest({action:'write',note:'log_habit',habit_id:h.id,log_member:'Mikaela',date,notes:'Full archive notes '+date});
+  await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));habitViewDate='2025-01-08';goTo('habits');return h.id;
+ });
+ const card=page.locator('.habit-card').filter({hasText:'Archive reading'});
+ await expect(card).toContainText('1 of 1 this week');await expect(card.locator('.habit-day.done')).toHaveCount(1);
+ await card.locator('summary').click();await card.getByRole('button',{name:'Browse all history'}).click();
+ const dialog=page.locator('#family-archive');await expect(dialog).toContainText('Full archive notes 2025-01-06');
+ await dialog.locator('#archive-person').selectOption('Meaghan');await expect(dialog).toContainText('No records found');
+ await dialog.locator('#archive-person').selectOption('Mikaela');await expect(dialog).toContainText('Full archive notes 2024-12-23');
+ await page.keyboard.press('Escape');await expect(card.getByRole('button',{name:'Browse all history'})).toBeFocused();
+ await page.evaluate(()=>{window.archiveOriginalRequest=gasRequest;gasRequest=async body=>body.action==='get_family_archive'?{status:'error'}:archiveOriginalRequest(body)});
+ await card.getByRole('button',{name:'Browse all history'}).click();await expect(dialog).toContainText('Could not load history');
+ await page.evaluate(()=>{gasRequest=archiveOriginalRequest});await dialog.getByRole('button',{name:'Retry',exact:true}).click();await expect(dialog).toContainText('Full archive notes');await page.keyboard.press('Escape');
+ expect(await page.evaluate(()=>data.habitLogs.some(l=>l.notes?.startsWith('Full archive notes')))).toBe(false);
+ // An archive reply from a previous account may not recreate its closed dialog.
+ await page.evaluate(async id=>{gasRequest=()=>new Promise(r=>window.resolveOldArchive=r);openFamilyArchive('habits',id);clearSessionState();user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';resolveOldArchive({status:'ok',items:[{notes:'Old parent data'}],nextCursor:null});await new Promise(r=>setTimeout(r,0));},id);
+ await expect(page.locator('#family-archive')).toHaveCount(0);
+});
+
+test('saved announcements page summaries and fetch one full source with retry',async({page})=>{
+ await page.evaluate(async()=>{
+  for(let i=0;i<26;i++){
+   const d=await gasRequest({action:'write',note:'save_school_draft',plan:{title:'Archive notice '+i,child:'Mikaela',sourceText:'Original archived notice '+i,event:{enabled:false},tasks:[{title:'Archived school task '+i,kind:'homework',assignee:'Mikaela',due:'2025-01-08'}]}});
+   await gasRequest({action:'write',note:'publish_school_draft',source_id:d.id,revision:d.revision});
+  }
+  await loadData();while(data.calendarState==='loading')await new Promise(r=>setTimeout(r,10));goTo('home');
+ });
+ expect(await page.evaluate(()=>data.schoolPlans.filter(p=>p.status==='published').length)).toBe(20);
+ expect(await page.evaluate(()=>data.schoolPlans.filter(p=>p.status==='published').every(p=>p.summaryOnly&&!p.sourceText))).toBe(true);
+ await page.locator('summary').filter({hasText:'Saved announcements'}).click();await page.getByRole('button',{name:'Browse announcements'}).click();
+ const dialog=page.locator('#family-archive');await expect(dialog).toContainText('20 records on this page');
+ await dialog.getByRole('button',{name:'Older',exact:true}).click();await expect(dialog.getByRole('button',{name:'Newer',exact:true})).toBeEnabled();
+ expect(await page.evaluate(()=>familyArchiveState.items.every(p=>!p.sourceText&&!p.event))).toBe(true);
+ await page.evaluate(()=>{window.noticeOriginalRequest=gasRequest;gasRequest=async body=>body.action==='get_school_plan'?{status:'error'}:noticeOriginalRequest(body)});
+ await dialog.locator('[data-archive-notice]').first().click();await expect(page.locator('#school-dialog')).toContainText('Could not load this announcement');
+ await page.evaluate(()=>{gasRequest=noticeOriginalRequest});await page.locator('#school-dialog').getByRole('button',{name:'Retry',exact:true}).click();
+ await expect(page.locator('#school-review pre')).toContainText('Original archived notice');
+ await page.locator('#school-dialog').getByRole('button',{name:'Close',exact:true}).click();await expect(page.getByRole('button',{name:'Browse announcements'})).toBeFocused();
+ await page.evaluate(async()=>{
+  const summary=data.schoolPlans.find(p=>p.summaryOnly);gasRequest=()=>new Promise(r=>window.resolveOldNotice=r);const pending=openSchoolCapture(summary.id);
+  clearSessionState();user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';resolveOldNotice({status:'ok',plan:{title:'Old private source'}});await pending;
+ });
+ expect(await page.evaluate(()=>schoolDraft)).toBe(null);await expect(page.locator('#school-dialog')).not.toBeVisible();await expect(page.locator('#school-review')).toBeEmpty();
+});

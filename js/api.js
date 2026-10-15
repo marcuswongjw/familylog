@@ -84,6 +84,7 @@
       // Firebase-owned fields: never accept from GAS (even if old deploy sends them)
       const prevMems = Array.isArray(data.memories) ? data.memories : [];
       data = r || {};
+      if(r.habitLogWindow && typeof resetHabitWeekCache==='function')resetHabitWeekCache();
       if(r.completedTaskHistory && typeof resetTaskHistory==='function')resetTaskHistory();
       data.memories = prevMems;
       // Accepted dashboard responses replace private lists; never retain old-account entries.
@@ -123,7 +124,7 @@
       let timer;
       try {
         const timeout=new Promise(resolve=>{timer=setTimeout(()=>resolve({status:'error',message:'The family server took too long to respond. Please try again.'}),45000);});
-        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core'}),timeout]);
+        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core',archive_version:1}),timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
           if(data.calendarState === 'loading') { data.calendarState = 'error'; render(section); renderHome(); }

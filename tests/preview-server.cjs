@@ -50,7 +50,7 @@ http.createServer(async(req,res)=>{
    let body='';for await(const chunk of req)body+=chunk;
    const d=JSON.parse(body), adult=h.c.isAdultEmail_(d.email);
    let result;
-   if(['get_parent_dashboard','get_all','get_family_dashboard','get_completed_tasks','get_family_core','get_family_calendar'].includes(d.action)){
+   if(['get_parent_dashboard','get_all','get_family_dashboard','get_family_archive','get_school_plan','get_habit_week','get_completed_tasks','get_family_core','get_family_calendar'].includes(d.action)){
     const previous=h.c.FAMILY_BACKEND_MODE_;h.c.FAMILY_BACKEND_MODE_=d.action!=='get_parent_dashboard';
     h.c.ContentService={MimeType:{JSON:'json'},createTextOutput:text=>({setMimeType:()=>JSON.parse(text)})};
     h.c.verifyFirebaseToken=()=>h.c.perfStage_('auth',()=>h.c.isAllowedEmail_(d.email)?d.email:null);

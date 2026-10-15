@@ -2041,13 +2041,14 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     function renderHabits() {
       const root = document.getElementById('habits-container'); if (!root) return;
       const date = habitViewDate || schoolToday();
-      const habits = nestVisibleHabits().filter(h => habitShowArchived && isAdultUser ? h.state === 'archived' : h.state !== 'archived').filter(h => !isAdultUser || habitPerson === 'All' || habitMembers(h).includes(habitPerson));
+      ensureHabitWeek(date);const progressReady=habitProgressReady(date);
+      const habits = (progressReady?nestVisibleHabits():[]).filter(h => habitShowArchived && isAdultUser ? h.state === 'archived' : h.state !== 'archived').filter(h => !isAdultUser || habitPerson === 'All' || habitMembers(h).includes(habitPerson));
       root.innerHTML = `<div class="habit-toolbar"><label>Day<input type="date" id="habit-view-date" value="${date}"></label>
         <label>View<select id="habit-layout"><option value="cards" ${habitLayout==='cards'?'selected':''}>Cards</option><option value="list" ${habitLayout==='list'?'selected':''}>List</option></select></label>
         ${isAdultUser ? `<label>Person<select id="habit-person">${['All','Marcus','Eleanor','Mikaela','Meaghan'].map(m=>`<option value="${m}" ${habitPerson===m?'selected':''}>${m==='All'?'Everyone':m}</option>`).join('')}</select></label>` : ''}
         <button class="btn btn-p" onclick="openAddHabitModal()">+ New habit</button>
         ${isAdultUser ? `<button class="btn btn-s" onclick="habitShowArchived=!habitShowArchived;renderHabits()">${habitShowArchived ? 'Active habits' : 'Archived habits'}</button>` : ''}</div>
-        <p class="habit-intro">Small steps on the days that work for you. A rest day is part of the routine.</p>
+        ${habitWeekNotice(date)}<p class="habit-intro">Small steps on the days that work for you. A rest day is part of the routine.</p>
         <div class="habit-grid ${habitLayout==='list'?'habit-list':''}">${habits.map(h => {
           const member = habitShared(h) ? (isAdultUser && habitPerson !== 'All' ? habitPerson : habitMembers(h).includes(user) ? user : habitMembers(h)[0]) : habitMembers(h)[0];
           const done = habitDone(h,member,date), due = habitDue(h,member,date), state = h.state || 'active';
@@ -2063,8 +2064,8 @@ function isParentApp(){return typeof document!=='undefined' && document.document
             ${state==='active'&&date<=schoolToday()?`<button class="btn btn-s" onclick="openHabitLogModal('${h.id}','${date}')">Add notes${habitShared(h)&&isAdultUser?' / log for someone':''}</button>`:''}
             ${canEdit?`<button class="btn btn-s" onclick="openAddHabitModal('${h.id}')">Edit</button>`:''}
             ${isAdultUser?`<button class="btn btn-s" onclick="setHabitState('${h.id}','${state==='active'?'paused':'active'}')">${state==='active'?'Pause':state==='archived'?'Restore':'Resume'}</button>${state!=='archived'?`<button class="btn btn-s" onclick="delHabit('${h.id}')">Archive</button>`:''}`:''}</div>
-            <details class="habit-history"><summary>Recent history${habitShared(h)&&isAdultUser?' · all members':''}</summary>${logs.length?logs.map(l=>`<div><span>${escapeHtml(l.member)} · ${fmtDate(l.date)}${l.notes?' · '+escapeHtml(l.notes):''}</span><button class="btn btn-s btn-sm" onclick="delHabitLog('${l.id}')" aria-label="Remove ${escapeHtml(l.member)}’s entry on ${l.date}">Remove entry</button></div>`).join(''):'<p>No entries yet.</p>'}</details></article>`;
-        }).join('') || `<div class="empty">${habitShowArchived?'No archived habits.':'No habits yet. Add a small routine to get started.'}</div>`}</div>`;
+            <details class="habit-history"><summary>Recent history${habitShared(h)&&isAdultUser?' · all members':''}</summary><button class="btn btn-s" type="button" onclick="openFamilyArchive('habits','${h.id}')">Browse all history</button>${logs.length?logs.map(l=>`<div><span>${escapeHtml(l.member)} · ${fmtDate(l.date)}${l.notes?' · '+escapeHtml(l.notes):''}</span><button class="btn btn-s btn-sm" onclick="delHabitLog('${l.id}')" aria-label="Remove ${escapeHtml(l.member)}’s entry on ${l.date}">Remove entry</button></div>`).join(''):'<p>No entries yet.</p>'}</details></article>`;
+        }).join('') || `<div class="empty">${!progressReady?'Your habits will appear when this week’s history loads.':habitShowArchived?'No archived habits.':'No habits yet. Add a small routine to get started.'}</div>`}</div>`;
       document.getElementById('habit-layout').onchange = e => {habitLayout=e.target.value;renderHabits();};
       const personSelect=document.getElementById('habit-person');
       if(personSelect)personSelect.onchange=e=>{habitPerson=e.target.value;renderHabits();};
@@ -2084,7 +2085,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
         const res=await gPost({note:'log_habit',habit_id:habitId,date:dateStr,notes:notes||'',log_member:member});
         if(account!==currentUserEmail||generation!==sessionGeneration)return false;
         if(!res||res.status!=='ok'||!res.log){showError(res?.message||'Could not save. Try again when connected.');return false;}
-        data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==res.log.id);data.habitLogs.unshift(res.log);
+        cacheHabitLog(res.log);
         if(res.rewards)data.rewards=res.rewards;
         renderHabits();renderHome();applyRewardResult(res);
         toast(res.duplicate?'Already logged for this day.':`${member===user?'You':member} completed ${h.habit}.`);return true;
@@ -2095,7 +2096,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     async function delHabitLog(logId) {
       if(!confirm('Remove this entry? Earned stars will stay with you.'))return;
       if(!await saveConfirmed({note:'delete_habit_log',log_id:logId}))return;
-      data.habitLogs=(data.habitLogs||[]).filter(l=>l.id!==logId);renderHabits();renderHome();toast('Entry removed.');
+      removeCachedHabitLog(logId);renderHabits();renderHome();toast('Entry removed.');
     }
     function openHabitLogModal(habitId,dateStr,member) {
       const h=(data.habits||[]).find(h=>h.id===habitId);if(!h)return;

@@ -1,6 +1,6 @@
 // PWA cache + FCM background handler + notification click → open Home
 // v6: network-first for app shell (js/css/html) so intimacy log + GAS fixes ship to installed PWAs
-const CACHE_NAME = 'wongs-nest-v47';
+const CACHE_NAME = 'wongs-nest-v48';
 const ASSETS = [
   './',
   './index.html',
@@ -17,7 +17,7 @@ const ASSETS = [
   './js/money.js',
   './js/modals.js',
   './js/pwa-cache.js',
-  './js/performance.js', './js/firebase-features.js',
+  './js/performance.js', './js/archives.js', './js/firebase-features.js',
   './assets/firebase-app-compat-9.23.0.js',
   './assets/firebase-auth-compat-9.23.0.js',
   './assets/firebase-firestore-compat-9.23.0.js',

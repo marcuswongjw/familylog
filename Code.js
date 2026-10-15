@@ -795,7 +795,7 @@ function doPostInner_(e) {
     }
 
     if (action === 'get_family_core') {
-      return perfJson_(getAllDashboardData(verified, 'family-core'));
+      return perfJson_(getAllDashboardData(verified, 'family-core',data.archive_version===1));
     }
     if (action === 'get_family_calendar') {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -809,6 +809,9 @@ function doPostInner_(e) {
       var rows = action === 'get_events' ? memberEvents_(getEvents(),verified) : action === 'get_todos' ? getTodos(null,verified) : getBirthdays();
       return perfJson_(rows);
     }
+    if (action === 'get_family_archive') return perfJson_(familyArchive_(SpreadsheetApp.getActiveSpreadsheet(),data,verified));
+    if (action === 'get_school_plan') return perfJson_(schoolPlanById_(SpreadsheetApp.getActiveSpreadsheet(),data.source_id,verified));
+    if (action === 'get_habit_week') return perfJson_(habitWeekRead_(SpreadsheetApp.getActiveSpreadsheet(),data.date,verified));
     if (action === 'get_completed_tasks') {
       return perfJson_(Object.assign({status:'ok'},completedTaskPage_(getTodos(null,verified,true),data.cursor)));
     }
@@ -1691,7 +1694,7 @@ function getActivityLogMeasured_(ss, allTodos, habitLogs, scope) {
   return list.slice(0, 50);
 }
 
-function getAllDashboardDataMeasured_(verifiedEmail, scope) {
+function getAllDashboardDataMeasured_(verifiedEmail, scope, deferArchives) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var adult = isAdultEmail_(verifiedEmail);
   var coreOnly = scope === 'family-core';
@@ -1704,15 +1707,17 @@ function getAllDashboardDataMeasured_(verifiedEmail, scope) {
   var completed = completedTaskPage_(allTodos);
   // One immutable notice snapshot serves plans and health; never cached across requests/writes.
   var schoolRows = adult ? schoolStoredRows_(ss) : [];
+  var schoolRecords = perfStage_('school_plans',function(){return schoolCoreRecords_(schoolRows,adult,deferArchives);});
   // Sheets own the dashboard; Firestore owns memories (see ARCHITECTURE.md).
   return {
     events:    coreOnly ? undefined : memberEvents_(events, verifiedEmail),
     preparationState: preparation ? preparation.preparationState : undefined,
-    dataWarnings: schoolRecordWarnings_(ss, adult, schoolRows),
+    dataWarnings: schoolRecords.warnings,
     todos:     allTodos.filter(function(t) { return t.status.toLowerCase() !== 'done'; }),
     completedTasks: completed.items,
     completedTaskHistory: {nextCursor:completed.nextCursor},
-    schoolPlans: schoolReadPlans_(ss, adult, schoolRows),
+    schoolPlans: schoolRecords.plans,
+    schoolArchiveAvailable: adult && schoolRows.length>0,
     schoolTasks: allTodos.filter(function(t) { return !!t.sourceId; }),
     expenses:  includePrivate ? getExpensesData(ss) : emptyExpensesPayload_(),
     budgets:   includePrivate ? getBudgets(ss) : [],
@@ -1726,7 +1731,8 @@ function getAllDashboardDataMeasured_(verifiedEmail, scope) {
     intimacyLog:    includePrivate ? getIntimacyLogData(ss) : [],
     bucketList:     includePrivate ? getBucketList(ss) : [],
     habits:         habits,
-    habitLogs:      habitLogs,
+    habitLogs:      deferArchives ? habitLogs.map(habitProgressLog_) : habitLogs,
+    habitLogWindow: habitLogWindow_(),
     rewards:        getRewards_(ss),
     activityLog:    adult ? getActivityLog(ss, allTodos, habitLogs, coreOnly ? 'family' : scope) : [],
     expenseGroups:  includePrivate ? EXPENSE_GROUPS : {},
@@ -1829,32 +1835,8 @@ function getHabitsMeasured_(ss, verifiedEmail) {
 
 function getHabitLogsMeasured_(ss, verifiedEmail) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ensureHabitSheets_(ss);
-  var rows = perfReadRows_(sheets.logs);
-  var tz = Session.getScriptTimeZone();
-  var result = [];
-  var cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 45);
-  var cutoffStr = Utilities.formatDate(cutoff, tz, 'yyyy-MM-dd');
-
-  for (var i = 1; i < rows.length; i++) {
-    var r = rows[i];
-    if (!r[0] || !r[4]) continue;
-    if (verifiedEmail && !isAdultEmail_(verifiedEmail) && r[2] !== memberNameFromEmail_(verifiedEmail)) continue;
-    var dStr = r[4] instanceof Date ? Utilities.formatDate(r[4], tz, 'yyyy-MM-dd') : toStr(r[4]);
-    if (dStr < cutoffStr) continue;
-    result.push({
-      id: toStr(r[0]),
-      habitId: toStr(r[1]),
-      member: toStr(r[2]),
-      habit: toStr(r[3]),
-      date: dStr,
-      notes: toStr(r[5]),
-      loggedBy: toStr(r[6]),
-      timestamp: r[7] instanceof Date ? Utilities.formatDate(r[7], tz, "yyyy-MM-dd'T'HH:mm:ss'Z'") : toStr(r[7])
-    });
-  }
-  return result.reverse();
+  ensureHabitSheets_(ss);
+  return habitReadLogs_(ss,verifiedEmail,habitLogWindow_().start,'');
 }
 
 function getBirthdays(ss) {
