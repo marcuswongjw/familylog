@@ -4,6 +4,9 @@ let memoryLatest=new Map(),memoryOlder=new Map(),memoryCursor=null,memoryHasMore
 let memoryBoundary=null,memoryListenerRevision=0;
 const MEMORY_PAGE_SIZE=50;
 async function saveMemoryDraft(input,active) {
+  if(!db)await ensureMemoryDatabase();
+  if(input.image&&!storage)await ensurePhotoStorage();
+  if(!active())return;
   if(!memoryDraft)memoryDraft={id:crypto.randomUUID(),imagePath:'',imageUrl:''};
   const draft=memoryDraft;
   const ref=db.collection('memories').doc(draft.id);
@@ -49,7 +52,14 @@ function mergeMemoryPages(){
   if(section==='memories')renderMemories();
 }
 function startMemoriesListener(){
-  if(memoriesUnsubscribe||!db)return;
+  if(memoriesUnsubscribe)return;
+  if(!db){
+    const generation=sessionGeneration,revision=++memoryListenerRevision;
+    ensureMemoryDatabase().then(()=>{
+      if(generation===sessionGeneration&&revision===memoryListenerRevision&&section==='memories')startMemoriesListener();
+    }).catch(()=>{if(generation===sessionGeneration&&revision===memoryListenerRevision&&section==='memories')showError('Could not load memories. Open Memories again to retry.');});
+    return;
+  }
   const account=currentUserEmail,generation=sessionGeneration,revision=++memoryListenerRevision;
   let query=db.collection('memories').orderBy('timestamp','desc');
   query=memoryBoundary?query.endAt(memoryBoundary):query.limit(MEMORY_PAGE_SIZE);

@@ -91,7 +91,7 @@ test('memory archive keeps its boundary after insertion and updates older record
 });
 
 test('photo viewer and mobile drawer trap focus, close with Escape and restore the opener',async({page})=>{
- await page.evaluate(()=>{document.querySelector('#mem-list').innerHTML=mediaImgHtml('https://example.com/photo.jpg');goTo('memories');document.querySelector('#mem-list').innerHTML=mediaImgHtml('https://example.com/photo.jpg');});
+ await page.evaluate(async()=>{await ensureMemoryDatabase();goTo('memories');document.querySelector('#mem-list').innerHTML=mediaImgHtml('https://example.com/photo.jpg');});
  const photo=page.getByRole('button',{name:'Open photo'}).first();await photo.focus();await page.keyboard.press('Enter');await expect(page.locator('#chat-lightbox')).toHaveClass(/open/);await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'Close photo'})).toBeFocused();await page.keyboard.press('Escape');await expect(photo).toBeFocused();
  await page.evaluate(()=>{document.querySelector('#notifBell').focus();toggleMenuDrawer(true)});await expect(page.locator('#menu-drawer')).toHaveAttribute('role','dialog');await page.keyboard.press('Shift+Tab');expect(await page.evaluate(()=>!!document.activeElement.closest('#menu-drawer'))).toBe(true);await page.keyboard.press('Escape');await expect(page.locator('#menu-drawer')).not.toHaveClass(/open/);await expect(page.locator('#notifBell')).toBeFocused();
 });
@@ -113,4 +113,13 @@ test('Loading check shows real server stages and exports only numeric diagnostic
  const report=await page.evaluate(()=>exportNestPerformance());expect(report.samples.some(s=>s.source==='server'&&s.counts.sheet_reads>0)).toBe(true);expect(report.samples.some(s=>s.source==='browser'&&s.stages.network)).toBe(true);expect(JSON.stringify(report)).not.toMatch(/marcuswong|mikaelawong|idToken|fixture-token|Pack school bag|Read for ten/);
  const before=report.samples.filter(s=>s.endpoint==='core_ready').length;await page.getByRole('button',{name:'Measure refresh',exact:true}).click();await expect(page.getByRole('button',{name:'Measure refresh',exact:true})).toBeEnabled();expect(await page.evaluate(()=>exportNestPerformance().samples.filter(s=>s.endpoint==='core_ready').length)).toBeGreaterThan(before);
  await page.keyboard.press('Escape');await page.evaluate(async()=>{await fixtureLogin('Mikaela');resetNestPerformance();goTo('more')});await expect(page.getByRole('button',{name:'Loading check',exact:false})).toHaveCount(0);await page.evaluate(()=>showLoadingCheck());await expect(page.locator('#m-loading-check')).not.toHaveClass(/open/);
+});
+
+test('Home leaves photo services idle and Memories starts and stops its connection on demand',async({page})=>{
+ expect(await page.evaluate(()=>({database:!!db,storage:!!storage,listeners:fixtureMemoryListeners.size}))).toEqual({database:false,storage:false,listeners:0});
+ await page.evaluate(()=>goTo('memories'));
+ await expect.poll(()=>page.evaluate(()=>fixtureMemoryListeners.size)).toBe(1);
+ await expect(page.locator('#mem-list')).toContainText('Memory');
+ await page.evaluate(()=>goTo('home'));
+ expect(await page.evaluate(()=>fixtureMemoryListeners.size)).toBe(0);
 });

@@ -118,9 +118,7 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     window.addEventListener('DOMContentLoaded', () => {
       firebase.initializeApp(firebaseConfig);
       if (!isParentApp()) {
-        db = firebase.firestore(); storage = firebase.storage();
         try { messaging = firebase.messaging(); } catch (_) { messaging = null; }
-        db.enablePersistence().catch(() => {});
       }
 
       applyDarkMode();
@@ -356,9 +354,9 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       const email = (m && m.email) || currentUserEmail || '';
       setAdultAccess(ADULT_EMAILS.includes(String(email).toLowerCase()));
       goTo('home');
-      // Sheets dashboard (GAS) + Firebase realtime (memories)
+      // Load the dashboard; Memories connects only when opened.
       loadData();
-      if(!isParentApp()){startMemoriesListener();initReminders();}
+      if(!isParentApp())initReminders();
       setupPullToRefresh();
     }
 

@@ -146,7 +146,8 @@ async function schoolUpload() {
   const email = (firebase.auth().currentUser?.email || '').toLowerCase();
   if (!email) throw new Error('Sign in as a parent to upload notices or messages.');
   const path = 'school/' + email + '/' + hash;
-  const storageInstance = window.storage || firebase.storage();
+  const storageInstance = await ensurePhotoStorage();
+  if (generation !== schoolGeneration) throw new Error('Session changed.');
   const ref = storageInstance.ref(path);
   schoolMessage(isPdf ? 'Uploading PDF…' : 'Uploading image…');
   try {

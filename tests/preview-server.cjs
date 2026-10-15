@@ -40,7 +40,7 @@ window.addEventListener('DOMContentLoaded', async()=>{
  window.productionGasRequest=gasRequest;
  firebase.firestore.FieldValue={serverTimestamp:()=>new Date()};
  gasRequest=async body=>{const r=await fetch('/api',{method:'POST',body:JSON.stringify({...body,email:currentUserEmail})});return r.json()};
- window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData();startMemoriesListener()};
+ window.fixtureLogin=async name=>{schoolReset();user=name;currentUserEmail=MEMBERS.find(m=>m.name===name).email;setAdultAccess(ADULT_EMAILS.includes(currentUserEmail));document.getElementById('login-screen').classList.remove('active');document.getElementById('app-screen').classList.add('active');await loadData()};
  if (!location.search.includes('login-preview')) await fixtureLogin('Marcus');
 });
 </script>`;
