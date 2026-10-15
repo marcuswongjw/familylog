@@ -43,12 +43,14 @@ test('family gallery shows current companions without editing others; reward adm
  await page.evaluate(()=>{user='Mikaela';currentUserEmail='mikaelawonght@gmail.com';setAdultAccess(false);goTo('companions');});await expect(page.locator('.companion-visit-card')).toHaveCount(4);await page.evaluate(()=>goTo('reward-admin'));await expect(page.locator('#s-reward-admin')).not.toHaveClass(/active/);
 });
 test('habit form selects multiple people, edits assignment and limits logging to selected people',async({page})=>{
- await page.evaluate(()=>openAddHabitModal());await page.locator('#hab-name').fill('Selected people habit');
+ const habitName='Selected people habit '+Date.now();
+ await page.evaluate(()=>openAddHabitModal());await page.locator('#hab-name').fill(habitName);
  await page.locator('#hab-member input[value="Marcus"]').uncheck();await page.locator('#hab-member input[value="Mikaela"]').check();await page.locator('#hab-member input[value="Meaghan"]').check();await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);
- const id=await page.evaluate(()=>data.habits.find(h=>h.habit==='Selected people habit').id);
+ await expect.poll(()=>page.evaluate(name=>data.habits.some(h=>h.habit===name),habitName)).toBe(true);
+ const id=await page.evaluate(name=>data.habits.find(h=>h.habit===name).id,habitName);
  await page.evaluate(id=>openHabitLogModal(id),id);await expect(page.locator('#hl-member option')).toHaveText(['Mikaela','Meaghan']);await page.keyboard.press('Escape');
  await page.evaluate(id=>openAddHabitModal(id),id);await expect(page.locator('#hab-member input[value="Mikaela"]')).toBeChecked();await expect(page.locator('#hab-member input[value="Meaghan"]')).toBeChecked();await page.locator('#hab-member input[value="Meaghan"]').uncheck();await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);
- expect(await page.evaluate(id=>habitMembers(data.habits.find(h=>h.id===id)),id)).toEqual(['Mikaela']);
+ await expect.poll(()=>page.evaluate(id=>habitMembers(data.habits.find(h=>h.id===id)),id)).toEqual(['Mikaela']);
 });
 test('an all-day calendar move reaches the real backend handler and survives refresh',async({page})=>{
  const result=await page.evaluate(async()=>{const date=schoolToday(),next=schoolDayOffset(date,1);const created=await gPost({note:'add_event',event_title:'P1 all-day move',event_date:date,event_time:'',event_member:'Mikaela'});const moved=await gPost({note:'update_event_date',event_id:created.id,new_date:next});await loadData();return {created,moved,next,id:created.id};});
