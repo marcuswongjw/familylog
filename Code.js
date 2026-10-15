@@ -1522,10 +1522,14 @@ function handleWriteInner_(data) {
         sheets.habits.getRange(index+1,2,1,3).setValues([[member,schoolCell_(habit),schoolCell_(emoji)]]);
         sheets.habits.getRange(index+1,7,1,5).setValues([[schedule.mode,schedule.days.join(','),schedule.target,state,new Date()]]);
       } else {
-        habitId = Utilities.getUuid();
-        sheets.habits.appendRow([habitId,member,schoolCell_(habit),schoolCell_(emoji),user,new Date(),schedule.mode,schedule.days.join(','),schedule.target,'active',new Date()]);
+        // Recover the destination row even if its append or the operation ledger lost its response.
+        var recoveredHabit = operationRecover_(ss,operation,sheets.habits,0,11);
+        if (recoveredHabit) return recoveredHabit;
+        habitId = operation ? operation.id : Utilities.getUuid();
+        if (rows[0][11] !== 'OperationFingerprint') sheets.habits.getRange(1,12).setValue('OperationFingerprint');
+        sheets.habits.appendRow([habitId,member,schoolCell_(habit),schoolCell_(emoji),user,new Date(),schedule.mode,schedule.days.join(','),schedule.target,'active',new Date(),operation ? operation.fingerprint : '']);
       }
-      return {status:'ok',id:habitId};
+      return operationFinish_(ss,operation,{status:'ok',id:habitId});
     }
     if (noteLower === 'set_habit_state' || noteLower === 'delete_habit') {
       if (!isAdultEmail_(verifiedEmail)) return {status:'error',message:'Only parents can pause or archive habits.'};

@@ -10,3 +10,25 @@ test('signed snapshot rejects wrong and stale signatures',()=>{const h=harness()
 test('client reuses IDs after failure, even with blocked storage, and retires after confirmation',async()=>{const c=vm.createContext({crypto:crypto.webcrypto,TextEncoder,localStorage:{getItem(){throw Error()},setItem(){throw Error()},removeItem(){throw Error()}}});vm.runInContext(fs.readFileSync('js/operations.js','utf8'),c);const p={note:'add_todo',todo_task:'Pack'};const first=await c.retrySafePayload(p,'a');assert.equal((await c.retrySafePayload(p,'a')).operation_id,first.operation_id);assert.notEqual((await c.retrySafePayload(p,'b')).operation_id,first.operation_id);c.confirmOperation(first);assert.notEqual((await c.retrySafePayload(p,'a')).operation_id,first.operation_id);});
 
 test('manual Calendar creates preserve member targeting even before native tags become visible',()=>{const h=harness(),p={note:'add_event',event_title:'Practice',event_date:'2026-10-05',event_time:'16:00',event_member:'Mikaela',operation_id:crypto.randomUUID()};const result=h.write(p);assert.equal(result.status,'ok');h.calendarEvents.push({id:result.id,title:'Practice',start:new Date('2026-10-05T08:00:00Z'),end:new Date('2026-10-05T09:00:00Z')});assert.equal(h.c.getEvents()[0].tags[0],'Mikaela');});
+
+test('shared habit retries recover a committed row without a ledger, preserving later edits',()=>{
+ const h=harness(),p={note:'add_habit',habit:'Read together',members:['Mikaela','Meaghan'],schedule:'weekdays',weekdays:[1,3],operation_id:crypto.randomUUID()};
+ h.c.ensureHabitSheets_(h.ss);const count=h.sheets.Habits.rows.length;
+ h.sheets.Habits.failAppendAfter=true;assert.equal(h.write(p).status,'error');
+ assert.equal(h.write({...p,habit:'Changed'}).status,'error');
+ const result=h.write(p);assert.equal(result.status,'ok');assert.equal(h.sheets.Habits.rows.length,count+1);
+ const row=h.sheets.Habits.rows.find(r=>r[0]===result.id);assert.equal(row[1],'Mikaela,Meaghan');assert.equal(row[7],'1,3');
+ assert.equal(h.write({note:'edit_habit',habit_id:result.id,habit:'Updated reading',members:['Mikaela'],schedule:'daily'}).status,'ok');
+ assert.equal(h.write(p).id,result.id);assert.equal(row[2],'Updated reading');assert.equal(h.sheets.Habits.rows.length,count+1);
+});
+test('habit ledger failure is recoverable, account scoped, and a fresh operation permits an identical habit',()=>{
+ const h=harness(),p={note:'add_habit',habit:'Read',members:['Mikaela'],operation_id:crypto.randomUUID()};
+ const first=h.write(p);assert.equal(first.status,'ok');const count=h.sheets.Habits.rows.length;
+ h.sheets.Operations.failAppendAfter=true;const next={...p,operation_id:crypto.randomUUID()};assert.equal(h.write(next).status,'error');assert.equal(h.write(next).status,'ok');assert.equal(h.sheets.Habits.rows.length,count+1);
+ assert.notEqual(h.write(p,'eleanor.jiamin@gmail.com').id,first.id);assert.equal(h.sheets.Habits.rows.length,count+2);
+});
+test('habit pending operation survives a client reload and retires only after confirmation',async()=>{
+ const values=new Map(),localStorage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ const client=()=>{const c=vm.createContext({crypto:crypto.webcrypto,TextEncoder,localStorage});vm.runInContext(fs.readFileSync('js/operations.js','utf8'),c);return c;};
+ const p={note:'add_habit',habit:'Read',members:['Mikaela','Meaghan']};const first=await client().retrySafePayload(p,'parent');const reloaded=client();const retry=await reloaded.retrySafePayload(p,'parent');assert.equal(retry.operation_id,first.operation_id);reloaded.confirmOperation(retry);assert.notEqual((await reloaded.retrySafePayload(p,'parent')).operation_id,first.operation_id);
+});

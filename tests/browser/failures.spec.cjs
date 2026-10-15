@@ -54,3 +54,10 @@ test('an all-day calendar move reaches the real backend handler and survives ref
  const result=await page.evaluate(async()=>{const date=schoolToday(),next=schoolDayOffset(date,1);const created=await gPost({note:'add_event',event_title:'P1 all-day move',event_date:date,event_time:'',event_member:'Mikaela'});const moved=await gPost({note:'update_event_date',event_id:created.id,new_date:next});await loadData();return {created,moved,next,id:created.id};});
  expect(result.created.status).toBe('ok');expect(result.moved.status).toBe('ok');await expect.poll(()=>page.evaluate(id=>data.events.find(e=>e.id===id)?.dateRaw,result.id)).toBe(result.next);await page.reload();await expect(page.locator('#app-screen')).toHaveClass(/active/);await expect.poll(()=>page.evaluate(id=>data.events.find(e=>e.id===id)?.dateRaw,result.id)).toBe(result.next);
 });
+
+test('habit form retries a lost successful response without adding a second shared habit',async({page})=>{
+ await page.evaluate(()=>{const request=gasRequest;let lost=false;gasRequest=async payload=>{const result=await request(payload);if(payload.note==='add_habit'&&!lost){lost=true;return {status:'error',message:'Response lost. Please retry.'};}return result;};openAddHabitModal();});
+ await page.locator('#hab-name').fill('Retry shared reading');await page.locator('#hab-member input[value="Marcus"]').uncheck();await page.locator('#hab-member input[value="Mikaela"]').check();await page.locator('#hab-member input[value="Meaghan"]').check();
+ await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).toHaveClass(/open/);await expect(page.locator('#hab-submit')).toBeEnabled();await expect(page.locator('#hab-name')).toHaveValue('Retry shared reading');
+ await page.locator('#hab-submit').click();await expect(page.locator('#m-habit')).not.toHaveClass(/open/);expect(await page.evaluate(()=>data.habits.filter(h=>h.habit==='Retry shared reading').length)).toBe(1);
+});

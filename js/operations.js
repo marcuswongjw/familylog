@@ -1,6 +1,6 @@
 /* Stable create IDs retain only a digest and UUID, scoped to the account. */
 const pendingOperations=new Map();
-const CREATE_ACTIONS = new Set(['add_todo','add_event','add_expense','add_trip','add_birthday']);
+const CREATE_ACTIONS = new Set(['add_todo','add_event','add_expense','add_trip','add_birthday','add_habit']);
 async function retrySafePayload(payload, account) {
   if (!CREATE_ACTIONS.has(String(payload.note||'').toLowerCase()) || payload.operation_id) return payload;
   const canonical=Object.keys(payload).sort().reduce((o,k)=>(o[k]=payload[k],o),{});

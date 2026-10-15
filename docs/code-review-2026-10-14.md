@@ -54,6 +54,8 @@ The supported methods are in [Google’s CalendarEvent reference](https://develo
 
 ### 5. P2 — Creating a habit is not safe to retry after an uncertain save
 
+**Habit creation fixed 15 October 2026.** The client retains an account-scoped request ID across uncertain responses and reloads. The backend stores the ID and original request fingerprint on the habit row, recovers interrupted appends, and confirms through the operation ledger. Existing habit IDs, logs and rewards remain intact; intentional identical creates remain possible after confirmation. The other create flows noted below remain separate follow-up work.
+
 Evidence: [create action list](/Users/marcus/Documents/GitHub/familylog/js/operations.js:3), [habit append](/Users/marcus/Documents/GitHub/familylog/Code.js:1530), [operation action list](/Users/marcus/Documents/GitHub/familylog/gas/rewards.js:141).
 
 add_habit receives a fresh UUID on every request and is absent from both create-operation lists. Reproduction: the first habit append committed and lost its response; retrying the same form created a second habit. Each copy can have independent logs and reward rules. Recurring costs, fertility/check-ins, appreciations and bucket-item creates have similar retry gaps; those other flows were identified by code inspection, not individually reproduced.

@@ -138,7 +138,7 @@ function rewardHandleWrite_(data, ss, email, user) {
 
 // Retry-safe creates. Keys are scoped to verified account + action, never row numbers.
 function operationContext_(ss,data,email,note) {
-  if (['add_todo','add_event','add_expense','add_trip','add_birthday'].indexOf(note)<0 || !data.operation_id) return null;
+  if (['add_todo','add_event','add_expense','add_trip','add_birthday','add_habit'].indexOf(note)<0 || !data.operation_id) return null;
   if (!/^[A-Za-z0-9-]{16,80}$/.test(data.operation_id)) throw new Error('Invalid operation ID.');
   var fields={};Object.keys(data).sort().forEach(function(k){if(k[0]!=='_' && ['idToken','user','action','operation_id'].indexOf(k)<0) fields[k]=data[k];});
   var op={id:'op'+schoolHash_(email+'|'+note+'|'+data.operation_id),fingerprint:schoolHash_(JSON.stringify(fields)),note:note,email:email};
