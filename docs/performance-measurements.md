@@ -45,3 +45,9 @@ Diagnostic objects allow only fixed service/endpoint/stage labels, finite durati
 Before another migration, compare real samples: token time, round trip versus measured server work, lock wait, Calendar pages, sheet-read/row amplification, rendering and startup assets. Optimize the stage with evidence, then repeat the same scenario and compare p50/p95 plus error rates.
 
 In v49, compare `cells_read` alongside `rows_scanned`: a date-only pass plus a small selected record range can return more rows while fetching substantially fewer cells and historical notes. `sheet_searches` and `search_cells` count native lookup calls/search range sizes; they are not measurements of Google’s internal indexing. Loading check shows median fetched cells, and the JSON/report retains all three counters.
+
+## Parallel Family refresh, v56
+
+Family overview and Calendar requests now start together. The overview still renders independently; an early Calendar response waits for the overview to settle before merging its reconciled tasks. Loading check includes **Overview and calendar ready** (`family_ready`) as a direct whole-refresh readiness duration. The paired/summed overview-plus-Calendar method used for the earlier sequential baseline is no longer valid for v56: do not add overlapping request or readiness durations. Calendar’s request row measures its actual transport duration; its readiness row can also include waiting for the overview. A combined sample is successful only when both components complete successfully. Parent refresh is unchanged.
+
+For a comparable live sample, collect 20 sequential full refreshes, waiting for both the overview and Calendar each time. Close and reopen Loading check before the final export to include late Calendar completions. Keep the same device, viewport, connection and ordinary cache state where possible. A single session gives an initial comparison, not a long-term p95 or cold-start guarantee.

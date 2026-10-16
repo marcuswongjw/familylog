@@ -118,22 +118,34 @@
     /** Sheets-backed dashboard only (not memories). */
     async function loadData() {
       const readyTiming=typeof startNestTiming==='function'?startNestTiming('core_ready','load'):null;
+      const parent=typeof isParentApp==='function'&&isParentApp();
+      const familyTiming=!parent&&typeof startNestTiming==='function'?startNestTiming('family_ready','load'):null;
       if(typeof updateDeletionStatus==='function')updateDeletionStatus();
       const account = currentUserEmail, session = sessionGeneration, request = ++dashboardGeneration;
       const active=()=>account===currentUserEmail&&session===sessionGeneration&&request===dashboardGeneration;
       if(typeof setRewardLoadState==='function')setRewardLoadState(true);
+      let releaseCore,coreSucceeded=false;
+      const coreSettled=new Promise(resolve=>{releaseCore=resolve;});
       let timer;
       try {
         const timeout=new Promise(resolve=>{timer=setTimeout(()=>resolve({status:'error',message:'The family server took too long to respond. Please try again.'}),45000);});
-        const r=await Promise.race([gasRequest({action:typeof isParentApp==='function'&&isParentApp()?'get_parent_dashboard':'get_family_core',archive_version:1}),timeout]);
+        const coreRequest=gasRequest({action:parent?'get_parent_dashboard':'get_family_core',archive_version:1});
+        if(!parent){
+          data.calendarState='loading';renderCalendarLoadState();
+          // Fetch now; merge only after the overview settles so its older task rows cannot
+          // overwrite Calendar's reconciled task bundle. Writes/account changes invalidate both.
+          hydrateFamilyCalendar(active,coreSettled).then(ready=>{
+            if(familyTiming&&active())finishNestTiming(familyTiming,coreSucceeded&&ready);
+          });
+        }
+        const r=await Promise.race([coreRequest,timeout]);
         if(!active())return false;
         if(!r||r.status==='error') {
-          if(data.calendarState === 'loading') setCalendarLoadError();
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,r?.message||'Could not load your companions. Check your connection and try again.');
           return false;
         }
         if(typeof setRewardLoadState==='function')setRewardLoadState(false,r.rewards?.members?.some(p=>p.member===user)?'':'The server did not return your companion data. Please try again.');
-        const needsCalendar = !Object.prototype.hasOwnProperty.call(r, 'events') && !(typeof isParentApp === 'function' && isParentApp());
+        const needsCalendar = !Object.prototype.hasOwnProperty.call(r, 'events') && !parent;
         if (needsCalendar) {
           r.events = data.events || []; r.calendarState = 'loading';
           r.calendarRefreshedAt=data.calendarRefreshedAt||null;r.preparationState=data.preparationState;
@@ -143,17 +155,16 @@
         if(readyTiming)advanceNestTiming(readyTiming,'render');
         applyDashboardPayload(r);
         if(readyTiming)finishNestTiming(readyTiming);
-        if (needsCalendar) hydrateFamilyCalendar(active);
         if(typeof markDashboardRefreshed==='function')markDashboardRefreshed();
+        coreSucceeded=true;
         return true;
       } catch(err) {
         if(active()) {
-          if(data.calendarState === 'loading') setCalendarLoadError();
           if(typeof setRewardLoadState==='function')setRewardLoadState(false,'Could not load your companions. Please try again.');
           showError('Could not refresh the family plan. Please try again.');
         }
         return false;
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer);releaseCore(); }
     }
 
     let calendarRequestGeneration=0;
@@ -172,13 +183,14 @@
       if(active()&&restoreFocus&&button.isConnected&&!button.disabled&&button.getClientRects().length&&(!document.activeElement||document.activeElement===document.body||document.activeElement===button))button.focus();
       return result;
     }
-    async function hydrateFamilyCalendar(active) {
+    async function hydrateFamilyCalendar(active,beforeApply=Promise.resolve()) {
       const request=++calendarRequestGeneration,current=()=>request===calendarRequestGeneration&&active();
       const readyTiming=typeof startNestTiming==='function'?startNestTiming('calendar_ready','load'):null;
       let timer;
       try {
         const timeout = new Promise(resolve => { timer = setTimeout(() => resolve({status:'error'}),45000); });
         const result = await Promise.race([gasRequest({action:'get_family_calendar'}),timeout]);
+        await beforeApply;
         // Only the current request may finish loading or replace calendar/task data.
         if (!current()) return false;
         if (!result || result.status === 'error' || !Array.isArray(result.events)) {
@@ -190,6 +202,7 @@
         if(readyTiming)finishNestTiming(readyTiming);
         return true;
       } catch (err) {
+        await beforeApply;
         if (current()) setCalendarLoadError();
         return false;
       } finally { clearTimeout(timer); }

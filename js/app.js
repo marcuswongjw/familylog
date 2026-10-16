@@ -468,8 +468,10 @@ function isParentApp(){return typeof document!=='undefined' && document.document
     }
 
     // ─── PROGRESS BAR ─────────────────────────────────────────
-    let progressInterval = null;
+    let progressInterval = null,progressRequests=0;
     function startProgressBar() {
+      progressRequests++;
+      if(progressRequests>1)return;
       const bar = document.getElementById('top-progress-bar');
       if(!bar) return;
       clearInterval(progressInterval);
@@ -485,13 +487,16 @@ function isParentApp(){return typeof document!=='undefined' && document.document
       }, 120);
     }
     function finishProgressBar() {
+      progressRequests=Math.max(0,progressRequests-1);
+      if(progressRequests)return;
       const bar = document.getElementById('top-progress-bar');
       if(!bar) return;
       clearInterval(progressInterval);
       bar.style.width = '100%';
       setTimeout(() => {
+        if(progressRequests)return;
         bar.style.opacity = '0';
-        setTimeout(() => bar.style.width = '0%', 300);
+        setTimeout(() => {if(!progressRequests)bar.style.width = '0%';}, 300);
       }, 200);
     }
 
