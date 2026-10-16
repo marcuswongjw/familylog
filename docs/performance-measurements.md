@@ -4,7 +4,7 @@ Performance improvement #1 adds measurements, not an infrastructure migration or
 
 ## See a normal-use sample
 
-As a parent, open **More → Loading check** in either app. Use **Measure refresh** a few times or use the app normally, then reopen Loading check to include later Calendar completions. Calendar loads independently after the overview; the report is a snapshot of completed measurements. The view shows successful sample counts, median (p50), slower (p95) time and failed requests. Expand a breakdown for individual stages and rows scanned. **Download measurements** exports the current tab’s numbers-only JSON.
+As a parent, open **More → Loading check** in either app. Use **Measure refresh** a few times or use the app normally, then reopen Loading check to include later Calendar completions. Calendar requests run alongside the overview and merge after it settles; the report is a snapshot of completed measurements. The view shows successful sample counts, median (p50), slower (p95) time and failed requests. Expand a breakdown for individual stages and rows scanned. **Download measurements** exports the current tab’s numbers-only JSON.
 
 The last 200 samples stay in memory. Account/session changes clear them; a full browser reload starts a new collection. Startup timing comes from this navigation’s browser performance entries and can include warm/offline caches. It is separate from overview/calendar readiness. No analytics service, new database collection, scheduled sampling job or storage queue is introduced.
 
